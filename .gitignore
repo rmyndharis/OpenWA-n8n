@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output is included for GitHub installs
+# dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+
+# Git worktrees
+.worktrees/
+
+# AI Agents
+.agent/
+.claude/
+CLAUDE.md
+_docs/

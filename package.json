@@ -1,0 +1,55 @@
+{
+  "name": "n8n-nodes-openwa",
+  "version": "0.1.0",
+  "description": "n8n community nodes for OpenWA WhatsApp API Gateway",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "whatsapp",
+    "openwa",
+    "messaging",
+    "automation"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/rmyndharis/OpenWA-n8n",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rmyndharis/OpenWA-n8n.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/OpenWaApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/OpenWa/OpenWa.node.js",
+      "dist/nodes/OpenWaTrigger/OpenWaTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.56.0",
+    "gulp": "^4.0.2",
+    "n8n-workflow": "^1.22.0",
+    "prettier": "^3.2.0",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
