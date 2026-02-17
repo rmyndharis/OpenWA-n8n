@@ -2,6 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWa = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
+function sanitizePathParam(value, paramName) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        throw new Error(`${paramName} cannot be empty`);
+    }
+    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+        throw new Error(`${paramName} contains invalid characters`);
+    }
+    return encodeURIComponent(trimmed);
+}
 class OpenWa {
     constructor() {
         this.description = {
@@ -125,6 +135,7 @@ class OpenWa {
                     name: 'imageSource',
                     type: 'options',
                     options: [
+                        { name: 'Binary Data', value: 'binary' },
                         { name: 'URL', value: 'url' },
                         { name: 'Base64', value: 'base64' },
                     ],
@@ -132,6 +143,17 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['message'], operation: ['sendImage'] },
                     },
+                },
+                {
+                    displayName: 'Binary Property',
+                    name: 'imageBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendImage'], imageSource: ['binary'] },
+                    },
+                    description: 'Name of the binary property containing the image',
                 },
                 {
                     displayName: 'Image URL',
@@ -171,6 +193,7 @@ class OpenWa {
                     name: 'documentSource',
                     type: 'options',
                     options: [
+                        { name: 'Binary Data', value: 'binary' },
                         { name: 'URL', value: 'url' },
                         { name: 'Base64', value: 'base64' },
                     ],
@@ -178,6 +201,17 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['message'], operation: ['sendDocument'] },
                     },
+                },
+                {
+                    displayName: 'Binary Property',
+                    name: 'documentBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendDocument'], documentSource: ['binary'] },
+                    },
+                    description: 'Name of the binary property containing the document',
                 },
                 {
                     displayName: 'Document URL',
@@ -377,7 +411,7 @@ class OpenWa {
                 // SESSION
                 if (resource === 'session') {
                     if (operation === 'getStatus') {
-                        const sessionId = this.getNodeParameter('sessionId', i);
+                        const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
                         endpoint = `/api/sessions/${sessionId}`;
                         method = 'GET';
                     }
@@ -387,9 +421,14 @@ class OpenWa {
                     }
                 }
                 // MESSAGE
-                if (resource === 'message') {
-                    const sessionId = this.getNodeParameter('sessionId', i);
-                    const chatId = this.getNodeParameter('chatId', i);
+                else if (resource === 'message') {
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
+                    const chatId = this.getNodeParameter('chatId', i).trim();
+                    if (!chatId) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
+                            itemIndex: i,
+                        });
+                    }
                     if (operation === 'sendText') {
                         endpoint = `/api/sessions/${sessionId}/messages/send-text`;
                         method = 'POST';
@@ -402,11 +441,17 @@ class OpenWa {
                         endpoint = `/api/sessions/${sessionId}/messages/send-image`;
                         method = 'POST';
                         const imageSource = this.getNodeParameter('imageSource', i);
-                        body = {
-                            chatId,
-                            caption: this.getNodeParameter('caption', i, ''),
-                        };
-                        if (imageSource === 'url') {
+                        body = { chatId };
+                        const caption = this.getNodeParameter('caption', i, '').trim();
+                        if (caption) {
+                            body.caption = caption;
+                        }
+                        if (imageSource === 'binary') {
+                            const binaryPropertyName = this.getNodeParameter('imageBinaryProperty', i);
+                            const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+                            body.base64 = binaryData.toString('base64');
+                        }
+                        else if (imageSource === 'url') {
                             body.url = this.getNodeParameter('imageUrl', i);
                         }
                         else {
@@ -419,10 +464,18 @@ class OpenWa {
                         const documentSource = this.getNodeParameter('documentSource', i);
                         body = {
                             chatId,
-                            caption: this.getNodeParameter('caption', i, ''),
                             filename: this.getNodeParameter('filename', i, 'document.pdf'),
                         };
-                        if (documentSource === 'url') {
+                        const caption = this.getNodeParameter('caption', i, '').trim();
+                        if (caption) {
+                            body.caption = caption;
+                        }
+                        if (documentSource === 'binary') {
+                            const binaryPropertyName = this.getNodeParameter('documentBinaryProperty', i);
+                            const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+                            body.base64 = binaryData.toString('base64');
+                        }
+                        else if (documentSource === 'url') {
                             body.url = this.getNodeParameter('documentUrl', i);
                         }
                         else {
@@ -436,40 +489,61 @@ class OpenWa {
                             chatId,
                             latitude: this.getNodeParameter('latitude', i),
                             longitude: this.getNodeParameter('longitude', i),
-                            name: this.getNodeParameter('locationName', i, ''),
                         };
+                        const locationName = this.getNodeParameter('locationName', i, '').trim();
+                        if (locationName) {
+                            body.name = locationName;
+                        }
                     }
                 }
                 // CONTACT
-                if (resource === 'contact') {
-                    const sessionId = this.getNodeParameter('sessionId', i);
+                else if (resource === 'contact') {
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
                     if (operation === 'checkExists') {
-                        const phoneNumber = this.getNodeParameter('phoneNumber', i);
-                        endpoint = `/api/sessions/${sessionId}/contacts/check/${phoneNumber}`;
+                        const phoneNumber = this.getNodeParameter('phoneNumber', i)
+                            .trim()
+                            .replace(/[\s+\-()]/g, '');
+                        if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must contain only digits (no +, spaces, or special characters)', { itemIndex: i });
+                        }
+                        endpoint = `/api/sessions/${sessionId}/contacts/check/${encodeURIComponent(phoneNumber)}`;
                         method = 'GET';
                     }
                     else if (operation === 'getInfo') {
-                        const contactId = this.getNodeParameter('contactId', i);
-                        endpoint = `/api/sessions/${sessionId}/contacts/${contactId}`;
+                        const contactId = this.getNodeParameter('contactId', i).trim();
+                        if (!contactId) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
+                                itemIndex: i,
+                            });
+                        }
+                        endpoint = `/api/sessions/${sessionId}/contacts/${encodeURIComponent(contactId)}`;
                         method = 'GET';
                     }
                 }
                 // WEBHOOK
-                if (resource === 'webhook') {
-                    const sessionId = this.getNodeParameter('sessionId', i);
+                else if (resource === 'webhook') {
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
                     if (operation === 'create') {
                         endpoint = `/api/sessions/${sessionId}/webhooks`;
                         method = 'POST';
+                        const events = this.getNodeParameter('events', i);
+                        if (!events || events.length === 0) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected', { itemIndex: i });
+                        }
                         body = {
                             url: this.getNodeParameter('webhookUrl', i),
-                            events: this.getNodeParameter('events', i),
+                            events,
                         };
                     }
                     else if (operation === 'delete') {
-                        const webhookId = this.getNodeParameter('webhookId', i);
+                        const webhookId = sanitizePathParam(this.getNodeParameter('webhookId', i), 'Webhook ID');
                         endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
                         method = 'DELETE';
                     }
+                }
+                // Unhandled resource/operation
+                if (!endpoint) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported resource/operation: ${resource}/${operation}`, { itemIndex: i });
                 }
                 // Make request
                 const options = {
@@ -490,6 +564,9 @@ class OpenWa {
                 if (this.continueOnFail()) {
                     returnData.push({ json: { error: error.message } });
                     continue;
+                }
+                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                    throw error;
                 }
                 throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
             }

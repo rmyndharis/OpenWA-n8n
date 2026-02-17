@@ -16,9 +16,10 @@ export class OpenWaApi implements ICredentialType {
       displayName: 'Server URL',
       name: 'serverUrl',
       type: 'string',
-      default: 'http://localhost:2785',
+      default: 'https://localhost:2785',
       placeholder: 'https://wa.yourserver.com',
-      description: 'The URL of your OpenWA server (without trailing slash or /api)',
+      description:
+        'The URL of your OpenWA server (without trailing slash or /api). Use HTTPS in production.',
       required: true,
     },
     {

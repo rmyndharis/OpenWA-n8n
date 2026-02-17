@@ -1,6 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWaTrigger = void 0;
+const n8n_workflow_1 = require("n8n-workflow");
+function sanitizePathParam(value, paramName) {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        throw new Error(`${paramName} cannot be empty`);
+    }
+    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+        throw new Error(`${paramName} contains invalid characters`);
+    }
+    return encodeURIComponent(trimmed);
+}
 class OpenWaTrigger {
     constructor() {
         this.description = {
@@ -74,6 +85,16 @@ class OpenWaTrigger {
                     required: true,
                     description: 'The events to listen to',
                 },
+                {
+                    displayName: 'Webhook Secret',
+                    name: 'webhookSecret',
+                    type: 'string',
+                    typeOptions: {
+                        password: true,
+                    },
+                    default: '',
+                    description: 'Optional shared secret to verify incoming webhooks. If set, requests must include a matching X-Webhook-Secret header.',
+                },
             ],
         };
         this.webhookMethods = {
@@ -85,11 +106,11 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = this.getNodeParameter('sessionId');
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'GET',
-                            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${webhookData.webhookId}`,
+                            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
                             json: true,
                         });
                         return true;
@@ -102,26 +123,29 @@ class OpenWaTrigger {
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = this.getNodeParameter('sessionId');
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
                     const events = this.getNodeParameter('events');
+                    if (!events || events.length === 0) {
+                        throw new Error('At least one event must be selected');
+                    }
                     const body = {
                         url: webhookUrl,
                         events,
                     };
-                    try {
-                        const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
-                            method: 'POST',
-                            url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
-                            body,
-                            json: true,
-                        });
-                        const webhookData = this.getWorkflowStaticData('node');
-                        webhookData.webhookId = response.data?.id || response.id;
-                        return true;
+                    const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                        method: 'POST',
+                        url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
+                        body,
+                        json: true,
+                    });
+                    const webhookId = response.id ||
+                        response.data?.id;
+                    if (!webhookId) {
+                        throw new n8n_workflow_1.NodeApiError(this.getNode(), { message: 'Webhook created but no ID returned in response' });
                     }
-                    catch (error) {
-                        return false;
-                    }
+                    const webhookData = this.getWorkflowStaticData('node');
+                    webhookData.webhookId = webhookId;
+                    return true;
                 },
                 async delete() {
                     const webhookData = this.getWorkflowStaticData('node');
@@ -130,16 +154,20 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = this.getNodeParameter('sessionId');
+                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'DELETE',
-                            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${webhookData.webhookId}`,
+                            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
                             json: true,
                         });
                     }
-                    catch {
-                        // Webhook might already be deleted, ignore error
+                    catch (error) {
+                        const statusCode = error.httpCode ||
+                            error.statusCode;
+                        if (statusCode !== 404) {
+                            throw error;
+                        }
                     }
                     delete webhookData.webhookId;
                     return true;
@@ -150,7 +178,23 @@ class OpenWaTrigger {
     async webhook() {
         const req = this.getRequestObject();
         const body = req.body;
-        // Return the webhook payload as workflow data
+        // Verify webhook secret if configured
+        const webhookSecret = this.getNodeParameter('webhookSecret', '');
+        if (webhookSecret) {
+            const incomingSecret = req.headers['x-webhook-secret'];
+            if (incomingSecret !== webhookSecret) {
+                return {
+                    webhookResponse: 'Unauthorized',
+                    workflowData: [[]],
+                };
+            }
+        }
+        // Validate payload is an object
+        if (!body || typeof body !== 'object') {
+            return {
+                workflowData: [[]],
+            };
+        }
         return {
             workflowData: [this.helpers.returnJsonArray(body)],
         };

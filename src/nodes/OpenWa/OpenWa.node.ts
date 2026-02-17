@@ -7,7 +7,18 @@ import type {
   IHttpRequestOptions,
   JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+
+function sanitizePathParam(value: string, paramName: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${paramName} cannot be empty`);
+  }
+  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+    throw new Error(`${paramName} contains invalid characters`);
+  }
+  return encodeURIComponent(trimmed);
+}
 
 export class OpenWa implements INodeType {
   description: INodeTypeDescription = {
@@ -133,6 +144,7 @@ export class OpenWa implements INodeType {
         name: 'imageSource',
         type: 'options',
         options: [
+          { name: 'Binary Data', value: 'binary' },
           { name: 'URL', value: 'url' },
           { name: 'Base64', value: 'base64' },
         ],
@@ -140,6 +152,17 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['message'], operation: ['sendImage'] },
         },
+      },
+      {
+        displayName: 'Binary Property',
+        name: 'imageBinaryProperty',
+        type: 'string',
+        default: 'data',
+        required: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendImage'], imageSource: ['binary'] },
+        },
+        description: 'Name of the binary property containing the image',
       },
       {
         displayName: 'Image URL',
@@ -179,6 +202,7 @@ export class OpenWa implements INodeType {
         name: 'documentSource',
         type: 'options',
         options: [
+          { name: 'Binary Data', value: 'binary' },
           { name: 'URL', value: 'url' },
           { name: 'Base64', value: 'base64' },
         ],
@@ -186,6 +210,17 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
+      },
+      {
+        displayName: 'Binary Property',
+        name: 'documentBinaryProperty',
+        type: 'string',
+        default: 'data',
+        required: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendDocument'], documentSource: ['binary'] },
+        },
+        description: 'Name of the binary property containing the document',
       },
       {
         displayName: 'Document URL',
@@ -391,7 +426,10 @@ export class OpenWa implements INodeType {
         // SESSION
         if (resource === 'session') {
           if (operation === 'getStatus') {
-            const sessionId = this.getNodeParameter('sessionId', i) as string;
+            const sessionId = sanitizePathParam(
+              this.getNodeParameter('sessionId', i) as string,
+              'Session ID',
+            );
             endpoint = `/api/sessions/${sessionId}`;
             method = 'GET';
           } else if (operation === 'listAll') {
@@ -401,9 +439,17 @@ export class OpenWa implements INodeType {
         }
 
         // MESSAGE
-        if (resource === 'message') {
-          const sessionId = this.getNodeParameter('sessionId', i) as string;
-          const chatId = this.getNodeParameter('chatId', i) as string;
+        else if (resource === 'message') {
+          const sessionId = sanitizePathParam(
+            this.getNodeParameter('sessionId', i) as string,
+            'Session ID',
+          );
+          const chatId = (this.getNodeParameter('chatId', i) as string).trim();
+          if (!chatId) {
+            throw new NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
+              itemIndex: i,
+            });
+          }
 
           if (operation === 'sendText') {
             endpoint = `/api/sessions/${sessionId}/messages/send-text`;
@@ -416,11 +462,16 @@ export class OpenWa implements INodeType {
             endpoint = `/api/sessions/${sessionId}/messages/send-image`;
             method = 'POST';
             const imageSource = this.getNodeParameter('imageSource', i) as string;
-            body = {
-              chatId,
-              caption: this.getNodeParameter('caption', i, '') as string,
-            };
-            if (imageSource === 'url') {
+            body = { chatId };
+            const caption = (this.getNodeParameter('caption', i, '') as string).trim();
+            if (caption) {
+              body.caption = caption;
+            }
+            if (imageSource === 'binary') {
+              const binaryPropertyName = this.getNodeParameter('imageBinaryProperty', i) as string;
+              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+              body.base64 = binaryData.toString('base64');
+            } else if (imageSource === 'url') {
               body.url = this.getNodeParameter('imageUrl', i) as string;
             } else {
               body.base64 = this.getNodeParameter('imageBase64', i) as string;
@@ -431,10 +482,20 @@ export class OpenWa implements INodeType {
             const documentSource = this.getNodeParameter('documentSource', i) as string;
             body = {
               chatId,
-              caption: this.getNodeParameter('caption', i, '') as string,
               filename: this.getNodeParameter('filename', i, 'document.pdf') as string,
             };
-            if (documentSource === 'url') {
+            const caption = (this.getNodeParameter('caption', i, '') as string).trim();
+            if (caption) {
+              body.caption = caption;
+            }
+            if (documentSource === 'binary') {
+              const binaryPropertyName = this.getNodeParameter(
+                'documentBinaryProperty',
+                i,
+              ) as string;
+              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+              body.base64 = binaryData.toString('base64');
+            } else if (documentSource === 'url') {
               body.url = this.getNodeParameter('documentUrl', i) as string;
             } else {
               body.base64 = this.getNodeParameter('documentBase64', i) as string;
@@ -446,42 +507,87 @@ export class OpenWa implements INodeType {
               chatId,
               latitude: this.getNodeParameter('latitude', i) as number,
               longitude: this.getNodeParameter('longitude', i) as number,
-              name: this.getNodeParameter('locationName', i, '') as string,
             };
+            const locationName = (
+              this.getNodeParameter('locationName', i, '') as string
+            ).trim();
+            if (locationName) {
+              body.name = locationName;
+            }
           }
         }
 
         // CONTACT
-        if (resource === 'contact') {
-          const sessionId = this.getNodeParameter('sessionId', i) as string;
+        else if (resource === 'contact') {
+          const sessionId = sanitizePathParam(
+            this.getNodeParameter('sessionId', i) as string,
+            'Session ID',
+          );
 
           if (operation === 'checkExists') {
-            const phoneNumber = this.getNodeParameter('phoneNumber', i) as string;
-            endpoint = `/api/sessions/${sessionId}/contacts/check/${phoneNumber}`;
+            const phoneNumber = (this.getNodeParameter('phoneNumber', i) as string)
+              .trim()
+              .replace(/[\s+\-()]/g, '');
+            if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
+              throw new NodeOperationError(
+                this.getNode(),
+                'Phone number must contain only digits (no +, spaces, or special characters)',
+                { itemIndex: i },
+              );
+            }
+            endpoint = `/api/sessions/${sessionId}/contacts/check/${encodeURIComponent(phoneNumber)}`;
             method = 'GET';
           } else if (operation === 'getInfo') {
-            const contactId = this.getNodeParameter('contactId', i) as string;
-            endpoint = `/api/sessions/${sessionId}/contacts/${contactId}`;
+            const contactId = (this.getNodeParameter('contactId', i) as string).trim();
+            if (!contactId) {
+              throw new NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
+                itemIndex: i,
+              });
+            }
+            endpoint = `/api/sessions/${sessionId}/contacts/${encodeURIComponent(contactId)}`;
             method = 'GET';
           }
         }
 
         // WEBHOOK
-        if (resource === 'webhook') {
-          const sessionId = this.getNodeParameter('sessionId', i) as string;
+        else if (resource === 'webhook') {
+          const sessionId = sanitizePathParam(
+            this.getNodeParameter('sessionId', i) as string,
+            'Session ID',
+          );
 
           if (operation === 'create') {
             endpoint = `/api/sessions/${sessionId}/webhooks`;
             method = 'POST';
+            const events = this.getNodeParameter('events', i) as string[];
+            if (!events || events.length === 0) {
+              throw new NodeOperationError(
+                this.getNode(),
+                'At least one event must be selected',
+                { itemIndex: i },
+              );
+            }
             body = {
               url: this.getNodeParameter('webhookUrl', i) as string,
-              events: this.getNodeParameter('events', i) as string[],
+              events,
             };
           } else if (operation === 'delete') {
-            const webhookId = this.getNodeParameter('webhookId', i) as string;
+            const webhookId = sanitizePathParam(
+              this.getNodeParameter('webhookId', i) as string,
+              'Webhook ID',
+            );
             endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
             method = 'DELETE';
           }
+        }
+
+        // Unhandled resource/operation
+        if (!endpoint) {
+          throw new NodeOperationError(
+            this.getNode(),
+            `Unsupported resource/operation: ${resource}/${operation}`,
+            { itemIndex: i },
+          );
         }
 
         // Make request
@@ -509,6 +615,9 @@ export class OpenWa implements INodeType {
         if (this.continueOnFail()) {
           returnData.push({ json: { error: (error as Error).message } });
           continue;
+        }
+        if (error instanceof NodeOperationError) {
+          throw error;
         }
         throw new NodeApiError(this.getNode(), error as JsonObject);
       }

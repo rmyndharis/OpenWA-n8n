@@ -4,7 +4,20 @@ import type {
   INodeType,
   INodeTypeDescription,
   IWebhookResponseData,
+  JsonObject,
 } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
+
+function sanitizePathParam(value: string, paramName: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${paramName} cannot be empty`);
+  }
+  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
+    throw new Error(`${paramName} contains invalid characters`);
+  }
+  return encodeURIComponent(trimmed);
+}
 
 export class OpenWaTrigger implements INodeType {
   description: INodeTypeDescription = {
@@ -78,6 +91,17 @@ export class OpenWaTrigger implements INodeType {
         required: true,
         description: 'The events to listen to',
       },
+      {
+        displayName: 'Webhook Secret',
+        name: 'webhookSecret',
+        type: 'string',
+        typeOptions: {
+          password: true,
+        },
+        default: '',
+        description:
+          'Optional shared secret to verify incoming webhooks. If set, requests must include a matching X-Webhook-Secret header.',
+      },
     ],
   };
 
@@ -91,12 +115,15 @@ export class OpenWaTrigger implements INodeType {
 
         const credentials = await this.getCredentials('openWaApi');
         const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
-        const sessionId = this.getNodeParameter('sessionId') as string;
+        const sessionId = sanitizePathParam(
+          this.getNodeParameter('sessionId') as string,
+          'Session ID',
+        );
 
         try {
           await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
             method: 'GET',
-            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${webhookData.webhookId}`,
+            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(webhookData.webhookId as string)}`,
             json: true,
           });
           return true;
@@ -109,32 +136,45 @@ export class OpenWaTrigger implements INodeType {
         const webhookUrl = this.getNodeWebhookUrl('default');
         const credentials = await this.getCredentials('openWaApi');
         const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
-        const sessionId = this.getNodeParameter('sessionId') as string;
+        const sessionId = sanitizePathParam(
+          this.getNodeParameter('sessionId') as string,
+          'Session ID',
+        );
         const events = this.getNodeParameter('events') as string[];
 
-        const body = {
+        if (!events || events.length === 0) {
+          throw new Error('At least one event must be selected');
+        }
+
+        const body: Record<string, unknown> = {
           url: webhookUrl,
           events,
         };
 
-        try {
-          const response = await this.helpers.httpRequestWithAuthentication.call(
-            this,
-            'openWaApi',
-            {
-              method: 'POST',
-              url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
-              body,
-              json: true,
-            },
-          );
+        const response = await this.helpers.httpRequestWithAuthentication.call(
+          this,
+          'openWaApi',
+          {
+            method: 'POST',
+            url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
+            body,
+            json: true,
+          },
+        );
 
-          const webhookData = this.getWorkflowStaticData('node');
-          webhookData.webhookId = response.data?.id || response.id;
-          return true;
-        } catch (error) {
-          return false;
+        const webhookId =
+          (response as Record<string, unknown>).id ||
+          ((response as Record<string, Record<string, unknown>>).data?.id as string | undefined);
+        if (!webhookId) {
+          throw new NodeApiError(
+            this.getNode(),
+            { message: 'Webhook created but no ID returned in response' } as unknown as JsonObject,
+          );
         }
+
+        const webhookData = this.getWorkflowStaticData('node');
+        webhookData.webhookId = webhookId;
+        return true;
       },
 
       async delete(this: IHookFunctions): Promise<boolean> {
@@ -146,16 +186,24 @@ export class OpenWaTrigger implements INodeType {
 
         const credentials = await this.getCredentials('openWaApi');
         const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
-        const sessionId = this.getNodeParameter('sessionId') as string;
+        const sessionId = sanitizePathParam(
+          this.getNodeParameter('sessionId') as string,
+          'Session ID',
+        );
 
         try {
           await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
             method: 'DELETE',
-            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${webhookData.webhookId}`,
+            url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(webhookData.webhookId as string)}`,
             json: true,
           });
-        } catch {
-          // Webhook might already be deleted, ignore error
+        } catch (error) {
+          const statusCode =
+            (error as Record<string, unknown>).httpCode ||
+            (error as Record<string, unknown>).statusCode;
+          if (statusCode !== 404) {
+            throw error;
+          }
         }
 
         delete webhookData.webhookId;
@@ -168,7 +216,25 @@ export class OpenWaTrigger implements INodeType {
     const req = this.getRequestObject();
     const body = req.body;
 
-    // Return the webhook payload as workflow data
+    // Verify webhook secret if configured
+    const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
+    if (webhookSecret) {
+      const incomingSecret = req.headers['x-webhook-secret'] as string | undefined;
+      if (incomingSecret !== webhookSecret) {
+        return {
+          webhookResponse: 'Unauthorized',
+          workflowData: [[]],
+        };
+      }
+    }
+
+    // Validate payload is an object
+    if (!body || typeof body !== 'object') {
+      return {
+        workflowData: [[]],
+      };
+    }
+
     return {
       workflowData: [this.helpers.returnJsonArray(body)],
     };
