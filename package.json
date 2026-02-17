@@ -1,6 +1,6 @@
 {
-  "name": "n8n-nodes-openwa",
-  "version": "0.1.0",
+  "name": "@rmyndharis/n8n-nodes-openwa",
+  "version": "0.1.1",
   "description": "n8n community nodes for OpenWA WhatsApp API Gateway",
   "keywords": [
     "n8n-community-node-package",
@@ -23,11 +23,15 @@
     "dev": "tsc --watch",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint src --ext .ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepare": "husky"
   },
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
@@ -39,9 +43,14 @@
     ]
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
     "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.56.0",
     "gulp": "^4.0.2",
+    "husky": "^9.1.7",
     "n8n-workflow": "^1.22.0",
     "prettier": "^3.2.0",
     "typescript": "^5.3.0"

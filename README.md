@@ -1,8 +1,9 @@
-# n8n-nodes-openwa
+# @rmyndharis/n8n-nodes-openwa
 
 Official n8n community nodes for [OpenWA](https://github.com/rmyndharis/OpenWA) - Self-hosted WhatsApp API Gateway.
 
 This package provides two nodes:
+
 - **OpenWA** - Execute operations like sending messages, checking contacts, managing webhooks
 - **OpenWA Trigger** - Start workflows when WhatsApp events occur (incoming messages, session status changes)
 
@@ -12,24 +13,24 @@ This package provides two nodes:
 
 1. Go to **Settings > Community Nodes**
 2. Select **Install**
-3. Enter `n8n-nodes-openwa` and agree to the risks
+3. Enter `@rmyndharis/n8n-nodes-openwa` and agree to the risks
 4. Restart n8n
 
 ### Manual Installation
 
 ```bash
 cd ~/.n8n/nodes
-npm install n8n-nodes-openwa
+npm install @rmyndharis/n8n-nodes-openwa
 ```
 
 ## Credentials
 
 You need to configure OpenWA API credentials:
 
-| Field | Description |
-|-------|-------------|
+| Field          | Description                                             |
+| -------------- | ------------------------------------------------------- |
 | **Server URL** | Your OpenWA server URL (e.g., `https://wa.example.com`) |
-| **API Key** | API key from your OpenWA dashboard |
+| **API Key**    | API key from your OpenWA dashboard                      |
 
 ## Nodes
 
@@ -39,18 +40,18 @@ Execute operations on your OpenWA server.
 
 #### Resources & Operations
 
-| Resource | Operation | Description |
-|----------|-----------|-------------|
-| **Session** | Get Status | Get the status of a session |
-| **Session** | List All | List all sessions |
-| **Message** | Send Text | Send a text message |
-| **Message** | Send Image | Send an image (URL or Base64) |
-| **Message** | Send Document | Send a document/file |
-| **Message** | Send Location | Send a location pin |
-| **Contact** | Check Exists | Check if a number is on WhatsApp |
-| **Contact** | Get Info | Get contact information |
-| **Webhook** | Create | Create a webhook |
-| **Webhook** | Delete | Delete a webhook |
+| Resource    | Operation     | Description                      |
+| ----------- | ------------- | -------------------------------- |
+| **Session** | Get Status    | Get the status of a session      |
+| **Session** | List All      | List all sessions                |
+| **Message** | Send Text     | Send a text message              |
+| **Message** | Send Image    | Send an image (URL or Base64)    |
+| **Message** | Send Document | Send a document/file             |
+| **Message** | Send Location | Send a location pin              |
+| **Contact** | Check Exists  | Check if a number is on WhatsApp |
+| **Contact** | Get Info      | Get contact information          |
+| **Webhook** | Create        | Create a webhook                 |
+| **Webhook** | Delete        | Delete a webhook                 |
 
 #### Example: Send Text Message
 
@@ -67,13 +68,13 @@ Start workflows when events occur on your WhatsApp session.
 
 #### Supported Events
 
-| Event | Description |
-|-------|-------------|
-| `message.received` | New incoming message |
-| `message.sent` | Message successfully sent |
-| `session.connected` | Session authenticated |
-| `session.disconnected` | Session lost connection |
-| `session.qr_ready` | QR code generated for scanning |
+| Event                  | Description                    |
+| ---------------------- | ------------------------------ |
+| `message.received`     | New incoming message           |
+| `message.sent`         | Message successfully sent      |
+| `session.connected`    | Session authenticated          |
+| `session.disconnected` | Session lost connection        |
+| `session.qr_ready`     | QR code generated for scanning |
 
 #### Example: Auto-reply Workflow
 
