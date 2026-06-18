@@ -1,82 +1,106 @@
-# @rmyndharis/n8n-nodes-openwa
+<p align="center">
+  <img src="https://raw.githubusercontent.com/rmyndharis/OpenWA/main/docs/logo/openwa_logo.webp" alt="OpenWA Logo" width="180"/>
+</p>
 
-Official n8n community nodes for [OpenWA](https://github.com/rmyndharis/OpenWA) - Self-hosted WhatsApp API Gateway.
+<h1 align="center">n8n-nodes-openwa</h1>
 
-This package provides two nodes:
+<p align="center">
+  <strong>n8n community nodes for the <a href="https://github.com/rmyndharis/OpenWA">OpenWA</a> WhatsApp API Gateway</strong>
+</p>
 
-- **OpenWA** - Execute operations like sending messages, checking contacts, managing webhooks
-- **OpenWA Trigger** - Start workflows when WhatsApp events occur (incoming messages, session status changes)
+<p align="center">
+  <a href="#-installation">Installation</a> •
+  <a href="#-credentials">Credentials</a> •
+  <a href="#-nodes">Nodes</a> •
+  <a href="#-example-workflows">Examples</a> •
+  <a href="#-compatibility">Compatibility</a>
+</p>
 
-> **Compatibility:** Requires an OpenWA server **>= 0.2.8**. Verified against OpenWA v0.4.0.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/v/@rmyndharis/n8n-nodes-openwa.svg?color=blue" alt="npm version"/></a>
+  <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
+  <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
+  <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.2.8-25D366.svg" alt="OpenWA >= 0.2.8"/>
+  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
+</p>
 
-## Installation
+---
 
-### Community Nodes (Recommended)
+## ✨ Overview
 
-1. Go to **Settings > Community Nodes**
+Two n8n nodes that connect your workflows to a self-hosted [OpenWA](https://github.com/rmyndharis/OpenWA) WhatsApp API Gateway — send and receive WhatsApp messages, manage contacts, and react to events in real time.
+
+| Node               | Type    | Purpose                                                    |
+| ------------------ | ------- | ---------------------------------------------------------- |
+| **OpenWA**         | Action  | Send messages, check contacts, manage sessions and webhooks |
+| **OpenWA Trigger** | Trigger | Start workflows on incoming messages, session and group events |
+
+---
+
+## 📦 Installation
+
+### Community Nodes (recommended)
+
+1. In n8n, open **Settings → Community Nodes**
 2. Select **Install**
-3. Enter `@rmyndharis/n8n-nodes-openwa` and agree to the risks
+3. Enter `@rmyndharis/n8n-nodes-openwa` and accept the risk prompt
 4. Restart n8n
 
-### Manual Installation
+### Manual
 
 ```bash
 cd ~/.n8n/nodes
 npm install @rmyndharis/n8n-nodes-openwa
 ```
 
-## Credentials
+---
 
-You need to configure OpenWA API credentials:
+## 🔑 Credentials
 
-| Field          | Description                                             |
-| -------------- | ------------------------------------------------------- |
-| **Server URL** | Your OpenWA server URL (e.g., `https://wa.example.com`) |
-| **API Key**    | API key from your OpenWA dashboard                      |
+Create an **OpenWA API** credential:
 
-## Nodes
+| Field          | Description                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------------- |
+| **Server URL** | OpenWA server URL, without a trailing slash or `/api` (e.g. `https://wa.example.com`). Use HTTPS in production. |
+| **API Key**    | API key from your OpenWA dashboard. Sent as the `X-API-Key` header.                                  |
 
-### OpenWA Node
+The credential is validated against `GET /api/health`.
 
-Execute operations on your OpenWA server.
+---
 
-#### Resources & Operations
+## 🧩 Nodes
 
-| Resource    | Operation     | Description                      |
-| ----------- | ------------- | -------------------------------- |
-| **Session** | Get Status    | Get the status of a session      |
-| **Session** | List All      | List all sessions                |
-| **Message** | Send Text     | Send a text message              |
-| **Message** | Send Image    | Send an image (URL or Base64)    |
-| **Message** | Send Document | Send a document/file             |
-| **Message** | Send Location | Send a location pin              |
-| **Contact** | Check Exists  | Check if a number is on WhatsApp |
-| **Contact** | Get Info      | Get contact information          |
-| **Webhook** | Create        | Create a webhook                 |
-| **Webhook** | Delete        | Delete a webhook                 |
+### OpenWA (action)
 
-> **Webhook → Create** accepts an optional **Webhook Secret**. When set, OpenWA signs every delivery to that webhook with an `X-OpenWA-Signature` (HMAC-SHA256) header — the **OpenWA Trigger** verifies it automatically (see [Webhook Signature Verification](#webhook-signature-verification)).
+| Resource    | Operation     | Description                              |
+| ----------- | ------------- | ---------------------------------------- |
+| **Session** | Get Status    | Get the status of a session              |
+| **Session** | List All      | List all sessions                        |
+| **Message** | Send Text     | Send a text message                      |
+| **Message** | Send Image    | Send an image (binary, URL, or Base64)   |
+| **Message** | Send Document | Send a document / file                   |
+| **Message** | Send Location | Send a location pin                      |
+| **Contact** | Check Exists  | Check whether a number is on WhatsApp    |
+| **Contact** | Get Info      | Get contact information                  |
+| **Webhook** | Create        | Register a webhook (optional signing secret) |
+| **Webhook** | Delete        | Remove a webhook                         |
 
-#### Example: Send Text Message
+**Example — send a text message**
 
 1. Add an **OpenWA** node
-2. Select **Message** resource and **Send Text** operation
-3. Configure:
-   - **Session ID**: `default` (or your session name)
-   - **Chat ID**: `628123456789@c.us`
-   - **Message**: `Hello from n8n!`
+2. Select the **Message** resource and **Send Text** operation
+3. Configure **Session ID** (`default`), **Chat ID** (`628123456789@c.us`), and **Message**
 
-### OpenWA Trigger Node
+### OpenWA Trigger
 
-Start workflows when events occur on your WhatsApp session.
-
-#### Supported Events
+Starts a workflow when the selected events arrive on your session.
 
 | Event                   | Description                           |
 | ----------------------- | ------------------------------------- |
 | `message.received`      | New incoming message                  |
 | `message.sent`          | Message successfully sent             |
-| `message.ack`           | Message delivery/read acknowledgement |
+| `message.ack`           | Message delivery / read acknowledgement |
 | `message.failed`        | Message failed to send                |
 | `message.revoked`       | Message deleted for everyone          |
 | `session.status`        | Session status changed                |
@@ -87,19 +111,13 @@ Start workflows when events occur on your WhatsApp session.
 | `group.leave`           | Participant left a group              |
 | `group.update`          | Group metadata changed                |
 
-#### Webhook Signature Verification
+#### 🔐 Signature verification
 
-The Trigger has an optional **Webhook Secret** field. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and drops any that fail. Leave the field empty to skip verification.
+The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
 
-#### Example: Auto-reply Workflow
+> Changing or clearing the secret takes effect on the next activation — deactivate and reactivate the workflow to re-register it.
 
-1. Add an **OpenWA Trigger** node
-2. Configure:
-   - **Session ID**: `default`
-   - **Events**: `Message Received`
-3. Connect to an **OpenWA** node to send a reply
-
-#### Trigger Output Data
+#### Trigger output
 
 ```json
 {
@@ -121,53 +139,59 @@ The Trigger has an optional **Webhook Secret** field. When set, the secret is re
 >
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
-> - The **Check Exists** contact operation returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
+> - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
-## Example Workflows
+---
 
-### Auto-reply to Messages
+## 📡 Example Workflows
 
-```
-[OpenWA Trigger] → [IF: Check keyword] → [OpenWA: Send Text]
-```
+| Pattern         | Flow                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| Auto-reply      | `[OpenWA Trigger]` → `[IF: keyword]` → `[OpenWA: Send Text]`       |
+| Session monitor | `[OpenWA Trigger: session.disconnected]` → `[Slack: Alert]`        |
+| Lead capture    | `[OpenWA Trigger]` → `[Google Sheets: Append]` → `[OpenWA: Send Text]` |
 
-### Session Monitoring
+---
 
-```
-[OpenWA Trigger: session.disconnected] → [Slack: Send Alert]
-```
+## 🔗 Compatibility
 
-### Lead Collection
+Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.4.0**.
 
-```
-[OpenWA Trigger] → [Google Sheets: Append Row] → [OpenWA: Send Text]
-```
+---
 
-## Development
+## 🛠 Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Watch mode
-npm run dev
-
-# Lint
-npm run lint
-
-# Format
-npm run format
+npm install      # install dependencies
+npm run build    # compile TypeScript + copy icons
+npm run dev      # watch mode
+npm run lint     # ESLint
+npm test         # build + signature-verification unit tests
 ```
 
-## Links
+---
 
-- [OpenWA Repository](https://github.com/rmyndharis/OpenWA)
-- [OpenWA Documentation](https://github.com/rmyndharis/OpenWA/tree/main/_docs)
-- [n8n Community Nodes Documentation](https://docs.n8n.io/integrations/community-nodes/)
+## 📚 Links
 
-## License
+- [OpenWA Server](https://github.com/rmyndharis/OpenWA) — the WhatsApp API Gateway
+- [OpenWA Documentation](https://github.com/rmyndharis/OpenWA/tree/main/docs)
+- [OpenWA API Reference](https://github.com/rmyndharis/OpenWA/blob/main/docs/06-api-specification.md)
+- [n8n Community Nodes](https://docs.n8n.io/integrations/community-nodes/)
 
-MIT
+---
+
+## 📄 License
+
+[MIT](./LICENSE) — free for personal and commercial use.
+
+---
+
+<div align="center">
+
+[📦 npm](https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa) · [🐛 Report Bug](https://github.com/rmyndharis/OpenWA-n8n/issues) · [💡 Request Feature](https://github.com/rmyndharis/OpenWA-n8n/issues)
+
+<br/>
+
+<sub>Built for the <a href="https://github.com/rmyndharis/OpenWA">OpenWA</a> community.</sub>
+
+</div>
