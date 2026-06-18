@@ -390,6 +390,19 @@ class OpenWa {
                     description: 'Events to subscribe to',
                 },
                 {
+                    displayName: 'Webhook Secret',
+                    name: 'webhookSecret',
+                    type: 'string',
+                    typeOptions: {
+                        password: true,
+                    },
+                    default: '',
+                    displayOptions: {
+                        show: { resource: ['webhook'], operation: ['create'] },
+                    },
+                    description: 'Optional shared secret. If set, OpenWA signs each delivery to this webhook with an X-OpenWA-Signature (HMAC-SHA256) header.',
+                },
+                {
                     displayName: 'Webhook ID',
                     name: 'webhookId',
                     type: 'string',
@@ -541,6 +554,10 @@ class OpenWa {
                             url: this.getNodeParameter('webhookUrl', i),
                             events,
                         };
+                        const webhookSecret = this.getNodeParameter('webhookSecret', i, '');
+                        if (webhookSecret) {
+                            body.secret = webhookSecret;
+                        }
                     }
                     else if (operation === 'delete') {
                         const webhookId = sanitizePathParam(this.getNodeParameter('webhookId', i), 'Webhook ID');
