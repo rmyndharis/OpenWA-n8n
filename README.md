@@ -7,6 +7,8 @@ This package provides two nodes:
 - **OpenWA** - Execute operations like sending messages, checking contacts, managing webhooks
 - **OpenWA Trigger** - Start workflows when WhatsApp events occur (incoming messages, session status changes)
 
+> **Compatibility:** Requires an OpenWA server **>= 0.2.8**. Verified against OpenWA v0.4.0.
+
 ## Installation
 
 ### Community Nodes (Recommended)
@@ -53,6 +55,8 @@ Execute operations on your OpenWA server.
 | **Webhook** | Create        | Create a webhook                 |
 | **Webhook** | Delete        | Delete a webhook                 |
 
+> **Webhook → Create** accepts an optional **Webhook Secret**. When set, OpenWA signs every delivery to that webhook with an `X-OpenWA-Signature` (HMAC-SHA256) header — the **OpenWA Trigger** verifies it automatically (see [Webhook Signature Verification](#webhook-signature-verification)).
+
 #### Example: Send Text Message
 
 1. Add an **OpenWA** node
@@ -68,13 +72,24 @@ Start workflows when events occur on your WhatsApp session.
 
 #### Supported Events
 
-| Event                  | Description                    |
-| ---------------------- | ------------------------------ |
-| `message.received`     | New incoming message           |
-| `message.sent`         | Message successfully sent      |
-| `session.connected`    | Session authenticated          |
-| `session.disconnected` | Session lost connection        |
-| `session.qr_ready`     | QR code generated for scanning |
+| Event                   | Description                           |
+| ----------------------- | ------------------------------------- |
+| `message.received`      | New incoming message                  |
+| `message.sent`          | Message successfully sent             |
+| `message.ack`           | Message delivery/read acknowledgement |
+| `message.failed`        | Message failed to send                |
+| `message.revoked`       | Message deleted for everyone          |
+| `session.status`        | Session status changed                |
+| `session.qr`            | QR code generated for scanning        |
+| `session.authenticated` | Session authenticated                 |
+| `session.disconnected`  | Session lost connection               |
+| `group.join`            | Participant joined a group            |
+| `group.leave`           | Participant left a group              |
+| `group.update`          | Group metadata changed                |
+
+#### Webhook Signature Verification
+
+The Trigger has an optional **Webhook Secret** field. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and drops any that fail. Leave the field empty to skip verification.
 
 #### Example: Auto-reply Workflow
 
@@ -92,7 +107,7 @@ Start workflows when events occur on your WhatsApp session.
   "timestamp": "2024-01-15T10:30:00Z",
   "sessionId": "default",
   "data": {
-    "messageId": "3EB0F5A2B4C...",
+    "id": "3EB0F5A2B4C...",
     "chatId": "628123456789@c.us",
     "from": "628123456789@c.us",
     "body": "Hello!",
@@ -101,6 +116,12 @@ Start workflows when events occur on your WhatsApp session.
   }
 }
 ```
+
+> **Payload notes**
+>
+> - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
+> - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
+> - The **Check Exists** contact operation returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
 ## Example Workflows
 

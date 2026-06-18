@@ -383,15 +383,36 @@ export class OpenWa implements INodeType {
         options: [
           { name: 'Message Received', value: 'message.received' },
           { name: 'Message Sent', value: 'message.sent' },
-          { name: 'Session Connected', value: 'session.connected' },
+          { name: 'Message Ack', value: 'message.ack' },
+          { name: 'Message Failed', value: 'message.failed' },
+          { name: 'Message Revoked', value: 'message.revoked' },
+          { name: 'Session Status', value: 'session.status' },
+          { name: 'Session QR', value: 'session.qr' },
+          { name: 'Session Authenticated', value: 'session.authenticated' },
           { name: 'Session Disconnected', value: 'session.disconnected' },
-          { name: 'Session QR Ready', value: 'session.qr_ready' },
+          { name: 'Group Join', value: 'group.join' },
+          { name: 'Group Leave', value: 'group.leave' },
+          { name: 'Group Update', value: 'group.update' },
         ],
         default: ['message.received'],
         displayOptions: {
           show: { resource: ['webhook'], operation: ['create'] },
         },
         description: 'Events to subscribe to',
+      },
+      {
+        displayName: 'Webhook Secret',
+        name: 'webhookSecret',
+        type: 'string',
+        typeOptions: {
+          password: true,
+        },
+        default: '',
+        displayOptions: {
+          show: { resource: ['webhook'], operation: ['create'] },
+        },
+        description:
+          'Optional shared secret. If set, OpenWA signs each delivery to this webhook with an X-OpenWA-Signature (HMAC-SHA256) header.',
       },
       {
         displayName: 'Webhook ID',
@@ -571,6 +592,10 @@ export class OpenWa implements INodeType {
               url: this.getNodeParameter('webhookUrl', i) as string,
               events,
             };
+            const webhookSecret = this.getNodeParameter('webhookSecret', i, '') as string;
+            if (webhookSecret) {
+              body.secret = webhookSecret;
+            }
           } else if (operation === 'delete') {
             const webhookId = sanitizePathParam(
               this.getNodeParameter('webhookId', i) as string,

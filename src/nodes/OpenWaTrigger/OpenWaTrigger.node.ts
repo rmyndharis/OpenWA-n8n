@@ -7,6 +7,7 @@ import type {
   JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
+import { verifyOpenWaSignature } from './verifySignature';
 
 function sanitizePathParam(value: string, paramName: string): string {
   const trimmed = value.trim();
@@ -72,19 +73,54 @@ export class OpenWaTrigger implements INodeType {
             description: 'Triggers when a message is sent successfully',
           },
           {
-            name: 'Session Connected',
-            value: 'session.connected',
-            description: 'Triggers when session is authenticated',
+            name: 'Message Ack',
+            value: 'message.ack',
+            description: 'Triggers on a message delivery or read acknowledgement',
+          },
+          {
+            name: 'Message Failed',
+            value: 'message.failed',
+            description: 'Triggers when a message fails to send',
+          },
+          {
+            name: 'Message Revoked',
+            value: 'message.revoked',
+            description: 'Triggers when a message is deleted for everyone',
+          },
+          {
+            name: 'Session Status',
+            value: 'session.status',
+            description: 'Triggers on any session status change',
+          },
+          {
+            name: 'Session QR',
+            value: 'session.qr',
+            description: 'Triggers when a new QR code is generated',
+          },
+          {
+            name: 'Session Authenticated',
+            value: 'session.authenticated',
+            description: 'Triggers when the session is authenticated',
           },
           {
             name: 'Session Disconnected',
             value: 'session.disconnected',
-            description: 'Triggers when session loses connection',
+            description: 'Triggers when the session loses connection',
           },
           {
-            name: 'Session QR Ready',
-            value: 'session.qr_ready',
-            description: 'Triggers when QR code is generated',
+            name: 'Group Join',
+            value: 'group.join',
+            description: 'Triggers when a participant joins a group',
+          },
+          {
+            name: 'Group Leave',
+            value: 'group.leave',
+            description: 'Triggers when a participant leaves a group',
+          },
+          {
+            name: 'Group Update',
+            value: 'group.update',
+            description: 'Triggers when group metadata changes',
           },
         ],
         default: ['message.received'],
@@ -100,7 +136,7 @@ export class OpenWaTrigger implements INodeType {
         },
         default: '',
         description:
-          'Optional shared secret to verify incoming webhooks. If set, requests must include a matching X-Webhook-Secret header.',
+          'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped.',
       },
     ],
   };
@@ -141,6 +177,7 @@ export class OpenWaTrigger implements INodeType {
           'Session ID',
         );
         const events = this.getNodeParameter('events') as string[];
+        const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
 
         if (!events || events.length === 0) {
           throw new Error('At least one event must be selected');
@@ -150,6 +187,10 @@ export class OpenWaTrigger implements INodeType {
           url: webhookUrl,
           events,
         };
+        // Register the shared secret so OpenWA signs each delivery (HMAC-SHA256).
+        if (webhookSecret) {
+          body.secret = webhookSecret;
+        }
 
         const response = await this.helpers.httpRequestWithAuthentication.call(
           this,
@@ -214,20 +255,31 @@ export class OpenWaTrigger implements INodeType {
 
   async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
     const req = this.getRequestObject();
-    const body = req.body;
 
-    // Verify webhook secret if configured
+    // Verify the HMAC-SHA256 signature when a secret is configured. OpenWA signs
+    // the raw request body and sends it as `X-OpenWA-Signature: sha256=<hex>`.
     const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
     if (webhookSecret) {
-      const incomingSecret = req.headers['x-webhook-secret'] as string | undefined;
-      if (incomingSecret !== webhookSecret) {
+      if (typeof req.readRawBody === 'function' && !req.rawBody) {
+        await req.readRawBody();
+      }
+      // The raw bytes are the reliable source — OpenWA signs the exact JSON it
+      // sends. Re-serializing the parsed body is only a last-resort fallback.
+      const rawBody: Buffer | string = req.rawBody ?? JSON.stringify(req.body ?? {});
+      const signatureHeader = req.headers['x-openwa-signature'];
+      const signature = typeof signatureHeader === 'string' ? signatureHeader : undefined;
+      if (!verifyOpenWaSignature(rawBody, webhookSecret, signature)) {
+        // Reject with 401 so OpenWA sees the delivery was refused. IWebhookResponseData
+        // has no status field, so set it on the response and suppress n8n's own response.
+        this.getResponseObject().status(401).send('Unauthorized');
         return {
-          webhookResponse: 'Unauthorized',
+          noWebhookResponse: true,
           workflowData: [[]],
         };
       }
     }
 
+    const body = req.body;
     // Validate payload is an object
     if (!body || typeof body !== 'object') {
       return {
