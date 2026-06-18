@@ -55,6 +55,8 @@ Execute operations on your OpenWA server.
 | **Webhook** | Create        | Create a webhook                 |
 | **Webhook** | Delete        | Delete a webhook                 |
 
+> **Webhook → Create** accepts an optional **Webhook Secret**. When set, OpenWA signs every delivery to that webhook with an `X-OpenWA-Signature` (HMAC-SHA256) header — the **OpenWA Trigger** verifies it automatically (see [Webhook Signature Verification](#webhook-signature-verification)).
+
 #### Example: Send Text Message
 
 1. Add an **OpenWA** node
