@@ -383,9 +383,16 @@ export class OpenWa implements INodeType {
         options: [
           { name: 'Message Received', value: 'message.received' },
           { name: 'Message Sent', value: 'message.sent' },
-          { name: 'Session Connected', value: 'session.connected' },
+          { name: 'Message Ack', value: 'message.ack' },
+          { name: 'Message Failed', value: 'message.failed' },
+          { name: 'Message Revoked', value: 'message.revoked' },
+          { name: 'Session Status', value: 'session.status' },
+          { name: 'Session QR', value: 'session.qr' },
+          { name: 'Session Authenticated', value: 'session.authenticated' },
           { name: 'Session Disconnected', value: 'session.disconnected' },
-          { name: 'Session QR Ready', value: 'session.qr_ready' },
+          { name: 'Group Join', value: 'group.join' },
+          { name: 'Group Leave', value: 'group.leave' },
+          { name: 'Group Update', value: 'group.update' },
         ],
         default: ['message.received'],
         displayOptions: {
