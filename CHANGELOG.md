@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.1.1...v0.2.0) (2026-06-18)
+
+
+### Features
+
+* support a webhook secret in the action node Create Webhook operation ([7f0b62c](https://github.com/rmyndharis/OpenWA-n8n/commit/7f0b62ccf61aaffa961878f25b3facd344fca69d))
+
+
+### Bug Fixes
+
+* sync webhook events and HMAC verification with OpenWA v0.4.0 ([78ebaf7](https://github.com/rmyndharis/OpenWA-n8n/commit/78ebaf78af52fe0922979b6508f42ed9a02f92e7))
+* sync webhook events and HMAC verification with OpenWA v0.4.0 ([379c703](https://github.com/rmyndharis/OpenWA-n8n/commit/379c703aaa7005cb62aa3cacb8b401823866758a)), closes [#1](https://github.com/rmyndharis/OpenWA-n8n/issues/1)
+
 ## [0.1.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.1.0...v0.1.1) (2026-02-17)
 
 ### Security
