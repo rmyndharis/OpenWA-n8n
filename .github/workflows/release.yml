@@ -32,7 +32,9 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
+      - run: node --test test/verifySignature.test.mjs
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -47,7 +49,9 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
+      - run: node --test test/verifySignature.test.mjs
       - name: Deploy to server
         uses: appleboy/scp-action@v0.1.7
         with:
