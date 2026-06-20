@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "strict": true,
-    "module": "commonjs",
+    "module": "node16",
     "target": "ES2021",
     "lib": ["ES2021"],
     "declaration": true,
@@ -12,7 +12,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noUnusedLocals": true
