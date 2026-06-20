@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.2.0...v0.2.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* align node with OpenWA 0.4.5 API changes ([9e7fbfb](https://github.com/rmyndharis/OpenWA-n8n/commit/9e7fbfb5fb959517e82e61dfd2e0f66570a7b2ca))
+* align node with OpenWA 0.4.5 API changes ([4925c2c](https://github.com/rmyndharis/OpenWA-n8n/commit/4925c2c0850d095920dee9b3badd41ba647edbc5))
+
 ## [0.2.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.1.1...v0.2.0) (2026-06-18)
 
 
