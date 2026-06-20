@@ -187,6 +187,18 @@ export class OpenWa implements INodeType {
         description: 'Base64 encoded image data',
       },
       {
+        displayName: 'MIME Type',
+        name: 'imageMimeType',
+        type: 'string',
+        default: 'image/jpeg',
+        required: true,
+        placeholder: 'image/png',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendImage'], imageSource: ['base64'] },
+        },
+        description: 'MIME type of the base64 image. OpenWA requires this whenever base64 data is sent.',
+      },
+      {
         displayName: 'Caption',
         name: 'caption',
         type: 'string',
@@ -243,6 +255,19 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendDocument'], documentSource: ['base64'] },
         },
         description: 'Base64 encoded document data',
+      },
+      {
+        displayName: 'MIME Type',
+        name: 'documentMimeType',
+        type: 'string',
+        default: 'application/pdf',
+        required: true,
+        placeholder: 'application/pdf',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendDocument'], documentSource: ['base64'] },
+        },
+        description:
+          'MIME type of the base64 document. OpenWA requires this whenever base64 data is sent.',
       },
       {
         displayName: 'Filename',
@@ -390,9 +415,9 @@ export class OpenWa implements INodeType {
           { name: 'Session QR', value: 'session.qr' },
           { name: 'Session Authenticated', value: 'session.authenticated' },
           { name: 'Session Disconnected', value: 'session.disconnected' },
-          { name: 'Group Join', value: 'group.join' },
-          { name: 'Group Leave', value: 'group.leave' },
-          { name: 'Group Update', value: 'group.update' },
+          { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
+          { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
+          { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
         ],
         default: ['message.received'],
         displayOptions: {
@@ -490,12 +515,17 @@ export class OpenWa implements INodeType {
             }
             if (imageSource === 'binary') {
               const binaryPropertyName = this.getNodeParameter('imageBinaryProperty', i) as string;
+              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
               const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
               body.base64 = binaryData.toString('base64');
+              // OpenWA rejects base64 without a mimetype; fall back to the server's own
+              // default if the binary item somehow carries no MIME type.
+              body.mimetype = binary.mimeType || 'application/octet-stream';
             } else if (imageSource === 'url') {
               body.url = this.getNodeParameter('imageUrl', i) as string;
             } else {
               body.base64 = this.getNodeParameter('imageBase64', i) as string;
+              body.mimetype = this.getNodeParameter('imageMimeType', i) as string;
             }
           } else if (operation === 'sendDocument') {
             endpoint = `/api/sessions/${sessionId}/messages/send-document`;
@@ -514,12 +544,17 @@ export class OpenWa implements INodeType {
                 'documentBinaryProperty',
                 i,
               ) as string;
+              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
               const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
               body.base64 = binaryData.toString('base64');
+              // OpenWA rejects base64 without a mimetype; fall back to the server's own
+              // default if the binary item somehow carries no MIME type.
+              body.mimetype = binary.mimeType || 'application/octet-stream';
             } else if (documentSource === 'url') {
               body.url = this.getNodeParameter('documentUrl', i) as string;
             } else {
               body.base64 = this.getNodeParameter('documentBase64', i) as string;
+              body.mimetype = this.getNodeParameter('documentMimeType', i) as string;
             }
           } else if (operation === 'sendLocation') {
             endpoint = `/api/sessions/${sessionId}/messages/send-location`;
@@ -533,7 +568,8 @@ export class OpenWa implements INodeType {
               this.getNodeParameter('locationName', i, '') as string
             ).trim();
             if (locationName) {
-              body.name = locationName;
+              // OpenWA's SendLocationDto uses `description` for the location label.
+              body.description = locationName;
             }
           }
         }
