@@ -86,6 +86,8 @@ The credential is validated against `GET /api/health`.
 | **Webhook** | Create        | Register a webhook (optional signing secret) |
 | **Webhook** | Delete        | Remove a webhook                         |
 
+> **Base64 media:** when sending an image or document from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
+
 **Example — send a text message**
 
 1. Add an **OpenWA** node
@@ -107,9 +109,9 @@ Starts a workflow when the selected events arrive on your session.
 | `session.qr`            | QR code generated for scanning        |
 | `session.authenticated` | Session authenticated                 |
 | `session.disconnected`  | Session lost connection               |
-| `group.join`            | Participant joined a group            |
-| `group.leave`           | Participant left a group              |
-| `group.update`          | Group metadata changed                |
+| `group.join`            | Participant joined a group — _reserved: accepted on subscribe but not yet emitted by OpenWA_ |
+| `group.leave`           | Participant left a group — _reserved: not yet emitted_ |
+| `group.update`          | Group metadata changed — _reserved: not yet emitted_ |
 
 #### 🔐 Signature verification
 
@@ -155,7 +157,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.4.0**.
+Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.4.5**.
 
 ---
 
