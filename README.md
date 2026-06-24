@@ -62,10 +62,10 @@ Create an **OpenWA API** credential:
 
 | Field          | Description                                                                                          |
 | -------------- | ---------------------------------------------------------------------------------------------------- |
-| **Server URL** | OpenWA server URL, without a trailing slash or `/api` (e.g. `https://wa.example.com`). Use HTTPS in production. |
+| **Server URL** | OpenWA server URL, without a trailing slash or `/api`. Defaults to `http://localhost:2785` for a local server (e.g. `https://wa.example.com` behind a reverse proxy). Use HTTPS in production. |
 | **API Key**    | API key from your OpenWA dashboard. Sent as the `X-API-Key` header.                                  |
 
-The credential is validated against `GET /api/health`.
+The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
 ---
 
@@ -105,6 +105,7 @@ Starts a workflow when the selected events arrive on your session.
 | `message.ack`           | Message delivery / read acknowledgement |
 | `message.failed`        | Message failed to send                |
 | `message.revoked`       | Message deleted for everyone          |
+| `message.reaction`      | Reaction added to or removed from a message (server **≥ 0.7.2**) |
 | `session.status`        | Session status changed                |
 | `session.qr`            | QR code generated for scanning        |
 | `session.authenticated` | Session authenticated                 |
@@ -126,6 +127,8 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
   "event": "message.received",
   "timestamp": "2024-01-15T10:30:00Z",
   "sessionId": "default",
+  "idempotencyKey": "a1b2c3d4-...",
+  "deliveryId": "e5f6a7b8-...",
   "data": {
     "id": "3EB0F5A2B4C...",
     "chatId": "628123456789@c.us",
@@ -139,7 +142,9 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 > **Payload notes**
 >
+> - Each delivery is an envelope (`event`, `sessionId`, `idempotencyKey`, `deliveryId`, …); the actual event payload is under `data`. Read message fields from `data` (e.g. `data.body`, `data.chatId`).
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
+> - OpenWA retries failed deliveries with the same `deliveryId` — de-duplicate on it if your downstream actions aren't idempotent.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
