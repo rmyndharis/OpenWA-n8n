@@ -12,7 +12,7 @@ class OpenWaApi {
                 displayName: 'Server URL',
                 name: 'serverUrl',
                 type: 'string',
-                default: 'https://localhost:2785',
+                default: 'http://localhost:2785',
                 placeholder: 'https://wa.yourserver.com',
                 description: 'The URL of your OpenWA server (without trailing slash or /api). Use HTTPS in production.',
                 required: true,
@@ -40,7 +40,9 @@ class OpenWaApi {
         this.test = {
             request: {
                 baseURL: '={{$credentials.serverUrl}}',
-                url: '/api/health',
+                // Authenticated, side-effect-free endpoint so an invalid API key fails the test.
+                // /api/health is public and would accept any key as valid.
+                url: '/api/sessions',
                 method: 'GET',
             },
         };

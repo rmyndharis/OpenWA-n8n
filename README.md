@@ -157,7 +157,10 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.4.5**.
+Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.2**.
+
+> The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
+> server returns a 400 when the webhook is created.
 
 ---
 

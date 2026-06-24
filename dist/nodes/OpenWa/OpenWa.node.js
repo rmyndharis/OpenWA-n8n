@@ -399,6 +399,7 @@ class OpenWa {
                         { name: 'Message Ack', value: 'message.ack' },
                         { name: 'Message Failed', value: 'message.failed' },
                         { name: 'Message Revoked', value: 'message.revoked' },
+                        { name: 'Message Reaction', value: 'message.reaction' },
                         { name: 'Session Status', value: 'session.status' },
                         { name: 'Session QR', value: 'session.qr' },
                         { name: 'Session Authenticated', value: 'session.authenticated' },
@@ -617,11 +618,16 @@ class OpenWa {
                     options.body = body;
                 }
                 const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', options);
-                returnData.push({ json: response });
+                // A successful DELETE returns 204 No Content (empty body); surface a concrete
+                // result so downstream nodes get an object to read instead of an empty item.
+                const json = method === 'DELETE' && (response === '' || response === undefined || response === null)
+                    ? { success: true }
+                    : response;
+                returnData.push({ json, pairedItem: { item: i } });
             }
             catch (error) {
                 if (this.continueOnFail()) {
-                    returnData.push({ json: { error: error.message } });
+                    returnData.push({ json: { error: error.message }, pairedItem: { item: i } });
                     continue;
                 }
                 if (error instanceof n8n_workflow_1.NodeOperationError) {

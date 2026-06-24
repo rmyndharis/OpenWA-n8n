@@ -411,6 +411,7 @@ export class OpenWa implements INodeType {
           { name: 'Message Ack', value: 'message.ack' },
           { name: 'Message Failed', value: 'message.failed' },
           { name: 'Message Revoked', value: 'message.revoked' },
+          { name: 'Message Reaction', value: 'message.reaction' },
           { name: 'Session Status', value: 'session.status' },
           { name: 'Session QR', value: 'session.qr' },
           { name: 'Session Authenticated', value: 'session.authenticated' },
@@ -671,10 +672,16 @@ export class OpenWa implements INodeType {
           options,
         );
 
-        returnData.push({ json: response as JsonObject });
+        // A successful DELETE returns 204 No Content (empty body); surface a concrete
+        // result so downstream nodes get an object to read instead of an empty item.
+        const json =
+          method === 'DELETE' && (response === '' || response === undefined || response === null)
+            ? { success: true }
+            : (response as JsonObject);
+        returnData.push({ json, pairedItem: { item: i } });
       } catch (error) {
         if (this.continueOnFail()) {
-          returnData.push({ json: { error: (error as Error).message } });
+          returnData.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
           continue;
         }
         if (error instanceof NodeOperationError) {
