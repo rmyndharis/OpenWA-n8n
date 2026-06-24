@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.2.1...v0.3.0) (2026-06-24)
+
+
+### Features
+
+* sync webhook events, preserve item lineage, and harden webhook handling ([bf27433](https://github.com/rmyndharis/OpenWA-n8n/commit/bf27433633708215cda2b0b675d69c413b56a802))
+
 ## [0.2.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.2.0...v0.2.1) (2026-06-20)
 
 
