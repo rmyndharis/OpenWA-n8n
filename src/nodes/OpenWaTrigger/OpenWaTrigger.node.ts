@@ -88,6 +88,11 @@ export class OpenWaTrigger implements INodeType {
             description: 'Triggers when a message is deleted for everyone',
           },
           {
+            name: 'Message Reaction',
+            value: 'message.reaction',
+            description: 'Triggers when a reaction is added to or removed from a message',
+          },
+          {
             name: 'Session Status',
             value: 'session.status',
             description: 'Triggers on any session status change',
@@ -140,6 +145,13 @@ export class OpenWaTrigger implements INodeType {
         default: '',
         description:
           'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret takes effect on the next activation; deactivate and reactivate the workflow to re-register it.',
+      },
+      {
+        displayName:
+          'Each event arrives as an envelope: <code>event</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries.',
+        name: 'outputShapeNotice',
+        type: 'notice',
+        default: '',
       },
     ],
   };
@@ -206,9 +218,7 @@ export class OpenWaTrigger implements INodeType {
           },
         );
 
-        const webhookId =
-          (response as Record<string, unknown>).id ||
-          ((response as Record<string, Record<string, unknown>>).data?.id as string | undefined);
+        const webhookId = (response as Record<string, unknown>).id;
         if (!webhookId) {
           throw new NodeApiError(
             this.getNode(),
@@ -217,7 +227,8 @@ export class OpenWaTrigger implements INodeType {
         }
 
         const webhookData = this.getWorkflowStaticData('node');
-        webhookData.webhookId = webhookId;
+        // Normalize to string so checkExists/delete comparisons stay consistent.
+        webhookData.webhookId = String(webhookId);
         return true;
       },
 
@@ -242,9 +253,14 @@ export class OpenWaTrigger implements INodeType {
             json: true,
           });
         } catch (error) {
-          const statusCode =
-            (error as Record<string, unknown>).httpCode ||
-            (error as Record<string, unknown>).statusCode;
+          // httpRequestWithAuthentication may surface the status as a numeric
+          // `statusCode` or, once wrapped in a NodeApiError, a string `httpCode`.
+          // Normalize before comparing so an already-deleted webhook (404) is
+          // swallowed while any other error still propagates.
+          const err = error as Record<string, unknown>;
+          const statusCode = Number(
+            err.httpCode ?? err.statusCode ?? (err.response as Record<string, unknown>)?.status,
+          );
           if (statusCode !== 404) {
             throw error;
           }

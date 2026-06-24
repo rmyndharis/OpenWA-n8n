@@ -57,7 +57,7 @@
     "typescript": "^5.3.0"
   },
   "peerDependencies": {
-    "n8n-workflow": "*"
+    "n8n-workflow": ">=1.22.0"
   },
   "engines": {
     "node": ">=18.0.0"
