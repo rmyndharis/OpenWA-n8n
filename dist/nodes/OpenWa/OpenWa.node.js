@@ -302,6 +302,22 @@ class OpenWa {
                     },
                     description: 'Name of the location',
                 },
+                // Mentions (Send Text / Image / Document)
+                {
+                    displayName: 'Mentions',
+                    name: 'mentions',
+                    type: 'string',
+                    typeOptions: {
+                        multipleValues: true,
+                        multipleValueButtonText: 'Add Mention',
+                    },
+                    default: [],
+                    placeholder: '628123456789@c.us',
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendDocument'] },
+                    },
+                    description: 'WhatsApp IDs to @mention (e.g. 628123456789@c.us). The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render.',
+                },
                 // ============== CONTACT OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -549,6 +565,18 @@ class OpenWa {
                         if (locationName) {
                             // OpenWA's SendLocationDto uses `description` for the location label.
                             body.description = locationName;
+                        }
+                    }
+                    // Optional @mentions — only send-text/image/document accept them. Guard by
+                    // operation (not just the hidden field) so a mentions value can never ride
+                    // along on a sendLocation request, whose DTO rejects unknown fields (400).
+                    if (operation === 'sendText' || operation === 'sendImage' || operation === 'sendDocument') {
+                        const rawMentions = this.getNodeParameter('mentions', i, []);
+                        const mentions = (Array.isArray(rawMentions) ? rawMentions : [])
+                            .map((m) => String(m).trim())
+                            .filter(Boolean);
+                        if (mentions.length > 0) {
+                            body.mentions = mentions;
                         }
                     }
                 }
