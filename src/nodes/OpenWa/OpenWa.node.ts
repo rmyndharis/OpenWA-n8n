@@ -93,6 +93,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'] },
         },
         options: [
+          { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
           { name: 'Send Document', value: 'sendDocument', action: 'Send a document' },
           { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
           { name: 'Send Location', value: 'sendLocation', action: 'Send a location' },
@@ -278,6 +279,78 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
         description: 'Filename for the document',
+      },
+      // Send Audio fields
+      {
+        displayName: 'Audio Source',
+        name: 'audioSource',
+        type: 'options',
+        options: [
+          { name: 'Binary Data', value: 'binary' },
+          { name: 'URL', value: 'url' },
+          { name: 'Base64', value: 'base64' },
+        ],
+        default: 'url',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'] },
+        },
+      },
+      {
+        displayName: 'Binary Property',
+        name: 'audioBinaryProperty',
+        type: 'string',
+        default: 'data',
+        required: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'], audioSource: ['binary'] },
+        },
+        description: 'Name of the binary property containing the audio',
+      },
+      {
+        displayName: 'Audio URL',
+        name: 'audioUrl',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'], audioSource: ['url'] },
+        },
+        description: 'URL of the audio to send',
+      },
+      {
+        displayName: 'Base64 Data',
+        name: 'audioBase64',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'], audioSource: ['base64'] },
+        },
+        description: 'Base64 encoded audio data',
+      },
+      {
+        displayName: 'MIME Type',
+        name: 'audioMimeType',
+        type: 'string',
+        default: 'audio/ogg; codecs=opus',
+        required: true,
+        placeholder: 'audio/ogg; codecs=opus',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'], audioSource: ['base64'] },
+        },
+        description:
+          'MIME type of the base64 audio. OpenWA requires this whenever base64 data is sent. Use audio/ogg; codecs=opus for a voice note; for a plain audio file set its real type (e.g. audio/mpeg).',
+      },
+      {
+        displayName: 'Send as Voice Note',
+        name: 'sendAsVoiceNote',
+        type: 'boolean',
+        default: false,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendAudio'] },
+        },
+        description:
+          'Whether to deliver this as a true WhatsApp voice note (PTT — mic bubble with a waveform) instead of a plain audio file. Requires OGG/Opus audio (audio/ogg; codecs=opus) and an OpenWA server ≥ v0.7.17; leave off on older servers.',
       },
       // Send Location fields
       {
@@ -588,6 +661,30 @@ export class OpenWa implements INodeType {
             if (locationName) {
               // OpenWA's SendLocationDto uses `description` for the location label.
               body.description = locationName;
+            }
+          } else if (operation === 'sendAudio') {
+            endpoint = `/api/sessions/${sessionId}/messages/send-audio`;
+            method = 'POST';
+            const audioSource = this.getNodeParameter('audioSource', i) as string;
+            body = { chatId };
+            if (audioSource === 'binary') {
+              const binaryPropertyName = this.getNodeParameter('audioBinaryProperty', i) as string;
+              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
+              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+              body.base64 = binaryData.toString('base64');
+              // OpenWA rejects base64 without a mimetype; fall back to the voice-note
+              // format if the binary item somehow carries no MIME type.
+              body.mimetype = binary.mimeType || 'audio/ogg; codecs=opus';
+            } else if (audioSource === 'url') {
+              body.url = this.getNodeParameter('audioUrl', i) as string;
+            } else {
+              body.base64 = this.getNodeParameter('audioBase64', i) as string;
+              body.mimetype = this.getNodeParameter('audioMimeType', i) as string;
+            }
+            // Deliver as a true WhatsApp voice note (PTT). Only attach `ptt` when enabled so
+            // plain-audio sends stay backward-compatible; the field requires server >= v0.7.17.
+            if (this.getNodeParameter('sendAsVoiceNote', i, false) as boolean) {
+              body.ptt = true;
             }
           }
 

@@ -80,6 +80,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Message** | Send Text     | Send a text message                      |
 | **Message** | Send Image    | Send an image (binary, URL, or Base64)   |
 | **Message** | Send Document | Send a document / file                   |
+| **Message** | Send Audio    | Send an audio file or a voice note (PTT) |
 | **Message** | Send Location | Send a location pin                      |
 | **Contact** | Check Exists  | Check whether a number is on WhatsApp    |
 | **Contact** | Get Info      | Get contact information                  |
@@ -89,6 +90,8 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 > **Base64 media:** when sending an image or document from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
 > **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+
+> **Voice notes** (server **≥ 0.7.17**): Send Audio has a **Send as Voice Note** toggle. When on, the clip is delivered as a true WhatsApp voice note (the microphone bubble with a waveform) instead of a plain audio file. Voice notes require `audio/ogg; codecs=opus` audio for reliable playback. Leave the toggle off (plain audio file) on older servers.
 
 **Example — send a text message**
 
@@ -164,7 +167,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.16**.
+Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.17**.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
