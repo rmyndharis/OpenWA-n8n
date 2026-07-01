@@ -88,6 +88,8 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Base64 media:** when sending an image or document from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
+> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+
 **Example — send a text message**
 
 1. Add an **OpenWA** node
@@ -162,7 +164,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.2**.
+Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.16**.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
