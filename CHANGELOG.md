@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.3.0...v0.4.0) (2026-07-01)
+
+
+### Features
+
+* add optional [@mentions](https://github.com/mentions) to send operations; verify OpenWA v0.7.16 compatibility ([bd19a4d](https://github.com/rmyndharis/OpenWA-n8n/commit/bd19a4dce4d5dd03efebf413985aec305a0f1228))
+
 ## [0.3.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.2.1...v0.3.0) (2026-06-24)
 
 
