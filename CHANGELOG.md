@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.4.0...v0.5.0) (2026-07-01)
+
+
+### Features
+
+* add Send Audio operation with WhatsApp voice note (PTT) support ([b16cf93](https://github.com/rmyndharis/OpenWA-n8n/commit/b16cf93405308be03eed8d7a9feda1b0301dc895))
+
 ## [0.4.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.3.0...v0.4.0) (2026-07-01)
 
 
