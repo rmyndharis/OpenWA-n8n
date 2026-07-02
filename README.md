@@ -67,6 +67,8 @@ Create an **OpenWA API** credential:
 
 The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
+> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations: Session → Get Status / List All, and Contact → Check Exists / Get Info.
+
 ---
 
 ## 🧩 Nodes
@@ -167,7 +169,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.7.17**.
+Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.8.1**.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
