@@ -8,6 +8,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
+import { httpStatusFromError } from './httpStatus';
 
 function sanitizePathParam(value: string, paramName: string): string {
   const trimmed = value.trim();
@@ -253,15 +254,8 @@ export class OpenWaTrigger implements INodeType {
             json: true,
           });
         } catch (error) {
-          // httpRequestWithAuthentication may surface the status as a numeric
-          // `statusCode` or, once wrapped in a NodeApiError, a string `httpCode`.
-          // Normalize before comparing so an already-deleted webhook (404) is
-          // swallowed while any other error still propagates.
-          const err = error as Record<string, unknown>;
-          const statusCode = Number(
-            err.httpCode ?? err.statusCode ?? (err.response as Record<string, unknown>)?.status,
-          );
-          if (statusCode !== 404) {
+          // An already-deleted webhook (404) is fine to swallow; anything else propagates.
+          if (httpStatusFromError(error) !== 404) {
             throw error;
           }
         }

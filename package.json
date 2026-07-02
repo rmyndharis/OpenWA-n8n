@@ -23,7 +23,7 @@
     "dev": "tsc --watch",
     "format": "prettier --write \"src/**/*.ts\"",
     "lint": "eslint src --ext .ts",
-    "test": "npm run build && node --test test/verifySignature.test.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "prepublishOnly": "npm run build",
     "prepare": "husky"
   },

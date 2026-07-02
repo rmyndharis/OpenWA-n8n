@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWaTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const verifySignature_1 = require("./verifySignature");
+const httpStatus_1 = require("./httpStatus");
 function sanitizePathParam(value, paramName) {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -215,13 +216,8 @@ class OpenWaTrigger {
                         });
                     }
                     catch (error) {
-                        // httpRequestWithAuthentication may surface the status as a numeric
-                        // `statusCode` or, once wrapped in a NodeApiError, a string `httpCode`.
-                        // Normalize before comparing so an already-deleted webhook (404) is
-                        // swallowed while any other error still propagates.
-                        const err = error;
-                        const statusCode = Number(err.httpCode ?? err.statusCode ?? err.response?.status);
-                        if (statusCode !== 404) {
+                        // An already-deleted webhook (404) is fine to swallow; anything else propagates.
+                        if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
                             throw error;
                         }
                     }
