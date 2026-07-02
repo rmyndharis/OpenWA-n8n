@@ -59,3 +59,19 @@ test('delete: a non-404 error is rethrown', async () => {
   const { ctx } = makeCtx({ throwErr: { statusCode: 500 } });
   await assert.rejects(() => hooks().delete.call(ctx));
 });
+
+// --- checkExists hook wiring ---
+test('checkExists: a 404 probe reports the webhook absent so n8n recreates it', async () => {
+  const { ctx } = makeCtx({ throwErr: { statusCode: 404 } });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+});
+
+test('checkExists: a non-404 error is rethrown (no silent duplicate registration)', async () => {
+  const { ctx } = makeCtx({ throwErr: { statusCode: 500 } });
+  await assert.rejects(() => hooks().checkExists.call(ctx));
+});
+
+test('checkExists: a reachable webhook reports present', async () => {
+  const { ctx } = makeCtx();
+  assert.equal(await hooks().checkExists.call(ctx), true);
+});

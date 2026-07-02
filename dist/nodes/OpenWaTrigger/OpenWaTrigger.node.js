@@ -163,8 +163,15 @@ class OpenWaTrigger {
                         });
                         return true;
                     }
-                    catch {
-                        return false;
+                    catch (error) {
+                        // A 404 means the webhook is genuinely gone → report absent so n8n
+                        // recreates it. Any other error is inconclusive: rethrow so activation
+                        // fails loudly and n8n's retry restores it, instead of registering a
+                        // duplicate webhook (the server does not de-duplicate by URL).
+                        if ((0, httpStatus_1.httpStatusFromError)(error) === 404) {
+                            return false;
+                        }
+                        throw error;
                     }
                 },
                 async create() {
