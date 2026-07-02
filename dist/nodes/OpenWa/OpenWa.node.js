@@ -88,10 +88,13 @@ class OpenWa {
                         { name: 'React', value: 'react', action: 'React to a message' },
                         { name: 'Reply', value: 'reply', action: 'Reply to a message' },
                         { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
+                        { name: 'Send Contact', value: 'sendContact', action: 'Send a contact card' },
                         { name: 'Send Document', value: 'sendDocument', action: 'Send a document' },
                         { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
                         { name: 'Send Location', value: 'sendLocation', action: 'Send a location' },
+                        { name: 'Send Sticker', value: 'sendSticker', action: 'Send a sticker' },
                         { name: 'Send Text', value: 'sendText', action: 'Send a text message' },
+                        { name: 'Send Video', value: 'sendVideo', action: 'Send a video' },
                     ],
                     default: 'sendText',
                 },
@@ -199,7 +202,7 @@ class OpenWa {
                     type: 'string',
                     default: '',
                     displayOptions: {
-                        show: { resource: ['message'], operation: ['sendImage', 'sendDocument'] },
+                        show: { resource: ['message'], operation: ['sendImage', 'sendDocument', 'sendVideo'] },
                     },
                     description: 'Optional caption for the media',
                 },
@@ -376,7 +379,143 @@ class OpenWa {
                     },
                     description: 'Name of the location',
                 },
-                // Mentions (Send Text / Image / Document)
+                // Send Video fields
+                {
+                    displayName: 'Video Source',
+                    name: 'videoSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary Data', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'url',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendVideo'] } },
+                },
+                {
+                    displayName: 'Binary Property',
+                    name: 'videoBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendVideo'], videoSource: ['binary'] },
+                    },
+                    description: 'Name of the binary property containing the video',
+                },
+                {
+                    displayName: 'Video URL',
+                    name: 'videoUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendVideo'], videoSource: ['url'] },
+                    },
+                    description: 'URL of the video to send',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'videoBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendVideo'], videoSource: ['base64'] },
+                    },
+                    description: 'Base64 encoded video data',
+                },
+                {
+                    displayName: 'MIME Type',
+                    name: 'videoMimeType',
+                    type: 'string',
+                    default: 'video/mp4',
+                    required: true,
+                    placeholder: 'video/mp4',
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendVideo'], videoSource: ['base64'] },
+                    },
+                    description: 'MIME type of the base64 video. OpenWA requires this whenever base64 data is sent.',
+                },
+                // Send Sticker fields (WhatsApp expects WebP; the engine ignores caption/mentions here)
+                {
+                    displayName: 'Sticker Source',
+                    name: 'stickerSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary Data', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'url',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendSticker'] } },
+                },
+                {
+                    displayName: 'Binary Property',
+                    name: 'stickerBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['binary'] },
+                    },
+                    description: 'Name of the binary property containing the sticker (ideally WebP, 512×512)',
+                },
+                {
+                    displayName: 'Sticker URL',
+                    name: 'stickerUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['url'] },
+                    },
+                    description: 'URL of the sticker to send (WhatsApp expects a WebP image)',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'stickerBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['base64'] },
+                    },
+                    description: 'Base64 encoded sticker data',
+                },
+                {
+                    displayName: 'MIME Type',
+                    name: 'stickerMimeType',
+                    type: 'string',
+                    default: 'image/webp',
+                    required: true,
+                    placeholder: 'image/webp',
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['base64'] },
+                    },
+                    description: 'MIME type of the base64 sticker. WhatsApp requires image/webp. OpenWA requires this whenever base64 data is sent.',
+                },
+                // Send Contact fields
+                {
+                    displayName: 'Contact Name',
+                    name: 'contactName',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['message'], operation: ['sendContact'] } },
+                    description: 'Display name for the shared contact card',
+                },
+                {
+                    displayName: 'Contact Number',
+                    name: 'contactNumber',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: '+628123456789',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendContact'] } },
+                    description: 'Phone number for the shared contact, including country code (it is not auto-prefixed)',
+                },
+                // Mentions (Send Text / Image / Video / Document)
                 {
                     displayName: 'Mentions',
                     name: 'mentions',
@@ -388,7 +527,10 @@ class OpenWa {
                     default: [],
                     placeholder: '628123456789@c.us',
                     displayOptions: {
-                        show: { resource: ['message'], operation: ['sendText', 'sendImage', 'sendDocument'] },
+                        show: {
+                            resource: ['message'],
+                            operation: ['sendText', 'sendImage', 'sendDocument', 'sendVideo'],
+                        },
                     },
                     description: 'WhatsApp IDs to @mention (e.g. 628123456789@c.us). The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render.',
                 },
@@ -742,10 +884,67 @@ class OpenWa {
                             forEveryone: this.getNodeParameter('forEveryone', i, true),
                         };
                     }
-                    // Optional @mentions — only send-text/image/document accept them. Guard by
+                    else if (operation === 'sendVideo') {
+                        endpoint = `/api/sessions/${sessionId}/messages/send-video`;
+                        method = 'POST';
+                        const videoSource = this.getNodeParameter('videoSource', i);
+                        body = { chatId };
+                        const caption = this.getNodeParameter('caption', i, '').trim();
+                        if (caption) {
+                            body.caption = caption;
+                        }
+                        if (videoSource === 'binary') {
+                            const binaryPropertyName = this.getNodeParameter('videoBinaryProperty', i);
+                            const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
+                            const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+                            body.base64 = binaryData.toString('base64');
+                            body.mimetype = binary.mimeType || 'application/octet-stream';
+                        }
+                        else if (videoSource === 'url') {
+                            body.url = this.getNodeParameter('videoUrl', i);
+                        }
+                        else {
+                            body.base64 = this.getNodeParameter('videoBase64', i);
+                            body.mimetype = this.getNodeParameter('videoMimeType', i);
+                        }
+                    }
+                    else if (operation === 'sendSticker') {
+                        endpoint = `/api/sessions/${sessionId}/messages/send-sticker`;
+                        method = 'POST';
+                        const stickerSource = this.getNodeParameter('stickerSource', i);
+                        body = { chatId };
+                        if (stickerSource === 'binary') {
+                            const binaryPropertyName = this.getNodeParameter('stickerBinaryProperty', i);
+                            const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
+                            const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+                            body.base64 = binaryData.toString('base64');
+                            // Stickers must be WebP; fall back to that if the binary item carries no MIME type.
+                            body.mimetype = binary.mimeType || 'image/webp';
+                        }
+                        else if (stickerSource === 'url') {
+                            body.url = this.getNodeParameter('stickerUrl', i);
+                        }
+                        else {
+                            body.base64 = this.getNodeParameter('stickerBase64', i);
+                            body.mimetype = this.getNodeParameter('stickerMimeType', i);
+                        }
+                    }
+                    else if (operation === 'sendContact') {
+                        endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
+                        method = 'POST';
+                        body = {
+                            chatId,
+                            contactName: this.getNodeParameter('contactName', i).trim(),
+                            contactNumber: this.getNodeParameter('contactNumber', i).trim(),
+                        };
+                    }
+                    // Optional @mentions — only send-text/image/video/document accept them. Guard by
                     // operation (not just the hidden field) so a mentions value can never ride
                     // along on a sendLocation request, whose DTO rejects unknown fields (400).
-                    if (operation === 'sendText' || operation === 'sendImage' || operation === 'sendDocument') {
+                    if (operation === 'sendText' ||
+                        operation === 'sendImage' ||
+                        operation === 'sendDocument' ||
+                        operation === 'sendVideo') {
                         const rawMentions = this.getNodeParameter('mentions', i, []);
                         const mentions = (Array.isArray(rawMentions) ? rawMentions : [])
                             .map((m) => String(m).trim())
