@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
   <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
-  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.2.8-25D366.svg" alt="OpenWA >= 0.2.8"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.4.0-25D366.svg" alt="OpenWA >= 0.4.0"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
 </p>
 
@@ -34,7 +34,7 @@ Two n8n nodes that connect your workflows to a self-hosted [OpenWA](https://gith
 | Node               | Type    | Purpose                                                    |
 | ------------------ | ------- | ---------------------------------------------------------- |
 | **OpenWA**         | Action  | Send messages, check contacts, manage sessions and webhooks |
-| **OpenWA Trigger** | Trigger | Start workflows on incoming messages, session and group events |
+| **OpenWA Trigger** | Trigger | Start workflows on incoming messages and session events |
 
 ---
 
@@ -87,7 +87,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Webhook** | Create        | Register a webhook (optional signing secret) |
 | **Webhook** | Delete        | Remove a webhook                         |
 
-> **Base64 media:** when sending an image or document from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
+> **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
 > **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
 
@@ -147,7 +147,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 > **Payload notes**
 >
-> - Each delivery is an envelope (`event`, `sessionId`, `idempotencyKey`, `deliveryId`, …); the actual event payload is under `data`. Read message fields from `data` (e.g. `data.body`, `data.chatId`).
+> - Each delivery is an envelope (`event`, `timestamp`, `sessionId`, `idempotencyKey`, `deliveryId`, …); the actual event payload is under `data`. Read message fields from `data` (e.g. `data.body`, `data.chatId`).
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
 > - OpenWA retries failed deliveries with the same `deliveryId` — de-duplicate on it if your downstream actions aren't idempotent.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
@@ -167,7 +167,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.2.8**. Verified against OpenWA **v0.7.17**.
+Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.7.17**.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
