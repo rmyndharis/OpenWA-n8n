@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.5.0...v0.6.0) (2026-07-02)
+
+
+### Features
+
+* expand OpenWA operations and harden webhook re-registration ([#18](https://github.com/rmyndharis/OpenWA-n8n/issues/18)) ([cbcb950](https://github.com/rmyndharis/OpenWA-n8n/commit/cbcb9506f15a319003ab03bff5abf1737b4b05fa))
+
+
+### Bug Fixes
+
+* correct bulk-send content docs and guard empty webhook update events ([#20](https://github.com/rmyndharis/OpenWA-n8n/issues/20)) ([c044895](https://github.com/rmyndharis/OpenWA-n8n/commit/c04489547badec07316139e30657e6928a86464a))
+
 ## [0.5.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.4.0...v0.5.0) (2026-07-01)
 
 
