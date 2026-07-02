@@ -93,6 +93,9 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'] },
         },
         options: [
+          { name: 'Delete', value: 'delete', action: 'Delete a message' },
+          { name: 'React', value: 'react', action: 'React to a message' },
+          { name: 'Reply', value: 'reply', action: 'Reply to a message' },
           { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
           { name: 'Send Document', value: 'sendDocument', action: 'Send a document' },
           { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
@@ -135,7 +138,7 @@ export class OpenWa implements INodeType {
         default: '',
         required: true,
         displayOptions: {
-          show: { resource: ['message'], operation: ['sendText'] },
+          show: { resource: ['message'], operation: ['sendText', 'reply'] },
         },
         description: 'The text message to send',
       },
@@ -401,6 +404,55 @@ export class OpenWa implements INodeType {
         },
         description:
           'WhatsApp IDs to @mention (e.g. 628123456789@c.us). The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render.',
+      },
+      // Reply / React / Delete target message
+      {
+        displayName: 'Quoted Message ID',
+        name: 'quotedMessageId',
+        type: 'string',
+        default: '',
+        required: true,
+        placeholder: 'true_628123456789@c.us_3EB0...',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['reply'] },
+        },
+        description:
+          'The full serialized ID of the message to quote, as returned by send operations or delivered by the Trigger',
+      },
+      {
+        displayName: 'Message ID',
+        name: 'messageId',
+        type: 'string',
+        default: '',
+        required: true,
+        placeholder: 'true_628123456789@c.us_3EB0...',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['react', 'delete'] },
+        },
+        description:
+          'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger',
+      },
+      {
+        displayName: 'Emoji',
+        name: 'emoji',
+        type: 'string',
+        default: '',
+        placeholder: '👍',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['react'] },
+        },
+        description: 'The emoji to react with. Leave empty to remove your existing reaction.',
+      },
+      {
+        displayName: 'Delete for Everyone',
+        name: 'forEveryone',
+        type: 'boolean',
+        default: true,
+        displayOptions: {
+          show: { resource: ['message'], operation: ['delete'] },
+        },
+        description:
+          'Whether to revoke the message for everyone. Turn off to remove only your own local copy.',
       },
 
       // ============== CONTACT OPERATIONS ==============
@@ -686,6 +738,31 @@ export class OpenWa implements INodeType {
             if (this.getNodeParameter('sendAsVoiceNote', i, false) as boolean) {
               body.ptt = true;
             }
+          } else if (operation === 'reply') {
+            endpoint = `/api/sessions/${sessionId}/messages/reply`;
+            method = 'POST';
+            body = {
+              chatId,
+              quotedMessageId: (this.getNodeParameter('quotedMessageId', i) as string).trim(),
+              text: this.getNodeParameter('message', i) as string,
+            };
+          } else if (operation === 'react') {
+            endpoint = `/api/sessions/${sessionId}/messages/react`;
+            method = 'POST';
+            // An empty emoji removes the existing reaction — the field is intentionally sent.
+            body = {
+              chatId,
+              messageId: (this.getNodeParameter('messageId', i) as string).trim(),
+              emoji: this.getNodeParameter('emoji', i, '') as string,
+            };
+          } else if (operation === 'delete') {
+            endpoint = `/api/sessions/${sessionId}/messages/delete`;
+            method = 'POST';
+            body = {
+              chatId,
+              messageId: (this.getNodeParameter('messageId', i) as string).trim(),
+              forEveryone: this.getNodeParameter('forEveryone', i, true) as boolean,
+            };
           }
 
           // Optional @mentions — only send-text/image/document accept them. Guard by
