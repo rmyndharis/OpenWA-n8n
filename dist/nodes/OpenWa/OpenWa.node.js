@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWa = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
+const bulkMessages_1 = require("./bulkMessages");
 function sanitizePathParam(value, paramName) {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -84,10 +85,13 @@ class OpenWa {
                         show: { resource: ['message'] },
                     },
                     options: [
+                        { name: 'Cancel Batch', value: 'cancelBatch', action: 'Cancel a bulk batch' },
                         { name: 'Delete', value: 'delete', action: 'Delete a message' },
+                        { name: 'Get Batch Status', value: 'getBatchStatus', action: 'Get bulk batch status' },
                         { name: 'React', value: 'react', action: 'React to a message' },
                         { name: 'Reply', value: 'reply', action: 'Reply to a message' },
                         { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
+                        { name: 'Send Bulk', value: 'sendBulk', action: 'Send messages in bulk' },
                         { name: 'Send Contact', value: 'sendContact', action: 'Send a contact card' },
                         { name: 'Send Document', value: 'sendDocument', action: 'Send a document' },
                         { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
@@ -117,7 +121,22 @@ class OpenWa {
                     required: true,
                     placeholder: '628123456789@c.us',
                     displayOptions: {
-                        show: { resource: ['message'] },
+                        show: {
+                            resource: ['message'],
+                            operation: [
+                                'sendText',
+                                'sendImage',
+                                'sendVideo',
+                                'sendDocument',
+                                'sendAudio',
+                                'sendLocation',
+                                'sendSticker',
+                                'sendContact',
+                                'reply',
+                                'react',
+                                'delete',
+                            ],
+                        },
                     },
                     description: 'The recipient chat ID (e.g., 628123456789@c.us for personal, or ...@g.us for groups)',
                 },
@@ -580,6 +599,67 @@ class OpenWa {
                     },
                     description: 'Whether to revoke the message for everyone. Turn off to remove only your own local copy.',
                 },
+                // Send Bulk fields
+                {
+                    displayName: 'Messages (JSON)',
+                    name: 'bulkMessages',
+                    type: 'json',
+                    default: '[]',
+                    required: true,
+                    displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
+                    description: 'Array of up to 100 items. Each item: { "chatId": "628...@c.us", "type": "text|image|video|audio|document", "content": { ... } }. Media uses url or base64 (no binary source in bulk).',
+                },
+                {
+                    displayName: 'Batch ID',
+                    name: 'batchId',
+                    type: 'string',
+                    default: '',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
+                    description: 'Optional custom batch ID (must be unique per session). Leave empty to let the server generate one.',
+                },
+                {
+                    displayName: 'Options',
+                    name: 'bulkOptions',
+                    type: 'collection',
+                    placeholder: 'Add Option',
+                    default: {},
+                    displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
+                    options: [
+                        {
+                            displayName: 'Delay Between Messages (Ms)',
+                            name: 'delayBetweenMessages',
+                            type: 'number',
+                            typeOptions: { minValue: 1000, maxValue: 60000 },
+                            default: 3000,
+                            description: 'Milliseconds to wait between sends (1000–60000)',
+                        },
+                        {
+                            displayName: 'Randomize Delay',
+                            name: 'randomizeDelay',
+                            type: 'boolean',
+                            default: true,
+                            description: 'Whether to add a random 0–2000 ms on top of the delay',
+                        },
+                        {
+                            displayName: 'Stop on Error',
+                            name: 'stopOnError',
+                            type: 'boolean',
+                            default: false,
+                            description: 'Whether to abort the batch on the first failed send',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'Batch ID',
+                    name: 'statusBatchId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['getBatchStatus', 'cancelBatch'] },
+                    },
+                    description: 'The batch ID returned by Send Bulk',
+                },
                 // ============== CONTACT OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -838,11 +918,17 @@ class OpenWa {
                 // MESSAGE
                 else if (resource === 'message') {
                     const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
-                    const chatId = this.getNodeParameter('chatId', i).trim();
-                    if (!chatId) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
-                            itemIndex: i,
-                        });
+                    // Bulk / batch operations are not addressed to a single chat, so they skip Chat ID.
+                    let chatId = '';
+                    if (operation !== 'sendBulk' &&
+                        operation !== 'getBatchStatus' &&
+                        operation !== 'cancelBatch') {
+                        chatId = this.getNodeParameter('chatId', i).trim();
+                        if (!chatId) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
+                                itemIndex: i,
+                            });
+                        }
                     }
                     if (operation === 'sendText') {
                         endpoint = `/api/sessions/${sessionId}/messages/send-text`;
@@ -1029,6 +1115,36 @@ class OpenWa {
                             contactName: this.getNodeParameter('contactName', i).trim(),
                             contactNumber: this.getNodeParameter('contactNumber', i).trim(),
                         };
+                    }
+                    else if (operation === 'sendBulk') {
+                        endpoint = `/api/sessions/${sessionId}/messages/send-bulk`;
+                        method = 'POST';
+                        let messages;
+                        try {
+                            messages = (0, bulkMessages_1.parseBulkMessages)(this.getNodeParameter('bulkMessages', i, '[]'));
+                        }
+                        catch (e) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), e.message, { itemIndex: i });
+                        }
+                        body = { messages };
+                        const batchId = this.getNodeParameter('batchId', i, '').trim();
+                        if (batchId) {
+                            body.batchId = batchId;
+                        }
+                        const options = this.getNodeParameter('bulkOptions', i, {});
+                        if (Object.keys(options).length > 0) {
+                            body.options = options;
+                        }
+                    }
+                    else if (operation === 'getBatchStatus') {
+                        const batchId = sanitizePathParam(this.getNodeParameter('statusBatchId', i), 'Batch ID');
+                        endpoint = `/api/sessions/${sessionId}/messages/batch/${batchId}`;
+                        method = 'GET';
+                    }
+                    else if (operation === 'cancelBatch') {
+                        const batchId = sanitizePathParam(this.getNodeParameter('statusBatchId', i), 'Batch ID');
+                        endpoint = `/api/sessions/${sessionId}/messages/batch/${batchId}/cancel`;
+                        method = 'POST';
                     }
                     // Optional @mentions — only send-text/image/video/document accept them. Guard by
                     // operation (not just the hidden field) so a mentions value can never ride
