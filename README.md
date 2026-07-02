@@ -110,7 +110,16 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Message actions:** Reply, React, and Delete act on an existing message identified by its full serialized ID (e.g. `true_628123456789@c.us_3EB0…`) — the value returned by the send operations and delivered by the Trigger. React with an empty **Emoji** to remove your reaction; Delete defaults to revoking for everyone.
 
-> **Bulk send:** provide **Messages (JSON)** as an array of up to 100 items, each `{ "chatId", "type": "text|image|video|audio|document", "content": { … } }` (media uses `url` or `base64` — no binary source in bulk). Send Bulk returns a `batchId` immediately and sends in the background — poll **Get Batch Status** until the status is `completed`, `cancelled`, or `failed`, or stop it early with **Cancel Batch**.
+> **Bulk send:** provide **Messages (JSON)** as an array of up to 100 items. The media object nests under the `type` key, and `caption` sits alongside it on `content`:
+>
+> ```json
+> [
+>   { "chatId": "628123456789@c.us", "type": "text", "content": { "text": "Hello" } },
+>   { "chatId": "628123456789@c.us", "type": "image", "content": { "image": { "url": "https://example.com/a.jpg" }, "caption": "Hi" } }
+> ]
+> ```
+>
+> Media (`image`/`video`/`audio`/`document`) uses `url` or `base64` (add `mimetype` for base64) — there is no binary source in bulk. Send Bulk returns a `batchId` immediately and sends in the background; poll **Get Batch Status** until the status is `completed`, `cancelled`, or `failed`, or stop it early with **Cancel Batch**.
 
 > **Voice notes** (server **≥ 0.7.17**): Send Audio has a **Send as Voice Note** toggle. When on, the clip is delivered as a true WhatsApp voice note (the microphone bubble with a waveform) instead of a plain audio file. Voice notes require `audio/ogg; codecs=opus` audio for reliable playback. Leave the toggle off (plain audio file) on older servers.
 
