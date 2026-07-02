@@ -75,23 +75,42 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 ### OpenWA (action)
 
-| Resource    | Operation     | Description                              |
-| ----------- | ------------- | ---------------------------------------- |
-| **Session** | Get Status    | Get the status of a session              |
-| **Session** | List All      | List all sessions                        |
-| **Message** | Send Text     | Send a text message                      |
-| **Message** | Send Image    | Send an image (binary, URL, or Base64)   |
-| **Message** | Send Document | Send a document / file                   |
-| **Message** | Send Audio    | Send an audio file or a voice note (PTT) |
-| **Message** | Send Location | Send a location pin                      |
-| **Contact** | Check Exists  | Check whether a number is on WhatsApp    |
-| **Contact** | Get Info      | Get contact information                  |
-| **Webhook** | Create        | Register a webhook (optional signing secret) |
-| **Webhook** | Delete        | Remove a webhook                         |
+| Resource    | Operation           | Description                                   |
+| ----------- | ------------------- | --------------------------------------------- |
+| **Session** | Get Status          | Get the status of a session                   |
+| **Session** | List All            | List all sessions                             |
+| **Message** | Send Text           | Send a text message                           |
+| **Message** | Send Image          | Send an image (binary, URL, or Base64)        |
+| **Message** | Send Video          | Send a video (binary, URL, or Base64)         |
+| **Message** | Send Document       | Send a document / file                        |
+| **Message** | Send Audio          | Send an audio file or a voice note (PTT)      |
+| **Message** | Send Sticker        | Send a sticker (WebP)                         |
+| **Message** | Send Location       | Send a location pin                           |
+| **Message** | Send Contact        | Send a contact card (vCard)                   |
+| **Message** | Reply               | Reply to a message, quoting it                |
+| **Message** | React               | Add or remove an emoji reaction               |
+| **Message** | Delete              | Delete / revoke a message                     |
+| **Message** | Send Bulk           | Send up to 100 messages as a throttled batch  |
+| **Message** | Get Batch Status    | Poll a bulk batch's progress                  |
+| **Message** | Cancel Batch        | Cancel a running bulk batch                   |
+| **Contact** | Check Exists        | Check whether a number is on WhatsApp         |
+| **Contact** | Get Info            | Get contact information                       |
+| **Contact** | Get Profile Picture | Get a contact's profile-photo URL             |
+| **Contact** | Get Phone           | Resolve a contact's phone number              |
+| **Contact** | Block               | Block a contact                               |
+| **Contact** | Unblock             | Unblock a contact                             |
+| **Webhook** | Create              | Register a webhook (optional signing secret)  |
+| **Webhook** | Update              | Update a webhook (partial — only changed fields) |
+| **Webhook** | Test                | Send a test delivery to a webhook             |
+| **Webhook** | Delete              | Remove a webhook                              |
 
 > **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
-> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+
+> **Message actions:** Reply, React, and Delete act on an existing message identified by its full serialized ID (e.g. `true_628123456789@c.us_3EB0…`) — the value returned by the send operations and delivered by the Trigger. React with an empty **Emoji** to remove your reaction; Delete defaults to revoking for everyone.
+
+> **Bulk send:** provide **Messages (JSON)** as an array of up to 100 items, each `{ "chatId", "type": "text|image|video|audio|document", "content": { … } }` (media uses `url` or `base64` — no binary source in bulk). Send Bulk returns a `batchId` immediately and sends in the background — poll **Get Batch Status** until the status is `completed`, `cancelled`, or `failed`, or stop it early with **Cancel Batch**.
 
 > **Voice notes** (server **≥ 0.7.17**): Send Audio has a **Send as Voice Note** toggle. When on, the clip is delivered as a true WhatsApp voice note (the microphone bubble with a waveform) instead of a plain audio file. Voice notes require `audio/ogg; codecs=opus` audio for reliable playback. Leave the toggle off (plain audio file) on older servers.
 
