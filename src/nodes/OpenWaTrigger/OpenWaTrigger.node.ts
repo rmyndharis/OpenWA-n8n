@@ -8,6 +8,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
+import { httpStatusFromError } from './httpStatus';
 
 function sanitizePathParam(value: string, paramName: string): string {
   const trimmed = value.trim();
@@ -148,7 +149,7 @@ export class OpenWaTrigger implements INodeType {
       },
       {
         displayName:
-          'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries.',
+          'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
         name: 'outputShapeNotice',
         type: 'notice',
         default: '',
@@ -178,8 +179,15 @@ export class OpenWaTrigger implements INodeType {
             json: true,
           });
           return true;
-        } catch {
-          return false;
+        } catch (error) {
+          // A 404 means the webhook is genuinely gone → report absent so n8n
+          // recreates it. Any other error is inconclusive: rethrow so activation
+          // fails loudly and n8n's retry restores it, instead of registering a
+          // duplicate webhook (the server does not de-duplicate by URL).
+          if (httpStatusFromError(error) === 404) {
+            return false;
+          }
+          throw error;
         }
       },
 
@@ -253,15 +261,8 @@ export class OpenWaTrigger implements INodeType {
             json: true,
           });
         } catch (error) {
-          // httpRequestWithAuthentication may surface the status as a numeric
-          // `statusCode` or, once wrapped in a NodeApiError, a string `httpCode`.
-          // Normalize before comparing so an already-deleted webhook (404) is
-          // swallowed while any other error still propagates.
-          const err = error as Record<string, unknown>;
-          const statusCode = Number(
-            err.httpCode ?? err.statusCode ?? (err.response as Record<string, unknown>)?.status,
-          );
-          if (statusCode !== 404) {
+          // An already-deleted webhook (404) is fine to swallow; anything else propagates.
+          if (httpStatusFromError(error) !== 404) {
             throw error;
           }
         }
