@@ -673,6 +673,8 @@ export class OpenWa implements INodeType {
         options: [
           { name: 'Create', value: 'create', action: 'Create a webhook' },
           { name: 'Delete', value: 'delete', action: 'Delete a webhook' },
+          { name: 'Test', value: 'test', action: 'Send a test delivery to a webhook' },
+          { name: 'Update', value: 'update', action: 'Update a webhook' },
         ],
         default: 'create',
       },
@@ -744,9 +746,90 @@ export class OpenWa implements INodeType {
         default: '',
         required: true,
         displayOptions: {
-          show: { resource: ['webhook'], operation: ['delete'] },
+          show: { resource: ['webhook'], operation: ['delete', 'update', 'test'] },
         },
-        description: 'The ID of the webhook to delete',
+        description: 'The ID of the webhook',
+      },
+      {
+        displayName: 'Update Fields',
+        name: 'updateFields',
+        type: 'collection',
+        placeholder: 'Add Field',
+        default: {},
+        displayOptions: {
+          show: { resource: ['webhook'], operation: ['update'] },
+        },
+        description: 'Only the fields you set are changed; everything else keeps its current value',
+        options: [
+          {
+            displayName: 'Active',
+            name: 'active',
+            type: 'boolean',
+            default: true,
+            description: 'Whether the webhook is enabled',
+          },
+          {
+            displayName: 'Events',
+            name: 'events',
+            type: 'multiOptions',
+            options: [
+              { name: 'Message Received', value: 'message.received' },
+              { name: 'Message Sent', value: 'message.sent' },
+              { name: 'Message Ack', value: 'message.ack' },
+              { name: 'Message Failed', value: 'message.failed' },
+              { name: 'Message Revoked', value: 'message.revoked' },
+              { name: 'Message Reaction', value: 'message.reaction' },
+              { name: 'Session Status', value: 'session.status' },
+              { name: 'Session QR', value: 'session.qr' },
+              { name: 'Session Authenticated', value: 'session.authenticated' },
+              { name: 'Session Disconnected', value: 'session.disconnected' },
+              { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
+              { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
+              { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
+            ],
+            default: [],
+            description: 'Replaces the full set of subscribed events (not merged)',
+          },
+          {
+            displayName: 'Filters (JSON)',
+            name: 'filters',
+            type: 'json',
+            default: '',
+            description:
+              'Advanced delivery filters as a JSON object, e.g. {"conditions":[...]}. Enter null to clear existing filters.',
+          },
+          {
+            displayName: 'Headers (JSON)',
+            name: 'headers',
+            type: 'json',
+            default: '',
+            description:
+              'Custom delivery headers as a flat JSON object of string values, e.g. {"X-Team":"ops"}',
+          },
+          {
+            displayName: 'Retry Count',
+            name: 'retryCount',
+            type: 'number',
+            typeOptions: { minValue: 0, maxValue: 5 },
+            default: 3,
+            description: 'Maximum delivery attempts (0–5)',
+          },
+          {
+            displayName: 'Secret',
+            name: 'secret',
+            type: 'string',
+            typeOptions: { password: true },
+            default: '',
+            description: 'HMAC-SHA256 signing secret. Send an empty value to clear it.',
+          },
+          {
+            displayName: 'URL',
+            name: 'url',
+            type: 'string',
+            default: '',
+            description: 'The delivery URL',
+          },
+        ],
       },
     ],
   };
@@ -1077,6 +1160,46 @@ export class OpenWa implements INodeType {
             );
             endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
             method = 'DELETE';
+          } else if (operation === 'update') {
+            const webhookId = sanitizePathParam(
+              this.getNodeParameter('webhookId', i) as string,
+              'Webhook ID',
+            );
+            endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
+            method = 'PUT';
+            const updateFields = this.getNodeParameter('updateFields', i, {}) as Record<
+              string,
+              unknown
+            >;
+            // Only forward the fields the user set — the server treats the PUT as a partial
+            // update, so unspecified fields keep their current value.
+            for (const key of ['url', 'events', 'secret', 'active', 'retryCount'] as const) {
+              if (updateFields[key] !== undefined) {
+                body[key] = updateFields[key];
+              }
+            }
+            for (const key of ['headers', 'filters'] as const) {
+              const raw = updateFields[key];
+              if (raw === undefined || raw === null || raw === '') {
+                continue;
+              }
+              try {
+                body[key] = typeof raw === 'string' ? JSON.parse(raw) : raw;
+              } catch {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  `${key === 'headers' ? 'Headers' : 'Filters'} must be valid JSON`,
+                  { itemIndex: i },
+                );
+              }
+            }
+          } else if (operation === 'test') {
+            const webhookId = sanitizePathParam(
+              this.getNodeParameter('webhookId', i) as string,
+              'Webhook ID',
+            );
+            endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}/test`;
+            method = 'POST';
           }
         }
 
