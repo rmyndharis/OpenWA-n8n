@@ -626,7 +626,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
         description:
-          'Array of up to 100 items. Each item: { "chatId": "628...@c.us", "type": "text|image|video|audio|document", "content": { ... } }. Media uses url or base64 (no binary source in bulk).',
+          'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: { "chatId": "...", "type": "image", "content": { "image": { "url": "https://..." }, "caption": "..." } } — the media object nests under the type key (image/video/audio/document) and uses url or base64 (add mimetype for base64); caption sits on content. No binary source in bulk.',
       },
       {
         displayName: 'Batch ID',
@@ -1299,6 +1299,15 @@ export class OpenWa implements INodeType {
               if (updateFields[key] !== undefined) {
                 body[key] = updateFields[key];
               }
+            }
+            // Mirror the create-webhook guard so an empty Events selection fails with a clear
+            // message here instead of a raw server 400 (the DTO requires at least one event).
+            if (Array.isArray(body.events) && body.events.length === 0) {
+              throw new NodeOperationError(
+                this.getNode(),
+                'At least one event must be selected when updating events',
+                { itemIndex: i },
+              );
             }
             for (const key of ['headers', 'filters'] as const) {
               const raw = updateFields[key];
