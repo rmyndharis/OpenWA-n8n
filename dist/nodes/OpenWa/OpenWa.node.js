@@ -590,8 +590,16 @@ class OpenWa {
                         show: { resource: ['contact'] },
                     },
                     options: [
+                        { name: 'Block', value: 'block', action: 'Block a contact' },
                         { name: 'Check Exists', value: 'checkExists', action: 'Check if number exists on WhatsApp' },
                         { name: 'Get Info', value: 'getInfo', action: 'Get contact information' },
+                        { name: 'Get Phone', value: 'getPhone', action: 'Resolve a contact phone number' },
+                        {
+                            name: 'Get Profile Picture',
+                            value: 'getProfilePicture',
+                            action: 'Get a contact profile picture',
+                        },
+                        { name: 'Unblock', value: 'unblock', action: 'Unblock a contact' },
                     ],
                     default: 'checkExists',
                 },
@@ -626,9 +634,12 @@ class OpenWa {
                     required: true,
                     placeholder: '628123456789@c.us',
                     displayOptions: {
-                        show: { resource: ['contact'], operation: ['getInfo'] },
+                        show: {
+                            resource: ['contact'],
+                            operation: ['getInfo', 'block', 'unblock', 'getProfilePicture', 'getPhone'],
+                        },
                     },
-                    description: 'The contact ID to get info for',
+                    description: 'The contact ID (WhatsApp JID, e.g. 628123456789@c.us)',
                 },
                 // ============== WEBHOOK OPERATIONS ==============
                 {
@@ -976,6 +987,34 @@ class OpenWa {
                         }
                         endpoint = `/api/sessions/${sessionId}/contacts/${encodeURIComponent(contactId)}`;
                         method = 'GET';
+                    }
+                    else if (operation === 'block' ||
+                        operation === 'unblock' ||
+                        operation === 'getProfilePicture' ||
+                        operation === 'getPhone') {
+                        const contactId = this.getNodeParameter('contactId', i).trim();
+                        if (!contactId) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
+                                itemIndex: i,
+                            });
+                        }
+                        const encoded = encodeURIComponent(contactId);
+                        if (operation === 'block') {
+                            endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/block`;
+                            method = 'POST';
+                        }
+                        else if (operation === 'unblock') {
+                            endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/block`;
+                            method = 'DELETE';
+                        }
+                        else if (operation === 'getProfilePicture') {
+                            endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/profile-picture`;
+                            method = 'GET';
+                        }
+                        else {
+                            endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/phone`;
+                            method = 'GET';
+                        }
                     }
                 }
                 // WEBHOOK
