@@ -23,4 +23,4 @@ jobs:
       # the committed dist/ verbatim, so it must always match the build of src/.
       - name: Verify committed dist/ matches source
         run: git diff --exit-code -- dist
-      - run: node --test test/verifySignature.test.mjs
+      - run: node --test test/*.test.mjs
