@@ -34,7 +34,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
-      - run: node --test test/verifySignature.test.mjs
+      - run: node --test test/*.test.mjs
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
