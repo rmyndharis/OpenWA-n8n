@@ -22,8 +22,8 @@
   "scripts": {
     "build": "tsc && gulp build:icons",
     "dev": "tsc --watch",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"credentials/**/*.ts\" \"nodes/**/*.ts\" \"index.ts\"",
+    "lint": "eslint credentials nodes index.ts --ext .ts",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepublishOnly": "npm run build"
   },
