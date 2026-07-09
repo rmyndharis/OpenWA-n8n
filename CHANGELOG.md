@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.6.0...v0.7.0) (2026-07-09)
+
+
+### Features
+
+* add session lifecycle ops, fix webhook update, publish with provenance ([#22](https://github.com/rmyndharis/OpenWA-n8n/issues/22)) ([ec5b669](https://github.com/rmyndharis/OpenWA-n8n/commit/ec5b669bea71a26310e0118d27bf4f7ca78b7043))
+
 ## [0.6.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.5.0...v0.6.0) (2026-07-02)
 
 
