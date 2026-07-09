@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.1...v0.7.2) (2026-07-09)
+
+
+### Bug Fixes
+
+* move source to root credentials/nodes per n8n convention ([#26](https://github.com/rmyndharis/OpenWA-n8n/issues/26)) ([b9778e1](https://github.com/rmyndharis/OpenWA-n8n/commit/b9778e1688d82371ab8fd0d9007fbe74bc251daa))
+
 ## [0.7.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.0...v0.7.1) (2026-07-09)
 
 
