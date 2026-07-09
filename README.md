@@ -67,7 +67,9 @@ Create an **OpenWA API** credential:
 
 The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
-> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations: Session → Get Status / List All, and Contact → Check Exists / Get Info.
+> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations: Session → Get Status / List All, and Contact → Check Exists / Get Info. An **ADMIN** key (the first-boot default) also works for every operation.
+
+> **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Configure these on the server, not in the node.
 
 ---
 
@@ -77,6 +79,13 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 | Resource    | Operation           | Description                                   |
 | ----------- | ------------------- | --------------------------------------------- |
+| **Session** | Create              | Create a new session (returns its UUID)       |
+| **Session** | Start               | Start a session and connect to WhatsApp       |
+| **Session** | Stop                | Stop a session and disconnect                 |
+| **Session** | Force Kill          | Force-kill a stuck session's engine           |
+| **Session** | Delete              | Delete a session                              |
+| **Session** | Get QR              | Get the QR code for scanning authentication   |
+| **Session** | Request Pairing Code| Get an 8-char phone linking code              |
 | **Session** | Get Status          | Get the status of a session                   |
 | **Session** | List All            | List all sessions                             |
 | **Message** | Send Text           | Send a text message                           |
@@ -128,6 +137,8 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 1. Add an **OpenWA** node
 2. Select the **Message** resource and **Send Text** operation
 3. Configure **Session ID** (`default`), **Chat ID** (`628123456789@c.us`), and **Message**
+
+> **Provisioning a session:** sessions are identified by a **UUID** (returned by **Create**, **Get Status**, or **List All**). A full end-to-end flow is **Create → Start → Get QR** (scan) or **Request Pairing Code** (enter on the phone) → wait for `session.authenticated`. The Trigger can listen for `session.qr` and `session.authenticated` events; these session operations are what drive those state transitions.
 
 ### OpenWA Trigger
 
@@ -197,7 +208,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.8.1**.
+Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.8.13**.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.

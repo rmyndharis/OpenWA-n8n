@@ -25,6 +25,9 @@ jobs:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required to mint the OIDC token for the npm provenance attestation
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -35,6 +38,9 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: node --test test/*.test.mjs
-      - run: npm publish --access public
+      # --provenance attaches a signed build attestation, required for n8n community-node
+      # verification since May 2026. Works with NPM_TOKEN below; for OIDC trusted publishing,
+      # remove NPM_TOKEN and configure a Trusted Publisher on npm (no long-lived secret).
+      - run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

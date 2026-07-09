@@ -59,8 +59,15 @@ class OpenWa {
                         show: { resource: ['session'] },
                     },
                     options: [
+                        { name: 'Create', value: 'create', action: 'Create a new session' },
+                        { name: 'Delete', value: 'delete', action: 'Delete a session' },
+                        { name: 'Force Kill', value: 'forceKill', action: 'Force-kill a stuck session' },
+                        { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
                         { name: 'Get Status', value: 'getStatus', action: 'Get session status' },
                         { name: 'List All', value: 'listAll', action: 'List all sessions' },
+                        { name: 'Request Pairing Code', value: 'requestPairingCode', action: 'Request a phone pairing code' },
+                        { name: 'Start', value: 'start', action: 'Start a session' },
+                        { name: 'Stop', value: 'stop', action: 'Stop a session' },
                     ],
                     default: 'getStatus',
                 },
@@ -68,12 +75,48 @@ class OpenWa {
                     displayName: 'Session ID',
                     name: 'sessionId',
                     type: 'string',
-                    default: 'default',
+                    default: '',
                     required: true,
                     displayOptions: {
-                        show: { resource: ['session'], operation: ['getStatus'] },
+                        show: {
+                            resource: ['session'],
+                            operation: ['getStatus', 'start', 'stop', 'forceKill', 'delete', 'getQr', 'requestPairingCode'],
+                        },
                     },
-                    description: 'The ID of the session',
+                    description: 'The UUID of the session (returned by Create / Get Status / List All)',
+                },
+                {
+                    displayName: 'Session Name',
+                    name: 'sessionName',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['create'] },
+                    },
+                    description: 'Unique name for the session (3–50 chars; letters, numbers, and hyphens only)',
+                },
+                {
+                    displayName: 'Session Config (JSON)',
+                    name: 'sessionConfig',
+                    type: 'json',
+                    default: '',
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['create'] },
+                    },
+                    description: 'Optional session config as a JSON object, e.g. {"autoReconnect":true}',
+                },
+                {
+                    displayName: 'Phone Number',
+                    name: 'pairingPhoneNumber',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: '628123456789',
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['requestPairingCode'] },
+                    },
+                    description: 'Phone number to link, digits only in international format (e.g. 628123456789)',
                 },
                 // ============== MESSAGE OPERATIONS ==============
                 {
@@ -624,6 +667,7 @@ class OpenWa {
                     placeholder: 'Add Option',
                     default: {},
                     displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
+                    description: 'If left empty, the server applies its own defaults (delay 3000 ms, randomize on, stop-on-error off).',
                     options: [
                         {
                             displayName: 'Delay Between Messages (Ms)',
@@ -877,7 +921,7 @@ class OpenWa {
                             type: 'string',
                             typeOptions: { password: true },
                             default: '',
-                            description: 'HMAC-SHA256 signing secret. Send an empty value to clear it.',
+                            description: 'HMAC-SHA256 signing secret. Set a value to rotate it; an empty value is ignored. To disable signing, recreate the webhook without a secret.',
                         },
                         {
                             displayName: 'URL',
@@ -905,14 +949,78 @@ class OpenWa {
                 let body = {};
                 // SESSION
                 if (resource === 'session') {
-                    if (operation === 'getStatus') {
-                        const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
-                        endpoint = `/api/sessions/${sessionId}`;
-                        method = 'GET';
+                    if (operation === 'create') {
+                        endpoint = '/api/sessions';
+                        method = 'POST';
+                        const sessionName = this.getNodeParameter('sessionName', i).trim();
+                        if (!sessionName) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session name cannot be empty', {
+                                itemIndex: i,
+                            });
+                        }
+                        body.name = sessionName;
+                        const rawConfig = this.getNodeParameter('sessionConfig', i, '');
+                        if (rawConfig !== '' && rawConfig !== undefined && rawConfig !== null) {
+                            let parsedConfig;
+                            try {
+                                parsedConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
+                            }
+                            catch {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be valid JSON', {
+                                    itemIndex: i,
+                                });
+                            }
+                            if (typeof parsedConfig !== 'object' ||
+                                parsedConfig === null ||
+                                Array.isArray(parsedConfig)) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be a JSON object (e.g. {"autoReconnect":true})', { itemIndex: i });
+                            }
+                            body.config = parsedConfig;
+                        }
                     }
                     else if (operation === 'listAll') {
                         endpoint = '/api/sessions';
                         method = 'GET';
+                    }
+                    else {
+                        // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
+                        // address a single session by its UUID id.
+                        const sessionId = sanitizePathParam(this.getNodeParameter('sessionId', i), 'Session ID');
+                        if (operation === 'getStatus') {
+                            endpoint = `/api/sessions/${sessionId}`;
+                            method = 'GET';
+                        }
+                        else if (operation === 'start') {
+                            endpoint = `/api/sessions/${sessionId}/start`;
+                            method = 'POST';
+                        }
+                        else if (operation === 'stop') {
+                            endpoint = `/api/sessions/${sessionId}/stop`;
+                            method = 'POST';
+                        }
+                        else if (operation === 'forceKill') {
+                            endpoint = `/api/sessions/${sessionId}/force-kill`;
+                            method = 'POST';
+                        }
+                        else if (operation === 'delete') {
+                            endpoint = `/api/sessions/${sessionId}`;
+                            method = 'DELETE';
+                        }
+                        else if (operation === 'getQr') {
+                            endpoint = `/api/sessions/${sessionId}/qr`;
+                            method = 'GET';
+                        }
+                        else if (operation === 'requestPairingCode') {
+                            endpoint = `/api/sessions/${sessionId}/pairing-code`;
+                            method = 'POST';
+                            const phoneNumber = this.getNodeParameter('pairingPhoneNumber', i)
+                                .trim()
+                                .replace(/[\s+\-()]/g, '');
+                            if (!/^\d{6,15}$/.test(phoneNumber)) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must be 6–15 digits in international format (e.g. 628123456789)', { itemIndex: i });
+                            }
+                            body.phoneNumber = phoneNumber;
+                        }
                     }
                 }
                 // MESSAGE
@@ -1245,21 +1353,35 @@ class OpenWa {
                         const updateFields = this.getNodeParameter('updateFields', i, {});
                         // Only forward the fields the user set — the server treats the PUT as a partial
                         // update, so unspecified fields keep their current value.
-                        for (const key of ['url', 'events', 'secret', 'active', 'retryCount']) {
+                        for (const key of ['url', 'events', 'active', 'retryCount']) {
                             if (updateFields[key] !== undefined) {
                                 body[key] = updateFields[key];
                             }
+                        }
+                        // A secret is only forwarded when set to a non-empty value. An empty string would
+                        // CLEAR the signing secret server-side, so we never leak the field's empty default
+                        // when it is merely added to the collection. To disable signing, recreate the
+                        // webhook without a secret.
+                        if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
+                            body.secret = updateFields.secret;
                         }
                         // Mirror the create-webhook guard so an empty Events selection fails with a clear
                         // message here instead of a raw server 400 (the DTO requires at least one event).
                         if (Array.isArray(body.events) && body.events.length === 0) {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected when updating events', { itemIndex: i });
                         }
+                        // Headers are non-nullable server-side (clear them by sending {}); filters are
+                        // nullable and can only be cleared by sending null (the validator rejects {}).
                         for (const key of ['headers', 'filters']) {
                             const raw = updateFields[key];
-                            if (raw === undefined || raw === null || raw === '') {
+                            if (raw === undefined)
+                                continue; // field not added — nothing to send
+                            if (key === 'filters' && (raw === null || raw === 'null')) {
+                                body.filters = null; // explicit null clears existing filters
                                 continue;
                             }
+                            if (raw === null || raw === '')
+                                continue; // blank value — nothing to send
                             try {
                                 body[key] = typeof raw === 'string' ? JSON.parse(raw) : raw;
                             }
