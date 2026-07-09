@@ -1,6 +1,6 @@
 {
   "name": "@rmyndharis/n8n-nodes-openwa",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "n8n community nodes for OpenWA WhatsApp API Gateway",
   "author": "rmyndharis <yudhi@rmyndharis.com>",
   "keywords": [
