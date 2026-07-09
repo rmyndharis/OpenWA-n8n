@@ -8,7 +8,6 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -17,6 +16,6 @@
     "strictNullChecks": true,
     "noUnusedLocals": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["credentials/**/*", "nodes/**/*", "index.ts"],
+  "exclude": ["node_modules", "dist", "test"]
 }
