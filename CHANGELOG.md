@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.0...v0.7.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* satisfy n8n community-node package requirements ([#24](https://github.com/rmyndharis/OpenWA-n8n/issues/24)) ([00efab8](https://github.com/rmyndharis/OpenWA-n8n/commit/00efab8126ec6dad925bce7d7ea9d507d863ffb4))
+
 ## [0.7.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.6.0...v0.7.0) (2026-07-09)
 
 
