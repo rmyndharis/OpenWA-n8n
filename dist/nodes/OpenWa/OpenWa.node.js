@@ -19,8 +19,8 @@ class OpenWa {
             defaults: {
                 name: 'OpenWA',
             },
-            inputs: ['main'],
-            outputs: ['main'],
+            inputs: [n8n_workflow_1.NodeConnectionTypes.Main],
+            outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             credentials: [
                 {
                     name: 'openWaApi',
@@ -54,7 +54,7 @@ class OpenWa {
                     options: [
                         { name: 'Create', value: 'create', action: 'Create a new session' },
                         { name: 'Delete', value: 'delete', action: 'Delete a session' },
-                        { name: 'Force Kill', value: 'forceKill', action: 'Force-kill a stuck session' },
+                        { name: 'Force Kill', value: 'forceKill', action: 'Force kill a stuck session' },
                         { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
                         { name: 'Get Status', value: 'getStatus', action: 'Get session status' },
                         { name: 'List All', value: 'listAll', action: 'List all sessions' },
@@ -643,7 +643,7 @@ class OpenWa {
                     default: '[]',
                     required: true,
                     displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
-                    description: 'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: { "chatId": "...", "type": "image", "content": { "image": { "url": "https://..." }, "caption": "..." } } — the media object nests under the type key (image/video/audio/document) and uses url or base64 (add mimetype for base64); caption sits on content. No binary source in bulk.',
+                    description: 'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk.',
                 },
                 {
                     displayName: 'Batch ID',
@@ -660,7 +660,7 @@ class OpenWa {
                     placeholder: 'Add Option',
                     default: {},
                     displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
-                    description: 'If left empty, the server applies its own defaults (delay 3000 ms, randomize on, stop-on-error off).',
+                    description: 'If left empty, the server applies its own defaults (delay 3000 ms, randomize on, stop-on-error off)',
                     options: [
                         {
                             displayName: 'Delay Between Messages (Ms)',
@@ -708,7 +708,7 @@ class OpenWa {
                     },
                     options: [
                         { name: 'Block', value: 'block', action: 'Block a contact' },
-                        { name: 'Check Exists', value: 'checkExists', action: 'Check if number exists on WhatsApp' },
+                        { name: 'Check Exists', value: 'checkExists', action: 'Check if a number exists' },
                         { name: 'Get Info', value: 'getInfo', action: 'Get contact information' },
                         { name: 'Get Phone', value: 'getPhone', action: 'Resolve a contact phone number' },
                         {
@@ -802,19 +802,19 @@ class OpenWa {
                     name: 'events',
                     type: 'multiOptions',
                     options: [
-                        { name: 'Message Received', value: 'message.received' },
-                        { name: 'Message Sent', value: 'message.sent' },
-                        { name: 'Message Ack', value: 'message.ack' },
-                        { name: 'Message Failed', value: 'message.failed' },
-                        { name: 'Message Revoked', value: 'message.revoked' },
-                        { name: 'Message Reaction', value: 'message.reaction' },
-                        { name: 'Session Status', value: 'session.status' },
-                        { name: 'Session QR', value: 'session.qr' },
-                        { name: 'Session Authenticated', value: 'session.authenticated' },
-                        { name: 'Session Disconnected', value: 'session.disconnected' },
                         { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
                         { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
                         { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
+                        { name: 'Message Ack', value: 'message.ack' },
+                        { name: 'Message Failed', value: 'message.failed' },
+                        { name: 'Message Reaction', value: 'message.reaction' },
+                        { name: 'Message Received', value: 'message.received' },
+                        { name: 'Message Revoked', value: 'message.revoked' },
+                        { name: 'Message Sent', value: 'message.sent' },
+                        { name: 'Session Authenticated', value: 'session.authenticated' },
+                        { name: 'Session Disconnected', value: 'session.disconnected' },
+                        { name: 'Session QR', value: 'session.qr' },
+                        { name: 'Session Status', value: 'session.status' },
                     ],
                     default: ['message.received'],
                     displayOptions: {
@@ -869,19 +869,19 @@ class OpenWa {
                             name: 'events',
                             type: 'multiOptions',
                             options: [
-                                { name: 'Message Received', value: 'message.received' },
-                                { name: 'Message Sent', value: 'message.sent' },
-                                { name: 'Message Ack', value: 'message.ack' },
-                                { name: 'Message Failed', value: 'message.failed' },
-                                { name: 'Message Revoked', value: 'message.revoked' },
-                                { name: 'Message Reaction', value: 'message.reaction' },
-                                { name: 'Session Status', value: 'session.status' },
-                                { name: 'Session QR', value: 'session.qr' },
-                                { name: 'Session Authenticated', value: 'session.authenticated' },
-                                { name: 'Session Disconnected', value: 'session.disconnected' },
                                 { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
                                 { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
                                 { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
+                                { name: 'Message Ack', value: 'message.ack' },
+                                { name: 'Message Failed', value: 'message.failed' },
+                                { name: 'Message Reaction', value: 'message.reaction' },
+                                { name: 'Message Received', value: 'message.received' },
+                                { name: 'Message Revoked', value: 'message.revoked' },
+                                { name: 'Message Sent', value: 'message.sent' },
+                                { name: 'Session Authenticated', value: 'session.authenticated' },
+                                { name: 'Session Disconnected', value: 'session.disconnected' },
+                                { name: 'Session QR', value: 'session.qr' },
+                                { name: 'Session Status', value: 'session.status' },
                             ],
                             default: [],
                             description: 'Replaces the full set of subscribed events (not merged)',
@@ -926,6 +926,7 @@ class OpenWa {
                     ],
                 },
             ],
+            usableAsTool: true,
         };
     }
     async execute() {
@@ -980,7 +981,7 @@ class OpenWa {
                     continue;
                 }
                 if (error instanceof n8n_workflow_1.NodeOperationError) {
-                    throw error;
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), error);
                 }
                 throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
             }

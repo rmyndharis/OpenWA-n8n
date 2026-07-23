@@ -20,7 +20,7 @@ class OpenWaTrigger {
                 name: 'OpenWA Trigger',
             },
             inputs: [],
-            outputs: ['main'],
+            outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             credentials: [
                 {
                     name: 'openWaApi',
@@ -54,56 +54,6 @@ class OpenWaTrigger {
                     type: 'multiOptions',
                     options: [
                         {
-                            name: 'Message Received',
-                            value: 'message.received',
-                            description: 'Triggers when a new message is received',
-                        },
-                        {
-                            name: 'Message Sent',
-                            value: 'message.sent',
-                            description: 'Triggers when a message is sent successfully',
-                        },
-                        {
-                            name: 'Message Ack',
-                            value: 'message.ack',
-                            description: 'Triggers on a message delivery or read acknowledgement',
-                        },
-                        {
-                            name: 'Message Failed',
-                            value: 'message.failed',
-                            description: 'Triggers when a message fails to send',
-                        },
-                        {
-                            name: 'Message Revoked',
-                            value: 'message.revoked',
-                            description: 'Triggers when a message is deleted for everyone',
-                        },
-                        {
-                            name: 'Message Reaction',
-                            value: 'message.reaction',
-                            description: 'Triggers when a reaction is added to or removed from a message',
-                        },
-                        {
-                            name: 'Session Status',
-                            value: 'session.status',
-                            description: 'Triggers on any session status change',
-                        },
-                        {
-                            name: 'Session QR',
-                            value: 'session.qr',
-                            description: 'Triggers when a new QR code is generated',
-                        },
-                        {
-                            name: 'Session Authenticated',
-                            value: 'session.authenticated',
-                            description: 'Triggers when the session is authenticated',
-                        },
-                        {
-                            name: 'Session Disconnected',
-                            value: 'session.disconnected',
-                            description: 'Triggers when the session loses connection',
-                        },
-                        {
                             name: 'Group Join (Reserved — Not Yet Delivered)',
                             value: 'group.join',
                             description: 'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
@@ -117,6 +67,56 @@ class OpenWaTrigger {
                             name: 'Group Update (Reserved — Not Yet Delivered)',
                             value: 'group.update',
                             description: 'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
+                        },
+                        {
+                            name: 'Message Ack',
+                            value: 'message.ack',
+                            description: 'Triggers on a message delivery or read acknowledgement',
+                        },
+                        {
+                            name: 'Message Failed',
+                            value: 'message.failed',
+                            description: 'Triggers when a message fails to send',
+                        },
+                        {
+                            name: 'Message Reaction',
+                            value: 'message.reaction',
+                            description: 'Triggers when a reaction is added to or removed from a message',
+                        },
+                        {
+                            name: 'Message Received',
+                            value: 'message.received',
+                            description: 'Triggers when a new message is received',
+                        },
+                        {
+                            name: 'Message Revoked',
+                            value: 'message.revoked',
+                            description: 'Triggers when a message is deleted for everyone',
+                        },
+                        {
+                            name: 'Message Sent',
+                            value: 'message.sent',
+                            description: 'Triggers when a message is sent successfully',
+                        },
+                        {
+                            name: 'Session Authenticated',
+                            value: 'session.authenticated',
+                            description: 'Triggers when the session is authenticated',
+                        },
+                        {
+                            name: 'Session Disconnected',
+                            value: 'session.disconnected',
+                            description: 'Triggers when the session loses connection',
+                        },
+                        {
+                            name: 'Session QR',
+                            value: 'session.qr',
+                            description: 'Triggers when a new QR code is generated',
+                        },
+                        {
+                            name: 'Session Status',
+                            value: 'session.status',
+                            description: 'Triggers on any session status change',
                         },
                     ],
                     default: ['message.received'],
@@ -147,6 +147,7 @@ class OpenWaTrigger {
                     default: '',
                 },
             ],
+            usableAsTool: true,
         };
         this.webhookMethods = {
             default: {
@@ -187,7 +188,7 @@ class OpenWaTrigger {
                             // n8n's activation retry complete the cleanup — silently proceeding
                             // would orphan the old registration, which would keep delivering.
                             if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
-                                throw error;
+                                throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
                             }
                         }
                         delete webhookData.webhookId;
@@ -211,7 +212,7 @@ class OpenWaTrigger {
                         if ((0, httpStatus_1.httpStatusFromError)(error) === 404) {
                             return false;
                         }
-                        throw error;
+                        throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
                     }
                 },
                 async create() {
@@ -222,7 +223,7 @@ class OpenWaTrigger {
                     const events = this.getNodeParameter('events');
                     const webhookSecret = this.getNodeParameter('webhookSecret', '');
                     if (!events || events.length === 0) {
-                        throw new Error('At least one event must be selected');
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected');
                     }
                     const body = {
                         url: webhookUrl,
@@ -278,7 +279,7 @@ class OpenWaTrigger {
                     catch (error) {
                         // An already-deleted webhook (404) is fine to swallow; anything else propagates.
                         if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
-                            throw error;
+                            throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
                         }
                     }
                     delete webhookData.webhookId;
