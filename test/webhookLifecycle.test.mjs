@@ -112,18 +112,35 @@ test('delete: clears the stored session id and config hash too', async () => {
 
 // --- checkExists hook wiring (unchanged configuration) ---
 test('checkExists: a 404 probe reports the webhook absent so n8n recreates it', async () => {
-  const { ctx } = makeCtx({ throwErr: { statusCode: 404 } });
+  const { ctx } = makeCtx({ configHash: CURRENT_HASH, throwErr: { statusCode: 404 } });
   assert.equal(await hooks().checkExists.call(ctx), false);
 });
 
 test('checkExists: a non-404 error is rethrown (no silent duplicate registration)', async () => {
-  const { ctx } = makeCtx({ throwErr: { statusCode: 500 } });
+  const { ctx } = makeCtx({ configHash: CURRENT_HASH, throwErr: { statusCode: 500 } });
   await assert.rejects(() => hooks().checkExists.call(ctx));
 });
 
 test('checkExists: a reachable webhook reports present', async () => {
-  const { ctx } = makeCtx();
+  const { ctx } = makeCtx({ configHash: CURRENT_HASH });
   assert.equal(await hooks().checkExists.call(ctx), true);
+});
+
+test('checkExists: a registration without a stored hash is re-registered once (converges)', async () => {
+  // Pre-configHash static data (or anything else that lost the hash): the node
+  // cannot know whether the stored registration still matches, so it replaces it.
+  const { ctx, staticData, calls } = makeCtx();
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, 'DELETE');
+  assert.equal(calls[0].url, 'http://localhost:2785/api/sessions/default/webhooks/w1');
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('checkExists: a legacy registration whose delete fails rethrows and keeps the id', async () => {
+  const { ctx, staticData } = makeCtx({ throwErr: { statusCode: 500 } });
+  await assert.rejects(() => hooks().checkExists.call(ctx));
+  assert.equal(staticData.webhookId, 'w1');
 });
 
 test('checkExists: an unchanged config probes by id instead of re-registering', async () => {
@@ -200,4 +217,11 @@ test('create: stores the webhook id, session id, and config hash — never the s
   assert.ok(!String(staticData.configHash).includes('s3cr3t'));
   // the secret still goes to the server on registration
   assert.equal(calls[0].body.secret, 's3cr3t');
+});
+
+// --- node description ---
+test('the webhook path is scoped to the session id', () => {
+  const webhooks = new OpenWaTrigger().description.webhooks;
+  assert.equal(webhooks.length, 1);
+  assert.equal(webhooks[0].path, '={{ "openwa-" + $parameter["sessionId"] }}');
 });

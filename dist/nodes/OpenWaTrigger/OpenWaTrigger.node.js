@@ -32,7 +32,11 @@ class OpenWaTrigger {
                     name: 'default',
                     httpMethod: 'POST',
                     responseMode: 'onReceived',
-                    path: 'webhook',
+                    // Scoped to the session so several active workflows can each run an OpenWA
+                    // Trigger without colliding on one shared path. A change here changes the
+                    // delivery URL; checkExists detects that via the config hash and
+                    // re-registers the webhook automatically on the next activation.
+                    path: '={{ "openwa-" + $parameter["sessionId"] }}',
                 },
             ],
             properties: [
@@ -158,39 +162,38 @@ class OpenWaTrigger {
                     // webhook was created (secret, events, session, or this instance's webhook
                     // URL), the stored registration is stale: remove it and report absent so
                     // n8n re-creates it with the current configuration. A missing configHash
-                    // means the registration predates this tracking — probe it as before.
-                    const storedHash = webhookData.configHash;
-                    if (storedHash !== undefined) {
-                        const currentHash = (0, configHash_1.webhookConfigHash)({
-                            url: this.getNodeWebhookUrl('default') ?? '',
-                            events: this.getNodeParameter('events'),
-                            secret: this.getNodeParameter('webhookSecret', ''),
-                            sessionId,
-                        });
-                        if (storedHash !== currentHash) {
-                            // Delete from the STORED session — the current parameter may already
-                            // point at a different session than the one the webhook lives on.
-                            const staleSessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? sessionId, 'Session ID');
-                            try {
-                                await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
-                                    method: 'DELETE',
-                                    url: `${baseUrl}/api/sessions/${staleSessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
-                                    json: true,
-                                });
-                            }
-                            catch (error) {
-                                // Already gone remotely is fine. Anything else must fail loud and let
-                                // n8n's activation retry complete the cleanup — silently proceeding
-                                // would orphan the old registration, which would keep delivering.
-                                if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
-                                    throw error;
-                                }
-                            }
-                            delete webhookData.webhookId;
-                            delete webhookData.sessionId;
-                            delete webhookData.configHash;
-                            return false;
+                    // means the registration predates this tracking — re-register it once so
+                    // its configuration becomes known (this also picks up a delivery URL that
+                    // changed across a package upgrade).
+                    const currentHash = (0, configHash_1.webhookConfigHash)({
+                        url: this.getNodeWebhookUrl('default') ?? '',
+                        events: this.getNodeParameter('events'),
+                        secret: this.getNodeParameter('webhookSecret', ''),
+                        sessionId,
+                    });
+                    if (webhookData.configHash !== currentHash) {
+                        // Delete from the STORED session — the current parameter may already
+                        // point at a different session than the one the webhook lives on.
+                        const staleSessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? sessionId, 'Session ID');
+                        try {
+                            await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                                method: 'DELETE',
+                                url: `${baseUrl}/api/sessions/${staleSessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
+                                json: true,
+                            });
                         }
+                        catch (error) {
+                            // Already gone remotely is fine. Anything else must fail loud and let
+                            // n8n's activation retry complete the cleanup — silently proceeding
+                            // would orphan the old registration, which would keep delivering.
+                            if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
+                                throw error;
+                            }
+                        }
+                        delete webhookData.webhookId;
+                        delete webhookData.sessionId;
+                        delete webhookData.configHash;
+                        return false;
                     }
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
