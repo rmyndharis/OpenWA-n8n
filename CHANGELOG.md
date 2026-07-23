@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.0...v0.8.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* satisfy the n8n Creator Portal lint gate ([#30](https://github.com/rmyndharis/OpenWA-n8n/issues/30)) ([7a152e7](https://github.com/rmyndharis/OpenWA-n8n/commit/7a152e72339bacb24e53ed49b71064546529d36b))
+
 ## [0.8.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.2...v0.8.0) (2026-07-23)
 
 
