@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.2...v0.8.0) (2026-07-23)
+
+
+### Features
+
+* **trigger:** add opt-in delivery de-duplication and reject unverifiable deliveries loudly ([16e8532](https://github.com/rmyndharis/OpenWA-n8n/commit/16e853261196a0c324d08f858c71f721b72ebb57))
+* **trigger:** scope the webhook path to the session ([41653de](https://github.com/rmyndharis/OpenWA-n8n/commit/41653de8af5204e678e717f1aee038f4a56674ea))
+
+
+### Bug Fixes
+
+* **trigger:** delete the webhook from the session it was registered on ([616e845](https://github.com/rmyndharis/OpenWA-n8n/commit/616e845fed5c7c12ade9ca562965aa7caaceaba7))
+* **trigger:** re-register the delivery webhook when its configuration changes ([e4d9cb5](https://github.com/rmyndharis/OpenWA-n8n/commit/e4d9cb595ee2c2c9235dada9cf222fb136b6002d))
+
 ## [0.7.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.7.1...v0.7.2) (2026-07-09)
 
 
