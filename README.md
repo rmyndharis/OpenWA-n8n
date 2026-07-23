@@ -144,6 +144,8 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 Starts a workflow when the selected events arrive on your session.
 
+The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessionId>`), so several active workflows can each run a Trigger on the same n8n instance without colliding on one shared path. When you change the session, events, or secret — or when the URL shape changes across a package upgrade — the server-side webhook is re-registered automatically on the next activation.
+
 | Event                   | Description                           |
 | ----------------------- | ------------------------------------- |
 | `message.received`      | New incoming message                  |
@@ -164,7 +166,9 @@ Starts a workflow when the selected events arrive on your session.
 
 The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
 
-> Changing or clearing the secret takes effect on the next activation — deactivate and reactivate the workflow to re-register it.
+> Changing or clearing the secret — or changing the events or session — re-registers the webhook automatically on the next activation (deactivate/reactivate, or an n8n restart). No manual cleanup on the server is needed.
+
+> Signature verification requires the raw request body, which all current n8n versions provide. On a severely outdated n8n that cannot supply it, signed deliveries are rejected with a logged warning — upgrade n8n or leave the secret empty.
 
 #### Trigger output
 
@@ -193,6 +197,10 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 > - OpenWA retries failed deliveries with the same `deliveryId` — de-duplicate on it if your downstream actions aren't idempotent.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
+
+#### ♻️ Duplicate deliveries
+
+OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose acknowledgement was lost (n8n restart, a slow network) can arrive twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent delivery IDs (kept in workflow static data). Trade-offs: a retry whose first execution *failed* is also dropped, and two deliveries arriving at the exact same moment can both pass — enable it when downstream actions are not idempotent and failed runs are rare.
 
 ---
 
