@@ -139,6 +139,14 @@ export class OpenWaTrigger implements INodeType {
           'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
       },
       {
+        displayName: 'Deduplicate Deliveries',
+        name: 'deduplicateDeliveries',
+        type: 'boolean',
+        default: false,
+        description:
+          'Whether to drop a repeated delivery of the same event. OpenWA retries failed deliveries with the same deliveryId, which can otherwise run this workflow twice. Best-effort: deliveries arriving at the same moment can both pass, and a retry whose first run FAILED is also dropped — enable only when downstream actions are not idempotent and failed runs are rare.',
+      },
+      {
         displayName:
           'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
         name: 'outputShapeNotice',
@@ -327,12 +335,23 @@ export class OpenWaTrigger implements INodeType {
       if (typeof req.readRawBody === 'function' && !req.rawBody) {
         await req.readRawBody();
       }
-      // The raw bytes are the reliable source — OpenWA signs the exact JSON it
-      // sends. Re-serializing the parsed body is only a last-resort fallback.
-      const rawBody: Buffer | string = req.rawBody ?? JSON.stringify(req.body ?? {});
+      // The raw bytes are the only reliable source — OpenWA signs the exact JSON it
+      // transmits, and re-serializing a parsed body can reorder keys or change
+      // whitespace. Without them the delivery cannot be verified, so reject loudly
+      // instead of silently re-serializing (which drops valid deliveries at random).
+      if (!req.rawBody) {
+        this.logger.warn(
+          'OpenWA Trigger cannot verify the delivery signature: the raw request body is unavailable on this n8n version. Upgrade n8n, or clear the Webhook Secret to receive unsigned deliveries.',
+        );
+        this.getResponseObject().status(401).send('Unauthorized');
+        return {
+          noWebhookResponse: true,
+          workflowData: [[]],
+        };
+      }
       const signatureHeader = req.headers['x-openwa-signature'];
       const signature = typeof signatureHeader === 'string' ? signatureHeader : undefined;
-      if (!verifyOpenWaSignature(rawBody, webhookSecret, signature)) {
+      if (!verifyOpenWaSignature(req.rawBody, webhookSecret, signature)) {
         // Reject with 401 so OpenWA sees the delivery was refused. IWebhookResponseData
         // has no status field, so set it on the response and suppress n8n's own response.
         this.getResponseObject().status(401).send('Unauthorized');
@@ -349,6 +368,30 @@ export class OpenWaTrigger implements INodeType {
       return {
         workflowData: [[]],
       };
+    }
+
+    // Optional de-duplication: OpenWA retries failed deliveries with the same
+    // deliveryId, so a delivery whose receive-ack was lost arrives twice and
+    // would otherwise run the workflow twice. Best-effort: static data is saved
+    // per execution, so two retries arriving at the same moment can both pass.
+    if (this.getNodeParameter('deduplicateDeliveries', false) as boolean) {
+      const deliveryId = (body as Record<string, unknown>).deliveryId;
+      if (typeof deliveryId === 'string' && deliveryId) {
+        const staticData = this.getWorkflowStaticData('node');
+        const seen = (staticData.recentDeliveryIds as string[] | undefined) ?? [];
+        if (seen.includes(deliveryId)) {
+          this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${deliveryId}`);
+          return {
+            workflowData: [[]],
+          };
+        }
+        // Bound the memory: keep only the most recent 500 delivery ids.
+        seen.push(deliveryId);
+        if (seen.length > 500) {
+          seen.splice(0, seen.length - 500);
+        }
+        staticData.recentDeliveryIds = seen;
+      }
     }
 
     return {
