@@ -4,6 +4,7 @@ exports.OpenWaTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const verifySignature_1 = require("./verifySignature");
 const httpStatus_1 = require("./httpStatus");
+const configHash_1 = require("./configHash");
 const sanitizePathParam_1 = require("../shared/sanitizePathParam");
 class OpenWaTrigger {
     constructor() {
@@ -126,7 +127,7 @@ class OpenWaTrigger {
                         password: true,
                     },
                     default: '',
-                    description: 'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret takes effect on the next activation; deactivate and reactivate the workflow to re-register it.',
+                    description: 'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
                 },
                 {
                     displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
@@ -146,6 +147,44 @@ class OpenWaTrigger {
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
+                    // If the configuration the registration depends on has changed since the
+                    // webhook was created (secret, events, session, or this instance's webhook
+                    // URL), the stored registration is stale: remove it and report absent so
+                    // n8n re-creates it with the current configuration. A missing configHash
+                    // means the registration predates this tracking — probe it as before.
+                    const storedHash = webhookData.configHash;
+                    if (storedHash !== undefined) {
+                        const currentHash = (0, configHash_1.webhookConfigHash)({
+                            url: this.getNodeWebhookUrl('default') ?? '',
+                            events: this.getNodeParameter('events'),
+                            secret: this.getNodeParameter('webhookSecret', ''),
+                            sessionId,
+                        });
+                        if (storedHash !== currentHash) {
+                            // Delete from the STORED session — the current parameter may already
+                            // point at a different session than the one the webhook lives on.
+                            const staleSessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? sessionId, 'Session ID');
+                            try {
+                                await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                                    method: 'DELETE',
+                                    url: `${baseUrl}/api/sessions/${staleSessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
+                                    json: true,
+                                });
+                            }
+                            catch (error) {
+                                // Already gone remotely is fine. Anything else must fail loud and let
+                                // n8n's activation retry complete the cleanup — silently proceeding
+                                // would orphan the old registration, which would keep delivering.
+                                if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
+                                    throw error;
+                                }
+                            }
+                            delete webhookData.webhookId;
+                            delete webhookData.sessionId;
+                            delete webhookData.configHash;
+                            return false;
+                        }
+                    }
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'GET',
@@ -196,6 +235,16 @@ class OpenWaTrigger {
                     const webhookData = this.getWorkflowStaticData('node');
                     // Normalize to string so checkExists/delete comparisons stay consistent.
                     webhookData.webhookId = String(webhookId);
+                    // Remember the configuration this registration was made with, so a later
+                    // checkExists can detect a stale registration and re-register instead of
+                    // silently running with an old secret/events/URL. Only the hash is stored.
+                    webhookData.sessionId = sessionId;
+                    webhookData.configHash = (0, configHash_1.webhookConfigHash)({
+                        url: webhookUrl ?? '',
+                        events,
+                        secret: webhookSecret,
+                        sessionId,
+                    });
                     return true;
                 },
                 async delete() {
@@ -220,6 +269,8 @@ class OpenWaTrigger {
                         }
                     }
                     delete webhookData.webhookId;
+                    delete webhookData.sessionId;
+                    delete webhookData.configHash;
                     return true;
                 },
             },

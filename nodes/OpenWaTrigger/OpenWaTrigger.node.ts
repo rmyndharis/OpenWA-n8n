@@ -9,6 +9,7 @@ import type {
 import { NodeApiError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
+import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
 
 export class OpenWaTrigger implements INodeType {
@@ -135,7 +136,7 @@ export class OpenWaTrigger implements INodeType {
         },
         default: '',
         description:
-          'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret takes effect on the next activation; deactivate and reactivate the workflow to re-register it.',
+          'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
       },
       {
         displayName:
@@ -161,6 +162,47 @@ export class OpenWaTrigger implements INodeType {
           this.getNodeParameter('sessionId') as string,
           'Session ID',
         );
+
+        // If the configuration the registration depends on has changed since the
+        // webhook was created (secret, events, session, or this instance's webhook
+        // URL), the stored registration is stale: remove it and report absent so
+        // n8n re-creates it with the current configuration. A missing configHash
+        // means the registration predates this tracking — probe it as before.
+        const storedHash = webhookData.configHash as string | undefined;
+        if (storedHash !== undefined) {
+          const currentHash = webhookConfigHash({
+            url: this.getNodeWebhookUrl('default') ?? '',
+            events: this.getNodeParameter('events') as string[],
+            secret: this.getNodeParameter('webhookSecret', '') as string,
+            sessionId,
+          });
+          if (storedHash !== currentHash) {
+            // Delete from the STORED session — the current parameter may already
+            // point at a different session than the one the webhook lives on.
+            const staleSessionId = sanitizePathParam(
+              (webhookData.sessionId as string) ?? sessionId,
+              'Session ID',
+            );
+            try {
+              await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                method: 'DELETE',
+                url: `${baseUrl}/api/sessions/${staleSessionId}/webhooks/${encodeURIComponent(webhookData.webhookId as string)}`,
+                json: true,
+              });
+            } catch (error) {
+              // Already gone remotely is fine. Anything else must fail loud and let
+              // n8n's activation retry complete the cleanup — silently proceeding
+              // would orphan the old registration, which would keep delivering.
+              if (httpStatusFromError(error) !== 404) {
+                throw error;
+              }
+            }
+            delete webhookData.webhookId;
+            delete webhookData.sessionId;
+            delete webhookData.configHash;
+            return false;
+          }
+        }
 
         try {
           await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
@@ -227,6 +269,16 @@ export class OpenWaTrigger implements INodeType {
         const webhookData = this.getWorkflowStaticData('node');
         // Normalize to string so checkExists/delete comparisons stay consistent.
         webhookData.webhookId = String(webhookId);
+        // Remember the configuration this registration was made with, so a later
+        // checkExists can detect a stale registration and re-register instead of
+        // silently running with an old secret/events/URL. Only the hash is stored.
+        webhookData.sessionId = sessionId;
+        webhookData.configHash = webhookConfigHash({
+          url: webhookUrl ?? '',
+          events,
+          secret: webhookSecret,
+          sessionId,
+        });
         return true;
       },
 
@@ -258,6 +310,8 @@ export class OpenWaTrigger implements INodeType {
         }
 
         delete webhookData.webhookId;
+        delete webhookData.sessionId;
+        delete webhookData.configHash;
         return true;
       },
     },
