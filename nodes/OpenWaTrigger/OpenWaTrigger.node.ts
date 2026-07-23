@@ -9,17 +9,7 @@ import type {
 import { NodeApiError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
-
-function sanitizePathParam(value: string, paramName: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`${paramName} cannot be empty`);
-  }
-  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
-    throw new Error(`${paramName} contains invalid characters`);
-  }
-  return encodeURIComponent(trimmed);
-}
+import { sanitizePathParam } from '../shared/sanitizePathParam';
 
 export class OpenWaTrigger implements INodeType {
   description: INodeTypeDescription = {

@@ -4,16 +4,7 @@ exports.OpenWaTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const verifySignature_1 = require("./verifySignature");
 const httpStatus_1 = require("./httpStatus");
-function sanitizePathParam(value, paramName) {
-    const trimmed = value.trim();
-    if (!trimmed) {
-        throw new Error(`${paramName} cannot be empty`);
-    }
-    if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
-        throw new Error(`${paramName} contains invalid characters`);
-    }
-    return encodeURIComponent(trimmed);
-}
+const sanitizePathParam_1 = require("../shared/sanitizePathParam");
 class OpenWaTrigger {
     constructor() {
         this.description = {
@@ -154,7 +145,7 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
+                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'GET',
@@ -178,7 +169,7 @@ class OpenWaTrigger {
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
+                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     const events = this.getNodeParameter('events');
                     const webhookSecret = this.getNodeParameter('webhookSecret', '');
                     if (!events || events.length === 0) {
@@ -214,7 +205,7 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = sanitizePathParam(this.getNodeParameter('sessionId'), 'Session ID');
+                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'DELETE',

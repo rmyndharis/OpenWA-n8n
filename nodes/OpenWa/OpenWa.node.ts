@@ -3,23 +3,15 @@ import type {
   INodeExecutionData,
   INodeType,
   INodeTypeDescription,
-  IHttpRequestMethods,
   IHttpRequestOptions,
   JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
-import { parseBulkMessages } from './bulkMessages';
-
-function sanitizePathParam(value: string, paramName: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`${paramName} cannot be empty`);
-  }
-  if (trimmed.includes('..') || trimmed.includes('/') || trimmed.includes('\\')) {
-    throw new Error(`${paramName} contains invalid characters`);
-  }
-  return encodeURIComponent(trimmed);
-}
+import { buildContactRequest } from './handlers/contact';
+import { buildMessageRequest } from './handlers/message';
+import { buildSessionRequest } from './handlers/session';
+import { buildWebhookRequest } from './handlers/webhook';
+import type { RequestSpec } from './handlers/types';
 
 export class OpenWa implements INodeType {
   description: INodeTypeDescription = {
@@ -974,494 +966,18 @@ export class OpenWa implements INodeType {
 
     for (let i = 0; i < items.length; i++) {
       try {
-        let endpoint = '';
-        let method: IHttpRequestMethods = 'GET';
-        let body: Record<string, unknown> = {};
-
-        // SESSION
+        let spec: RequestSpec | null = null;
         if (resource === 'session') {
-          if (operation === 'create') {
-            endpoint = '/api/sessions';
-            method = 'POST';
-            const sessionName = (this.getNodeParameter('sessionName', i) as string).trim();
-            if (!sessionName) {
-              throw new NodeOperationError(this.getNode(), 'Session name cannot be empty', {
-                itemIndex: i,
-              });
-            }
-            body.name = sessionName;
-            const rawConfig = this.getNodeParameter('sessionConfig', i, '') as
-              | string
-              | Record<string, unknown>;
-            if (rawConfig !== '' && rawConfig !== undefined && rawConfig !== null) {
-              let parsedConfig: unknown;
-              try {
-                parsedConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-              } catch {
-                throw new NodeOperationError(this.getNode(), 'Session config must be valid JSON', {
-                  itemIndex: i,
-                });
-              }
-              if (
-                typeof parsedConfig !== 'object' ||
-                parsedConfig === null ||
-                Array.isArray(parsedConfig)
-              ) {
-                throw new NodeOperationError(
-                  this.getNode(),
-                  'Session config must be a JSON object (e.g. {"autoReconnect":true})',
-                  { itemIndex: i },
-                );
-              }
-              body.config = parsedConfig;
-            }
-          } else if (operation === 'listAll') {
-            endpoint = '/api/sessions';
-            method = 'GET';
-          } else {
-            // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
-            // address a single session by its UUID id.
-            const sessionId = sanitizePathParam(
-              this.getNodeParameter('sessionId', i) as string,
-              'Session ID',
-            );
-            if (operation === 'getStatus') {
-              endpoint = `/api/sessions/${sessionId}`;
-              method = 'GET';
-            } else if (operation === 'start') {
-              endpoint = `/api/sessions/${sessionId}/start`;
-              method = 'POST';
-            } else if (operation === 'stop') {
-              endpoint = `/api/sessions/${sessionId}/stop`;
-              method = 'POST';
-            } else if (operation === 'forceKill') {
-              endpoint = `/api/sessions/${sessionId}/force-kill`;
-              method = 'POST';
-            } else if (operation === 'delete') {
-              endpoint = `/api/sessions/${sessionId}`;
-              method = 'DELETE';
-            } else if (operation === 'getQr') {
-              endpoint = `/api/sessions/${sessionId}/qr`;
-              method = 'GET';
-            } else if (operation === 'requestPairingCode') {
-              endpoint = `/api/sessions/${sessionId}/pairing-code`;
-              method = 'POST';
-              const phoneNumber = (this.getNodeParameter('pairingPhoneNumber', i) as string)
-                .trim()
-                .replace(/[\s+\-()]/g, '');
-              if (!/^\d{6,15}$/.test(phoneNumber)) {
-                throw new NodeOperationError(
-                  this.getNode(),
-                  'Phone number must be 6–15 digits in international format (e.g. 628123456789)',
-                  { itemIndex: i },
-                );
-              }
-              body.phoneNumber = phoneNumber;
-            }
-          }
+          spec = await buildSessionRequest.call(this, operation, i);
+        } else if (resource === 'message') {
+          spec = await buildMessageRequest.call(this, operation, i);
+        } else if (resource === 'contact') {
+          spec = await buildContactRequest.call(this, operation, i);
+        } else if (resource === 'webhook') {
+          spec = await buildWebhookRequest.call(this, operation, i);
         }
 
-        // MESSAGE
-        else if (resource === 'message') {
-          const sessionId = sanitizePathParam(
-            this.getNodeParameter('sessionId', i) as string,
-            'Session ID',
-          );
-          // Bulk / batch operations are not addressed to a single chat, so they skip Chat ID.
-          let chatId = '';
-          if (
-            operation !== 'sendBulk' &&
-            operation !== 'getBatchStatus' &&
-            operation !== 'cancelBatch'
-          ) {
-            chatId = (this.getNodeParameter('chatId', i) as string).trim();
-            if (!chatId) {
-              throw new NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
-                itemIndex: i,
-              });
-            }
-          }
-
-          if (operation === 'sendText') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-text`;
-            method = 'POST';
-            body = {
-              chatId,
-              text: this.getNodeParameter('message', i) as string,
-            };
-          } else if (operation === 'sendImage') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-image`;
-            method = 'POST';
-            const imageSource = this.getNodeParameter('imageSource', i) as string;
-            body = { chatId };
-            const caption = (this.getNodeParameter('caption', i, '') as string).trim();
-            if (caption) {
-              body.caption = caption;
-            }
-            if (imageSource === 'binary') {
-              const binaryPropertyName = this.getNodeParameter('imageBinaryProperty', i) as string;
-              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
-              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-              body.base64 = binaryData.toString('base64');
-              // OpenWA rejects base64 without a mimetype; fall back to the server's own
-              // default if the binary item somehow carries no MIME type.
-              body.mimetype = binary.mimeType || 'application/octet-stream';
-            } else if (imageSource === 'url') {
-              body.url = this.getNodeParameter('imageUrl', i) as string;
-            } else {
-              body.base64 = this.getNodeParameter('imageBase64', i) as string;
-              body.mimetype = this.getNodeParameter('imageMimeType', i) as string;
-            }
-          } else if (operation === 'sendDocument') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-document`;
-            method = 'POST';
-            const documentSource = this.getNodeParameter('documentSource', i) as string;
-            body = {
-              chatId,
-              filename: this.getNodeParameter('filename', i, 'document.pdf') as string,
-            };
-            const caption = (this.getNodeParameter('caption', i, '') as string).trim();
-            if (caption) {
-              body.caption = caption;
-            }
-            if (documentSource === 'binary') {
-              const binaryPropertyName = this.getNodeParameter(
-                'documentBinaryProperty',
-                i,
-              ) as string;
-              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
-              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-              body.base64 = binaryData.toString('base64');
-              // OpenWA rejects base64 without a mimetype; fall back to the server's own
-              // default if the binary item somehow carries no MIME type.
-              body.mimetype = binary.mimeType || 'application/octet-stream';
-            } else if (documentSource === 'url') {
-              body.url = this.getNodeParameter('documentUrl', i) as string;
-            } else {
-              body.base64 = this.getNodeParameter('documentBase64', i) as string;
-              body.mimetype = this.getNodeParameter('documentMimeType', i) as string;
-            }
-          } else if (operation === 'sendLocation') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-location`;
-            method = 'POST';
-            body = {
-              chatId,
-              latitude: this.getNodeParameter('latitude', i) as number,
-              longitude: this.getNodeParameter('longitude', i) as number,
-            };
-            const locationName = (
-              this.getNodeParameter('locationName', i, '') as string
-            ).trim();
-            if (locationName) {
-              // OpenWA's SendLocationDto uses `description` for the location label.
-              body.description = locationName;
-            }
-          } else if (operation === 'sendAudio') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-audio`;
-            method = 'POST';
-            const audioSource = this.getNodeParameter('audioSource', i) as string;
-            body = { chatId };
-            if (audioSource === 'binary') {
-              const binaryPropertyName = this.getNodeParameter('audioBinaryProperty', i) as string;
-              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
-              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-              body.base64 = binaryData.toString('base64');
-              // OpenWA rejects base64 without a mimetype; fall back to the voice-note
-              // format if the binary item somehow carries no MIME type.
-              body.mimetype = binary.mimeType || 'audio/ogg; codecs=opus';
-            } else if (audioSource === 'url') {
-              body.url = this.getNodeParameter('audioUrl', i) as string;
-            } else {
-              body.base64 = this.getNodeParameter('audioBase64', i) as string;
-              body.mimetype = this.getNodeParameter('audioMimeType', i) as string;
-            }
-            // Deliver as a true WhatsApp voice note (PTT). Only attach `ptt` when enabled so
-            // plain-audio sends stay backward-compatible; the field requires server >= v0.7.17.
-            if (this.getNodeParameter('sendAsVoiceNote', i, false) as boolean) {
-              body.ptt = true;
-            }
-          } else if (operation === 'reply') {
-            endpoint = `/api/sessions/${sessionId}/messages/reply`;
-            method = 'POST';
-            body = {
-              chatId,
-              quotedMessageId: (this.getNodeParameter('quotedMessageId', i) as string).trim(),
-              text: this.getNodeParameter('message', i) as string,
-            };
-          } else if (operation === 'react') {
-            endpoint = `/api/sessions/${sessionId}/messages/react`;
-            method = 'POST';
-            // An empty emoji removes the existing reaction — the field is intentionally sent.
-            body = {
-              chatId,
-              messageId: (this.getNodeParameter('messageId', i) as string).trim(),
-              emoji: this.getNodeParameter('emoji', i, '') as string,
-            };
-          } else if (operation === 'delete') {
-            endpoint = `/api/sessions/${sessionId}/messages/delete`;
-            method = 'POST';
-            body = {
-              chatId,
-              messageId: (this.getNodeParameter('messageId', i) as string).trim(),
-              forEveryone: this.getNodeParameter('forEveryone', i, true) as boolean,
-            };
-          } else if (operation === 'sendVideo') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-video`;
-            method = 'POST';
-            const videoSource = this.getNodeParameter('videoSource', i) as string;
-            body = { chatId };
-            const caption = (this.getNodeParameter('caption', i, '') as string).trim();
-            if (caption) {
-              body.caption = caption;
-            }
-            if (videoSource === 'binary') {
-              const binaryPropertyName = this.getNodeParameter('videoBinaryProperty', i) as string;
-              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
-              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-              body.base64 = binaryData.toString('base64');
-              body.mimetype = binary.mimeType || 'application/octet-stream';
-            } else if (videoSource === 'url') {
-              body.url = this.getNodeParameter('videoUrl', i) as string;
-            } else {
-              body.base64 = this.getNodeParameter('videoBase64', i) as string;
-              body.mimetype = this.getNodeParameter('videoMimeType', i) as string;
-            }
-          } else if (operation === 'sendSticker') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-sticker`;
-            method = 'POST';
-            const stickerSource = this.getNodeParameter('stickerSource', i) as string;
-            body = { chatId };
-            if (stickerSource === 'binary') {
-              const binaryPropertyName = this.getNodeParameter('stickerBinaryProperty', i) as string;
-              const binary = this.helpers.assertBinaryData(i, binaryPropertyName);
-              const binaryData = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-              body.base64 = binaryData.toString('base64');
-              // Stickers must be WebP; fall back to that if the binary item carries no MIME type.
-              body.mimetype = binary.mimeType || 'image/webp';
-            } else if (stickerSource === 'url') {
-              body.url = this.getNodeParameter('stickerUrl', i) as string;
-            } else {
-              body.base64 = this.getNodeParameter('stickerBase64', i) as string;
-              body.mimetype = this.getNodeParameter('stickerMimeType', i) as string;
-            }
-          } else if (operation === 'sendContact') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
-            method = 'POST';
-            body = {
-              chatId,
-              contactName: (this.getNodeParameter('contactName', i) as string).trim(),
-              contactNumber: (this.getNodeParameter('contactNumber', i) as string).trim(),
-            };
-          } else if (operation === 'sendBulk') {
-            endpoint = `/api/sessions/${sessionId}/messages/send-bulk`;
-            method = 'POST';
-            let messages: unknown[];
-            try {
-              messages = parseBulkMessages(this.getNodeParameter('bulkMessages', i, '[]'));
-            } catch (e) {
-              throw new NodeOperationError(this.getNode(), (e as Error).message, { itemIndex: i });
-            }
-            body = { messages };
-            const batchId = (this.getNodeParameter('batchId', i, '') as string).trim();
-            if (batchId) {
-              body.batchId = batchId;
-            }
-            const options = this.getNodeParameter('bulkOptions', i, {}) as Record<string, unknown>;
-            if (Object.keys(options).length > 0) {
-              body.options = options;
-            }
-          } else if (operation === 'getBatchStatus') {
-            const batchId = sanitizePathParam(
-              this.getNodeParameter('statusBatchId', i) as string,
-              'Batch ID',
-            );
-            endpoint = `/api/sessions/${sessionId}/messages/batch/${batchId}`;
-            method = 'GET';
-          } else if (operation === 'cancelBatch') {
-            const batchId = sanitizePathParam(
-              this.getNodeParameter('statusBatchId', i) as string,
-              'Batch ID',
-            );
-            endpoint = `/api/sessions/${sessionId}/messages/batch/${batchId}/cancel`;
-            method = 'POST';
-          }
-
-          // Optional @mentions — only send-text/image/video/document accept them. Guard by
-          // operation (not just the hidden field) so a mentions value can never ride
-          // along on a sendLocation request, whose DTO rejects unknown fields (400).
-          if (
-            operation === 'sendText' ||
-            operation === 'sendImage' ||
-            operation === 'sendDocument' ||
-            operation === 'sendVideo'
-          ) {
-            const rawMentions = this.getNodeParameter('mentions', i, []);
-            const mentions = (Array.isArray(rawMentions) ? rawMentions : [])
-              .map((m) => String(m).trim())
-              .filter(Boolean);
-            if (mentions.length > 0) {
-              body.mentions = mentions;
-            }
-          }
-        }
-
-        // CONTACT
-        else if (resource === 'contact') {
-          const sessionId = sanitizePathParam(
-            this.getNodeParameter('sessionId', i) as string,
-            'Session ID',
-          );
-
-          if (operation === 'checkExists') {
-            const phoneNumber = (this.getNodeParameter('phoneNumber', i) as string)
-              .trim()
-              .replace(/[\s+\-()]/g, '');
-            if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
-              throw new NodeOperationError(
-                this.getNode(),
-                'Phone number must contain only digits (no +, spaces, or special characters)',
-                { itemIndex: i },
-              );
-            }
-            endpoint = `/api/sessions/${sessionId}/contacts/check/${encodeURIComponent(phoneNumber)}`;
-            method = 'GET';
-          } else if (operation === 'getInfo') {
-            const contactId = (this.getNodeParameter('contactId', i) as string).trim();
-            if (!contactId) {
-              throw new NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
-                itemIndex: i,
-              });
-            }
-            endpoint = `/api/sessions/${sessionId}/contacts/${encodeURIComponent(contactId)}`;
-            method = 'GET';
-          } else if (
-            operation === 'block' ||
-            operation === 'unblock' ||
-            operation === 'getProfilePicture' ||
-            operation === 'getPhone'
-          ) {
-            const contactId = (this.getNodeParameter('contactId', i) as string).trim();
-            if (!contactId) {
-              throw new NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
-                itemIndex: i,
-              });
-            }
-            const encoded = encodeURIComponent(contactId);
-            if (operation === 'block') {
-              endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/block`;
-              method = 'POST';
-            } else if (operation === 'unblock') {
-              endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/block`;
-              method = 'DELETE';
-            } else if (operation === 'getProfilePicture') {
-              endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/profile-picture`;
-              method = 'GET';
-            } else {
-              endpoint = `/api/sessions/${sessionId}/contacts/${encoded}/phone`;
-              method = 'GET';
-            }
-          }
-        }
-
-        // WEBHOOK
-        else if (resource === 'webhook') {
-          const sessionId = sanitizePathParam(
-            this.getNodeParameter('sessionId', i) as string,
-            'Session ID',
-          );
-
-          if (operation === 'create') {
-            endpoint = `/api/sessions/${sessionId}/webhooks`;
-            method = 'POST';
-            const events = this.getNodeParameter('events', i) as string[];
-            if (!events || events.length === 0) {
-              throw new NodeOperationError(
-                this.getNode(),
-                'At least one event must be selected',
-                { itemIndex: i },
-              );
-            }
-            body = {
-              url: this.getNodeParameter('webhookUrl', i) as string,
-              events,
-            };
-            const webhookSecret = this.getNodeParameter('webhookSecret', i, '') as string;
-            if (webhookSecret) {
-              body.secret = webhookSecret;
-            }
-          } else if (operation === 'delete') {
-            const webhookId = sanitizePathParam(
-              this.getNodeParameter('webhookId', i) as string,
-              'Webhook ID',
-            );
-            endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
-            method = 'DELETE';
-          } else if (operation === 'update') {
-            const webhookId = sanitizePathParam(
-              this.getNodeParameter('webhookId', i) as string,
-              'Webhook ID',
-            );
-            endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}`;
-            method = 'PUT';
-            const updateFields = this.getNodeParameter('updateFields', i, {}) as Record<
-              string,
-              unknown
-            >;
-            // Only forward the fields the user set — the server treats the PUT as a partial
-            // update, so unspecified fields keep their current value.
-            for (const key of ['url', 'events', 'active', 'retryCount'] as const) {
-              if (updateFields[key] !== undefined) {
-                body[key] = updateFields[key];
-              }
-            }
-            // A secret is only forwarded when set to a non-empty value. An empty string would
-            // CLEAR the signing secret server-side, so we never leak the field's empty default
-            // when it is merely added to the collection. To disable signing, recreate the
-            // webhook without a secret.
-            if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
-              body.secret = updateFields.secret;
-            }
-            // Mirror the create-webhook guard so an empty Events selection fails with a clear
-            // message here instead of a raw server 400 (the DTO requires at least one event).
-            if (Array.isArray(body.events) && body.events.length === 0) {
-              throw new NodeOperationError(
-                this.getNode(),
-                'At least one event must be selected when updating events',
-                { itemIndex: i },
-              );
-            }
-            // Headers are non-nullable server-side (clear them by sending {}); filters are
-            // nullable and can only be cleared by sending null (the validator rejects {}).
-            for (const key of ['headers', 'filters'] as const) {
-              const raw = updateFields[key];
-              if (raw === undefined) continue; // field not added — nothing to send
-              if (key === 'filters' && (raw === null || raw === 'null')) {
-                body.filters = null; // explicit null clears existing filters
-                continue;
-              }
-              if (raw === null || raw === '') continue; // blank value — nothing to send
-              try {
-                body[key] = typeof raw === 'string' ? JSON.parse(raw) : raw;
-              } catch {
-                throw new NodeOperationError(
-                  this.getNode(),
-                  `${key === 'headers' ? 'Headers' : 'Filters'} must be valid JSON`,
-                  { itemIndex: i },
-                );
-              }
-            }
-          } else if (operation === 'test') {
-            const webhookId = sanitizePathParam(
-              this.getNodeParameter('webhookId', i) as string,
-              'Webhook ID',
-            );
-            endpoint = `/api/sessions/${sessionId}/webhooks/${webhookId}/test`;
-            method = 'POST';
-          }
-        }
-
-        // Unhandled resource/operation
-        if (!endpoint) {
+        if (!spec) {
           throw new NodeOperationError(
             this.getNode(),
             `Unsupported resource/operation: ${resource}/${operation}`,
@@ -1471,16 +987,16 @@ export class OpenWa implements INodeType {
 
         // Make request
         const options: IHttpRequestOptions = {
-          method,
-          url: `${baseUrl}${endpoint}`,
+          method: spec.method,
+          url: `${baseUrl}${spec.endpoint}`,
           headers: {
             'Content-Type': 'application/json',
           },
           json: true,
         };
 
-        if (method !== 'GET' && Object.keys(body).length > 0) {
-          options.body = body;
+        if (spec.method !== 'GET' && Object.keys(spec.body).length > 0) {
+          options.body = spec.body;
         }
 
         const response = await this.helpers.httpRequestWithAuthentication.call(
@@ -1492,7 +1008,8 @@ export class OpenWa implements INodeType {
         // A successful DELETE returns 204 No Content (empty body); surface a concrete
         // result so downstream nodes get an object to read instead of an empty item.
         const json =
-          method === 'DELETE' && (response === '' || response === undefined || response === null)
+          spec.method === 'DELETE' &&
+          (response === '' || response === undefined || response === null)
             ? { success: true }
             : (response as JsonObject);
         returnData.push({ json, pairedItem: { item: i } });
