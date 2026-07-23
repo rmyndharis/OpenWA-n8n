@@ -264,7 +264,10 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
+                    // Delete from the session the webhook was registered on — the parameter may
+                    // have been edited without re-activating since then. Fall back to the
+                    // parameter for registrations that predate session tracking.
+                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'DELETE',

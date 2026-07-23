@@ -302,8 +302,11 @@ export class OpenWaTrigger implements INodeType {
 
         const credentials = await this.getCredentials('openWaApi');
         const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+        // Delete from the session the webhook was registered on — the parameter may
+        // have been edited without re-activating since then. Fall back to the
+        // parameter for registrations that predate session tracking.
         const sessionId = sanitizePathParam(
-          this.getNodeParameter('sessionId') as string,
+          (webhookData.sessionId as string) ?? (this.getNodeParameter('sessionId') as string),
           'Session ID',
         );
 

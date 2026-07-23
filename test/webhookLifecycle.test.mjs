@@ -110,6 +110,15 @@ test('delete: clears the stored session id and config hash too', async () => {
   assert.deepEqual(staticData, {});
 });
 
+test('delete: targets the STORED session when the parameter has since changed', async () => {
+  // The webhook was registered on "old-session"; the parameter now says "default"
+  // (edited without re-activating). Deletion must reach the session the webhook
+  // actually lives on, or the registration is orphaned and keeps delivering.
+  const { ctx, calls } = makeCtx({ storedSessionId: 'old-session' });
+  assert.equal(await hooks().delete.call(ctx), true);
+  assert.equal(calls[0].url, 'http://localhost:2785/api/sessions/old-session/webhooks/w1');
+});
+
 // --- checkExists hook wiring (unchanged configuration) ---
 test('checkExists: a 404 probe reports the webhook absent so n8n recreates it', async () => {
   const { ctx } = makeCtx({ configHash: CURRENT_HASH, throwErr: { statusCode: 404 } });
