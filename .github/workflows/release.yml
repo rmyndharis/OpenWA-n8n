@@ -42,7 +42,9 @@ jobs:
       - name: n8n community-node scan (Creator Portal ruleset)
         run: |
           tmp=$(mktemp -d)
-          (cd "$tmp" && npm init -y >/dev/null && npm i @n8n/scan-community-package@beta >/dev/null)
+          # --ignore-scripts: the scanner pulls in a native module (isolated-vm) it never uses
+          # for linting; skipping its node-gyp build keeps the install off Node's version quirks.
+          (cd "$tmp" && npm init -y >/dev/null && npm i --ignore-scripts @n8n/scan-community-package@beta >/dev/null)
           N8N_SCANNER_PATH="$tmp/node_modules/@n8n/scan-community-package/scanner/scanner.mjs" \
             node scripts/n8n-scan.mjs
       - run: npm run build
