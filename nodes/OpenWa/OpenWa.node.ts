@@ -6,7 +6,7 @@ import type {
   IHttpRequestOptions,
   JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { buildContactRequest } from './handlers/contact';
 import { buildMessageRequest } from './handlers/message';
 import { buildSessionRequest } from './handlers/session';
@@ -25,8 +25,8 @@ export class OpenWa implements INodeType {
     defaults: {
       name: 'OpenWA',
     },
-    inputs: ['main'],
-    outputs: ['main'],
+    inputs: [NodeConnectionTypes.Main],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [
       {
         name: 'openWaApi',
@@ -61,7 +61,7 @@ export class OpenWa implements INodeType {
         options: [
           { name: 'Create', value: 'create', action: 'Create a new session' },
           { name: 'Delete', value: 'delete', action: 'Delete a session' },
-          { name: 'Force Kill', value: 'forceKill', action: 'Force-kill a stuck session' },
+          { name: 'Force Kill', value: 'forceKill', action: 'Force kill a stuck session' },
           { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
           { name: 'Get Status', value: 'getStatus', action: 'Get session status' },
           { name: 'List All', value: 'listAll', action: 'List all sessions' },
@@ -661,7 +661,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
         description:
-          'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: { "chatId": "...", "type": "image", "content": { "image": { "url": "https://..." }, "caption": "..." } } — the media object nests under the type key (image/video/audio/document) and uses url or base64 (add mimetype for base64); caption sits on content. No binary source in bulk.',
+          'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk.',
       },
       {
         displayName: 'Batch ID',
@@ -680,7 +680,7 @@ export class OpenWa implements INodeType {
         default: {},
         displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
         description:
-          'If left empty, the server applies its own defaults (delay 3000 ms, randomize on, stop-on-error off).',
+          'If left empty, the server applies its own defaults (delay 3000 ms, randomize on, stop-on-error off)',
         options: [
           {
             displayName: 'Delay Between Messages (Ms)',
@@ -729,7 +729,7 @@ export class OpenWa implements INodeType {
         },
         options: [
           { name: 'Block', value: 'block', action: 'Block a contact' },
-          { name: 'Check Exists', value: 'checkExists', action: 'Check if number exists on WhatsApp' },
+          { name: 'Check Exists', value: 'checkExists', action: 'Check if a number exists' },
           { name: 'Get Info', value: 'getInfo', action: 'Get contact information' },
           { name: 'Get Phone', value: 'getPhone', action: 'Resolve a contact phone number' },
           {
@@ -824,19 +824,19 @@ export class OpenWa implements INodeType {
         name: 'events',
         type: 'multiOptions',
         options: [
-          { name: 'Message Received', value: 'message.received' },
-          { name: 'Message Sent', value: 'message.sent' },
-          { name: 'Message Ack', value: 'message.ack' },
-          { name: 'Message Failed', value: 'message.failed' },
-          { name: 'Message Revoked', value: 'message.revoked' },
-          { name: 'Message Reaction', value: 'message.reaction' },
-          { name: 'Session Status', value: 'session.status' },
-          { name: 'Session QR', value: 'session.qr' },
-          { name: 'Session Authenticated', value: 'session.authenticated' },
-          { name: 'Session Disconnected', value: 'session.disconnected' },
           { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
           { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
           { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
+          { name: 'Message Ack', value: 'message.ack' },
+          { name: 'Message Failed', value: 'message.failed' },
+          { name: 'Message Reaction', value: 'message.reaction' },
+          { name: 'Message Received', value: 'message.received' },
+          { name: 'Message Revoked', value: 'message.revoked' },
+          { name: 'Message Sent', value: 'message.sent' },
+          { name: 'Session Authenticated', value: 'session.authenticated' },
+          { name: 'Session Disconnected', value: 'session.disconnected' },
+          { name: 'Session QR', value: 'session.qr' },
+          { name: 'Session Status', value: 'session.status' },
         ],
         default: ['message.received'],
         displayOptions: {
@@ -892,19 +892,19 @@ export class OpenWa implements INodeType {
             name: 'events',
             type: 'multiOptions',
             options: [
-              { name: 'Message Received', value: 'message.received' },
-              { name: 'Message Sent', value: 'message.sent' },
-              { name: 'Message Ack', value: 'message.ack' },
-              { name: 'Message Failed', value: 'message.failed' },
-              { name: 'Message Revoked', value: 'message.revoked' },
-              { name: 'Message Reaction', value: 'message.reaction' },
-              { name: 'Session Status', value: 'session.status' },
-              { name: 'Session QR', value: 'session.qr' },
-              { name: 'Session Authenticated', value: 'session.authenticated' },
-              { name: 'Session Disconnected', value: 'session.disconnected' },
               { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
               { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
               { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
+              { name: 'Message Ack', value: 'message.ack' },
+              { name: 'Message Failed', value: 'message.failed' },
+              { name: 'Message Reaction', value: 'message.reaction' },
+              { name: 'Message Received', value: 'message.received' },
+              { name: 'Message Revoked', value: 'message.revoked' },
+              { name: 'Message Sent', value: 'message.sent' },
+              { name: 'Session Authenticated', value: 'session.authenticated' },
+              { name: 'Session Disconnected', value: 'session.disconnected' },
+              { name: 'Session QR', value: 'session.qr' },
+              { name: 'Session Status', value: 'session.status' },
             ],
             default: [],
             description: 'Replaces the full set of subscribed events (not merged)',
@@ -952,6 +952,7 @@ export class OpenWa implements INodeType {
         ],
       },
     ],
+    usableAsTool: true,
   };
 
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -1019,7 +1020,7 @@ export class OpenWa implements INodeType {
           continue;
         }
         if (error instanceof NodeOperationError) {
-          throw error;
+          throw new NodeOperationError(this.getNode(), error);
         }
         throw new NodeApiError(this.getNode(), error as JsonObject);
       }

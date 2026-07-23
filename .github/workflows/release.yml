@@ -36,6 +36,15 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run lint
+      # Block the publish if the source fails the n8n Creator Portal lint gate (same
+      # ruleset the portal runs). Installed in isolation — its TypeScript 7 / ESLint 9
+      # toolchain conflicts with this project's devDeps and must not be a dependency.
+      - name: n8n community-node scan (Creator Portal ruleset)
+        run: |
+          tmp=$(mktemp -d)
+          (cd "$tmp" && npm init -y >/dev/null && npm i @n8n/scan-community-package@beta >/dev/null)
+          N8N_SCANNER_PATH="$tmp/node_modules/@n8n/scan-community-package/scanner/scanner.mjs" \
+            node scripts/n8n-scan.mjs
       - run: npm run build
       - run: node --test test/*.test.mjs
       # --provenance attaches a signed build attestation, required for n8n community-node

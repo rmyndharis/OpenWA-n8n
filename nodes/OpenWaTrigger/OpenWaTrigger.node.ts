@@ -6,7 +6,7 @@ import type {
   IWebhookResponseData,
   JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
 import { webhookConfigHash } from './configHash';
@@ -25,7 +25,7 @@ export class OpenWaTrigger implements INodeType {
       name: 'OpenWA Trigger',
     },
     inputs: [],
-    outputs: ['main'],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [
       {
         name: 'openWaApi',
@@ -59,56 +59,6 @@ export class OpenWaTrigger implements INodeType {
         type: 'multiOptions',
         options: [
           {
-            name: 'Message Received',
-            value: 'message.received',
-            description: 'Triggers when a new message is received',
-          },
-          {
-            name: 'Message Sent',
-            value: 'message.sent',
-            description: 'Triggers when a message is sent successfully',
-          },
-          {
-            name: 'Message Ack',
-            value: 'message.ack',
-            description: 'Triggers on a message delivery or read acknowledgement',
-          },
-          {
-            name: 'Message Failed',
-            value: 'message.failed',
-            description: 'Triggers when a message fails to send',
-          },
-          {
-            name: 'Message Revoked',
-            value: 'message.revoked',
-            description: 'Triggers when a message is deleted for everyone',
-          },
-          {
-            name: 'Message Reaction',
-            value: 'message.reaction',
-            description: 'Triggers when a reaction is added to or removed from a message',
-          },
-          {
-            name: 'Session Status',
-            value: 'session.status',
-            description: 'Triggers on any session status change',
-          },
-          {
-            name: 'Session QR',
-            value: 'session.qr',
-            description: 'Triggers when a new QR code is generated',
-          },
-          {
-            name: 'Session Authenticated',
-            value: 'session.authenticated',
-            description: 'Triggers when the session is authenticated',
-          },
-          {
-            name: 'Session Disconnected',
-            value: 'session.disconnected',
-            description: 'Triggers when the session loses connection',
-          },
-          {
             name: 'Group Join (Reserved — Not Yet Delivered)',
             value: 'group.join',
             description:
@@ -125,6 +75,56 @@ export class OpenWaTrigger implements INodeType {
             value: 'group.update',
             description:
               'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
+          },
+          {
+            name: 'Message Ack',
+            value: 'message.ack',
+            description: 'Triggers on a message delivery or read acknowledgement',
+          },
+          {
+            name: 'Message Failed',
+            value: 'message.failed',
+            description: 'Triggers when a message fails to send',
+          },
+          {
+            name: 'Message Reaction',
+            value: 'message.reaction',
+            description: 'Triggers when a reaction is added to or removed from a message',
+          },
+          {
+            name: 'Message Received',
+            value: 'message.received',
+            description: 'Triggers when a new message is received',
+          },
+          {
+            name: 'Message Revoked',
+            value: 'message.revoked',
+            description: 'Triggers when a message is deleted for everyone',
+          },
+          {
+            name: 'Message Sent',
+            value: 'message.sent',
+            description: 'Triggers when a message is sent successfully',
+          },
+          {
+            name: 'Session Authenticated',
+            value: 'session.authenticated',
+            description: 'Triggers when the session is authenticated',
+          },
+          {
+            name: 'Session Disconnected',
+            value: 'session.disconnected',
+            description: 'Triggers when the session loses connection',
+          },
+          {
+            name: 'Session QR',
+            value: 'session.qr',
+            description: 'Triggers when a new QR code is generated',
+          },
+          {
+            name: 'Session Status',
+            value: 'session.status',
+            description: 'Triggers on any session status change',
           },
         ],
         default: ['message.received'],
@@ -158,6 +158,7 @@ export class OpenWaTrigger implements INodeType {
         default: '',
       },
     ],
+    usableAsTool: true,
   };
 
   webhookMethods = {
@@ -206,7 +207,7 @@ export class OpenWaTrigger implements INodeType {
             // n8n's activation retry complete the cleanup — silently proceeding
             // would orphan the old registration, which would keep delivering.
             if (httpStatusFromError(error) !== 404) {
-              throw error;
+              throw new NodeApiError(this.getNode(), error as JsonObject);
             }
           }
           delete webhookData.webhookId;
@@ -230,7 +231,7 @@ export class OpenWaTrigger implements INodeType {
           if (httpStatusFromError(error) === 404) {
             return false;
           }
-          throw error;
+          throw new NodeApiError(this.getNode(), error as JsonObject);
         }
       },
 
@@ -246,7 +247,7 @@ export class OpenWaTrigger implements INodeType {
         const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
 
         if (!events || events.length === 0) {
-          throw new Error('At least one event must be selected');
+          throw new NodeOperationError(this.getNode(), 'At least one event must be selected');
         }
 
         const body: Record<string, unknown> = {
@@ -319,7 +320,7 @@ export class OpenWaTrigger implements INodeType {
         } catch (error) {
           // An already-deleted webhook (404) is fine to swallow; anything else propagates.
           if (httpStatusFromError(error) !== 404) {
-            throw error;
+            throw new NodeApiError(this.getNode(), error as JsonObject);
           }
         }
 

@@ -2,7 +2,10 @@
   "name": "@rmyndharis/n8n-nodes-openwa",
   "version": "0.8.0",
   "description": "n8n community nodes for OpenWA WhatsApp API Gateway",
-  "author": "rmyndharis <yudhi@rmyndharis.com>",
+  "author": {
+    "name": "rmyndharis",
+    "email": "yudhi@rmyndharis.com"
+  },
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -57,7 +60,7 @@
     "typescript": "^5.3.0"
   },
   "peerDependencies": {
-    "n8n-workflow": ">=1.22.0"
+    "n8n-workflow": "*"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -18,6 +18,17 @@ jobs:
           node-version: '20'
       - run: npm ci
       - run: npm run lint
+      # Run the same lint gate the n8n Creator Portal enforces, against the local
+      # source, so a rule violation fails CI before publishing instead of after the
+      # portal rejects the release. The scanner's toolchain (TypeScript 7, ESLint 9)
+      # conflicts with this project's devDeps, so install it in isolation — never as
+      # a dependency — and point the script at it.
+      - name: n8n community-node scan (Creator Portal ruleset)
+        run: |
+          tmp=$(mktemp -d)
+          (cd "$tmp" && npm init -y >/dev/null && npm i @n8n/scan-community-package@beta >/dev/null)
+          N8N_SCANNER_PATH="$tmp/node_modules/@n8n/scan-community-package/scanner/scanner.mjs" \
+            node scripts/n8n-scan.mjs
       - run: npm run build
       # Fail if the committed dist/ is stale relative to src/ — GitHub installs serve
       # the committed dist/ verbatim, so it must always match the build of src/.
