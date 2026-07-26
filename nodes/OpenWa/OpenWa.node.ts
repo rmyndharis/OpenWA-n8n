@@ -12,6 +12,7 @@ import { buildMessageRequest } from './handlers/message';
 import { buildSessionRequest } from './handlers/session';
 import { buildWebhookRequest } from './handlers/webhook';
 import type { RequestSpec } from './handlers/types';
+import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
 
 export class OpenWa implements INodeType {
   description: INodeTypeDescription = {
@@ -823,21 +824,7 @@ export class OpenWa implements INodeType {
         displayName: 'Events',
         name: 'events',
         type: 'multiOptions',
-        options: [
-          { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
-          { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
-          { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
-          { name: 'Message Ack', value: 'message.ack' },
-          { name: 'Message Failed', value: 'message.failed' },
-          { name: 'Message Reaction', value: 'message.reaction' },
-          { name: 'Message Received', value: 'message.received' },
-          { name: 'Message Revoked', value: 'message.revoked' },
-          { name: 'Message Sent', value: 'message.sent' },
-          { name: 'Session Authenticated', value: 'session.authenticated' },
-          { name: 'Session Disconnected', value: 'session.disconnected' },
-          { name: 'Session QR', value: 'session.qr' },
-          { name: 'Session Status', value: 'session.status' },
-        ],
+        options: WEBHOOK_EVENT_OPTIONS,
         default: ['message.received'],
         displayOptions: {
           show: { resource: ['webhook'], operation: ['create'] },
@@ -891,21 +878,7 @@ export class OpenWa implements INodeType {
             displayName: 'Events',
             name: 'events',
             type: 'multiOptions',
-            options: [
-              { name: 'Group Join (Reserved — Not Yet Delivered)', value: 'group.join' },
-              { name: 'Group Leave (Reserved — Not Yet Delivered)', value: 'group.leave' },
-              { name: 'Group Update (Reserved — Not Yet Delivered)', value: 'group.update' },
-              { name: 'Message Ack', value: 'message.ack' },
-              { name: 'Message Failed', value: 'message.failed' },
-              { name: 'Message Reaction', value: 'message.reaction' },
-              { name: 'Message Received', value: 'message.received' },
-              { name: 'Message Revoked', value: 'message.revoked' },
-              { name: 'Message Sent', value: 'message.sent' },
-              { name: 'Session Authenticated', value: 'session.authenticated' },
-              { name: 'Session Disconnected', value: 'session.disconnected' },
-              { name: 'Session QR', value: 'session.qr' },
-              { name: 'Session Status', value: 'session.status' },
-            ],
+            options: WEBHOOK_EVENT_OPTIONS,
             default: [],
             description: 'Replaces the full set of subscribed events (not merged)',
           },
