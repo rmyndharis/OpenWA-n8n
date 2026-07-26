@@ -11,6 +11,7 @@ import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
 import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
+import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
 
 export class OpenWaTrigger implements INodeType {
   description: INodeTypeDescription = {
@@ -57,76 +58,7 @@ export class OpenWaTrigger implements INodeType {
         displayName: 'Events',
         name: 'events',
         type: 'multiOptions',
-        options: [
-          {
-            name: 'Group Join (Reserved — Not Yet Delivered)',
-            value: 'group.join',
-            description:
-              'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
-          },
-          {
-            name: 'Group Leave (Reserved — Not Yet Delivered)',
-            value: 'group.leave',
-            description:
-              'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
-          },
-          {
-            name: 'Group Update (Reserved — Not Yet Delivered)',
-            value: 'group.update',
-            description:
-              'Reserved by OpenWA: accepted on subscribe but not dispatched yet, so it never fires',
-          },
-          {
-            name: 'Message Ack',
-            value: 'message.ack',
-            description: 'Triggers on a message delivery or read acknowledgement',
-          },
-          {
-            name: 'Message Failed',
-            value: 'message.failed',
-            description: 'Triggers when a message fails to send',
-          },
-          {
-            name: 'Message Reaction',
-            value: 'message.reaction',
-            description: 'Triggers when a reaction is added to or removed from a message',
-          },
-          {
-            name: 'Message Received',
-            value: 'message.received',
-            description: 'Triggers when a new message is received',
-          },
-          {
-            name: 'Message Revoked',
-            value: 'message.revoked',
-            description: 'Triggers when a message is deleted for everyone',
-          },
-          {
-            name: 'Message Sent',
-            value: 'message.sent',
-            description: 'Triggers when a message is sent successfully',
-          },
-          {
-            name: 'Session Authenticated',
-            value: 'session.authenticated',
-            description: 'Triggers when the session is authenticated',
-          },
-          {
-            name: 'Session Disconnected',
-            value: 'session.disconnected',
-            description: 'Triggers when the session loses connection',
-          },
-          {
-            name: 'Session QR',
-            value: 'session.qr',
-            description: 'Triggers when a new QR code is generated',
-          },
-          {
-            name: 'Session Status',
-            value: 'session.status',
-            description: 'Triggers on any session status change',
-          },
-        ],
+        options: WEBHOOK_EVENT_OPTIONS,
         default: ['message.received'],
         required: true,
         description: 'The events to listen to',
