@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.1...v0.8.2) (2026-07-26)
+
+
+### Bug Fixes
+
+* mirror core's webhook event catalog in both nodes ([#32](https://github.com/rmyndharis/OpenWA-n8n/issues/32)) ([5640c7d](https://github.com/rmyndharis/OpenWA-n8n/commit/5640c7dcec9e371d9e2115dcc4e9acb6f797d06a))
+
 ## [0.8.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.0...v0.8.1) (2026-07-23)
 
 
