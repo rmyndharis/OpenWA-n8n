@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireJid = requireJid;
 exports.requireText = requireText;
 exports.toQueryParams = toQueryParams;
+exports.toEpochMs = toEpochMs;
 exports.toStringList = toStringList;
 const n8n_workflow_1 = require("n8n-workflow");
 /**
@@ -53,6 +54,21 @@ function toQueryParams(options) {
         }
     }
     return qs;
+}
+/**
+ * Converts an n8n `dateTime` parameter to the epoch-ms number the API binds.
+ *
+ * The UI hands us an ISO-8601 string, but the server's query DTOs declare these
+ * bounds as numbers and reject anything `Number()` cannot parse. A value that is
+ * already numeric passes straight through, so an expression supplying epoch-ms
+ * keeps working.
+ */
+function toEpochMs(ctx, raw, label, itemIndex) {
+    const ms = typeof raw === 'number' ? raw : Date.parse(String(raw));
+    if (!Number.isFinite(ms)) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
+    }
+    return ms;
 }
 /**
  * Normalises a list parameter into a trimmed, blank-free array of strings.

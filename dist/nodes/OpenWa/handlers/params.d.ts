@@ -24,6 +24,15 @@ export declare function requireText(ctx: IExecuteFunctions, paramName: string, l
  */
 export declare function toQueryParams(options: IDataObject | undefined): IDataObject;
 /**
+ * Converts an n8n `dateTime` parameter to the epoch-ms number the API binds.
+ *
+ * The UI hands us an ISO-8601 string, but the server's query DTOs declare these
+ * bounds as numbers and reject anything `Number()` cannot parse. A value that is
+ * already numeric passes straight through, so an expression supplying epoch-ms
+ * keeps working.
+ */
+export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: string, itemIndex: number): number;
+/**
  * Normalises a list parameter into a trimmed, blank-free array of strings.
  *
  * These fields are plain strings rather than n8n `multipleValues` collections so

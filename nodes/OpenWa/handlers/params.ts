@@ -65,6 +65,27 @@ export function toQueryParams(options: IDataObject | undefined): IDataObject {
 }
 
 /**
+ * Converts an n8n `dateTime` parameter to the epoch-ms number the API binds.
+ *
+ * The UI hands us an ISO-8601 string, but the server's query DTOs declare these
+ * bounds as numbers and reject anything `Number()` cannot parse. A value that is
+ * already numeric passes straight through, so an expression supplying epoch-ms
+ * keeps working.
+ */
+export function toEpochMs(
+  ctx: IExecuteFunctions,
+  raw: unknown,
+  label: string,
+  itemIndex: number,
+): number {
+  const ms = typeof raw === 'number' ? raw : Date.parse(String(raw));
+  if (!Number.isFinite(ms)) {
+    throw new NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
+  }
+  return ms;
+}
+
+/**
  * Normalises a list parameter into a trimmed, blank-free array of strings.
  *
  * These fields are plain strings rather than n8n `multipleValues` collections so

@@ -46,6 +46,17 @@ async function buildSystemRequest(operation, itemIndex) {
                 q: (0, params_1.requireText)(this, 'searchQuery', 'Search query', itemIndex),
             };
             Object.assign(qs, (0, params_1.toQueryParams)(this.getNodeParameter('searchFilters', itemIndex, {})));
+            // Date From/To are dateTime fields, so the UI supplies ISO-8601 while
+            // SearchQueryDto binds them as epoch-ms numbers — send them unconverted
+            // and every date-filtered search fails validation.
+            for (const [key, label] of [
+                ['dateFrom', 'Date From'],
+                ['dateTo', 'Date To'],
+            ]) {
+                if (qs[key] !== undefined) {
+                    qs[key] = (0, params_1.toEpochMs)(this, qs[key], label, itemIndex);
+                }
+            }
             return { endpoint: '/api/search', method: 'GET', body: {}, qs };
         }
         default:

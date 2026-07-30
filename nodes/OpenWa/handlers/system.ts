@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText, toQueryParams } from './params';
+import { requireText, toEpochMs, toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -63,6 +63,17 @@ export async function buildSystemRequest(
         qs,
         toQueryParams(this.getNodeParameter('searchFilters', itemIndex, {}) as IDataObject),
       );
+      // Date From/To are dateTime fields, so the UI supplies ISO-8601 while
+      // SearchQueryDto binds them as epoch-ms numbers — send them unconverted
+      // and every date-filtered search fails validation.
+      for (const [key, label] of [
+        ['dateFrom', 'Date From'],
+        ['dateTo', 'Date To'],
+      ] as const) {
+        if (qs[key] !== undefined) {
+          qs[key] = toEpochMs(this, qs[key], label, itemIndex);
+        }
+      }
       return { endpoint: '/api/search', method: 'GET', body: {}, qs };
     }
 
