@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSessionRequest = buildSessionRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const params_1 = require("./params");
 async function buildSessionRequest(operation, itemIndex) {
     if (operation === 'create') {
         const body = {};
@@ -34,7 +35,11 @@ async function buildSessionRequest(operation, itemIndex) {
         return { endpoint: '/api/sessions', method: 'POST', body };
     }
     if (operation === 'listAll') {
-        return { endpoint: '/api/sessions', method: 'GET', body: {} };
+        const options = this.getNodeParameter('sessionListOptions', itemIndex, {});
+        return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: (0, params_1.toQueryParams)(options) };
+    }
+    if (operation === 'getStatsOverview') {
+        return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };
     }
     // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
     // address a single session by its UUID id.

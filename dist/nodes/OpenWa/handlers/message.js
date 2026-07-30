@@ -5,6 +5,25 @@ const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const bulkMessages_1 = require("../bulkMessages");
 const media_1 = require("../media");
+const params_1 = require("./params");
+/**
+ * Operations that do not read the shared Chat ID field: the bulk/batch routes
+ * are not addressed to one chat, Forward names a source and a target chat of
+ * its own, and List takes an optional chat filter in its options collection.
+ */
+const CHATLESS_OPERATIONS = new Set([
+    'sendBulk',
+    'getBatchStatus',
+    'cancelBatch',
+    'forward',
+    'list',
+]);
+// Server-side DTO limits.
+const MAX_EDIT_BODY_LENGTH = 4096;
+const MAX_POLL_NAME_LENGTH = 255;
+// WhatsApp's own bounds on a poll.
+const MIN_POLL_OPTIONS = 2;
+const MAX_POLL_OPTIONS = 12;
 const IMAGE_MEDIA = {
     source: 'imageSource',
     binaryProperty: 'imageBinaryProperty',
@@ -42,17 +61,46 @@ const STICKER_MEDIA = {
 };
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
-    // Bulk / batch operations are not addressed to a single chat, so they skip Chat ID.
+    // Bulk / batch operations are not addressed to a single chat, and Forward and
+    // List name their chats through their own fields, so all of them skip Chat ID.
     let chatId = '';
-    if (operation !== 'sendBulk' &&
-        operation !== 'getBatchStatus' &&
-        operation !== 'cancelBatch') {
+    if (!CHATLESS_OPERATIONS.has(operation)) {
         chatId = this.getNodeParameter('chatId', itemIndex).trim();
         if (!chatId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
                 itemIndex,
             });
         }
+    }
+    // --- Reads -----------------------------------------------------------------
+    if (operation === 'list') {
+        const options = this.getNodeParameter('messageListOptions', itemIndex, {});
+        return {
+            endpoint: `/api/sessions/${sessionId}/messages`,
+            method: 'GET',
+            body: {},
+            qs: (0, params_1.toQueryParams)(options),
+        };
+    }
+    if (operation === 'getHistory') {
+        const options = this.getNodeParameter('historyOptions', itemIndex, {});
+        return {
+            endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/history`,
+            method: 'GET',
+            body: {},
+            qs: (0, params_1.toQueryParams)(options),
+        };
+    }
+    if (operation === 'getReactions') {
+        const messageId = this.getNodeParameter('messageId', itemIndex).trim();
+        if (!messageId) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
+        }
+        return {
+            endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/reactions`,
+            method: 'GET',
+            body: {},
+        };
     }
     let endpoint = '';
     let body = {};
@@ -150,6 +198,72 @@ async function buildMessageRequest(operation, itemIndex) {
         // Stickers must be WebP; fall back to that if the binary item carries no MIME type.
         Object.assign(body, await media_1.resolveMediaSource.call(this, itemIndex, STICKER_MEDIA, 'image/webp'));
     }
+    else if (operation === 'sendPoll') {
+        endpoint = `/api/sessions/${sessionId}/messages/send-poll`;
+        const pollOptions = (0, params_1.toStringList)(this.getNodeParameter('pollOptions', itemIndex, ''));
+        if (pollOptions.length < MIN_POLL_OPTIONS || pollOptions.length > MAX_POLL_OPTIONS) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `A poll needs between ${MIN_POLL_OPTIONS} and ${MAX_POLL_OPTIONS} options (got ${pollOptions.length})`, { itemIndex });
+        }
+        body = {
+            chatId,
+            name: (0, params_1.requireText)(this, 'pollName', 'Poll question', itemIndex, MAX_POLL_NAME_LENGTH),
+            options: pollOptions,
+        };
+        if (this.getNodeParameter('allowMultipleAnswers', itemIndex, false)) {
+            body.allowMultipleAnswers = true;
+        }
+    }
+    else if (operation === 'sendTemplate') {
+        endpoint = `/api/sessions/${sessionId}/messages/send-template`;
+        body = { chatId };
+        // The API takes either a template id or a template name, not both.
+        const templateId = this.getNodeParameter('sendTemplateId', itemIndex, '').trim();
+        const templateName = this.getNodeParameter('sendTemplateName', itemIndex, '').trim();
+        if (!templateId && !templateName) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Provide either a Template ID or a Template Name', { itemIndex });
+        }
+        if (templateId) {
+            body.templateId = templateId;
+        }
+        else {
+            body.templateName = templateName;
+        }
+        const rawVars = this.getNodeParameter('templateVars', itemIndex, '');
+        if (rawVars !== '' && rawVars !== undefined && rawVars !== null) {
+            let parsedVars;
+            try {
+                parsedVars = typeof rawVars === 'string' ? JSON.parse(rawVars) : rawVars;
+            }
+            catch {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Template variables must be valid JSON', {
+                    itemIndex,
+                });
+            }
+            if (typeof parsedVars !== 'object' || parsedVars === null || Array.isArray(parsedVars)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Template variables must be a JSON object (e.g. {"name":"Alice"})', { itemIndex });
+            }
+            body.vars = parsedVars;
+        }
+    }
+    else if (operation === 'edit') {
+        endpoint = `/api/sessions/${sessionId}/messages/edit`;
+        body = {
+            chatId,
+            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            body: (0, params_1.requireText)(this, 'message', 'Message', itemIndex, MAX_EDIT_BODY_LENGTH),
+        };
+    }
+    else if (operation === 'forward') {
+        endpoint = `/api/sessions/${sessionId}/messages/forward`;
+        body = {
+            fromChatId: (0, params_1.requireJid)(this, 'fromChatId', 'From Chat ID', itemIndex),
+            toChatId: (0, params_1.requireJid)(this, 'toChatId', 'To Chat ID', itemIndex),
+            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+        };
+        // send-catalog and send-product are deliberately absent: the server
+        // documents both as "not supported by any engine" and answers 501, with no
+        // success response at all. Same for the whole Catalog resource.
+    }
     else if (operation === 'sendContact') {
         endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
         body = {
@@ -203,10 +317,7 @@ async function buildMessageRequest(operation, itemIndex) {
         operation === 'sendImage' ||
         operation === 'sendDocument' ||
         operation === 'sendVideo') {
-        const rawMentions = this.getNodeParameter('mentions', itemIndex, []);
-        const mentions = (Array.isArray(rawMentions) ? rawMentions : [])
-            .map((m) => String(m).trim())
-            .filter(Boolean);
+        const mentions = (0, params_1.toStringList)(this.getNodeParameter('mentions', itemIndex, ''));
         if (mentions.length > 0) {
             body.mentions = mentions;
         }

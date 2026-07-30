@@ -1,6 +1,9 @@
-import type { IHookFunctions, IWebhookFunctions, INodeType, INodeTypeDescription, IWebhookResponseData } from 'n8n-workflow';
+import type { IHookFunctions, IWebhookFunctions, ILoadOptionsFunctions, INodePropertyOptions, INodeType, INodeTypeDescription, IWebhookResponseData } from 'n8n-workflow';
 export declare class OpenWaTrigger implements INodeType {
     description: INodeTypeDescription;
+    methods: {
+        loadOptions: Record<string, (this: ILoadOptionsFunctions) => Promise<INodePropertyOptions[]>>;
+    };
     webhookMethods: {
         default: {
             checkExists(this: IHookFunctions): Promise<boolean>;

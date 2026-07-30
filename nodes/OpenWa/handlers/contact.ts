@@ -1,7 +1,12 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
+import { toQueryParams, toStringList } from './params';
 import type { RequestSpec } from './types';
+
+// The bulk profile-picture route documents "max 50 used" — beyond that the
+// server drops ids without reporting it.
+const MAX_PROFILE_PICTURE_IDS = 50;
 
 export async function buildContactRequest(
   this: IExecuteFunctions,
@@ -12,6 +17,41 @@ export async function buildContactRequest(
     this.getNodeParameter('sessionId', itemIndex) as string,
     'Session ID',
   );
+
+  if (operation === 'list') {
+    const options = this.getNodeParameter('contactListOptions', itemIndex, {}) as IDataObject;
+    return {
+      endpoint: `/api/sessions/${sessionId}/contacts`,
+      method: 'GET',
+      body: {},
+      qs: toQueryParams(options),
+    };
+  }
+
+  if (operation === 'getProfilePictures') {
+    // Bulk variant of getProfilePicture: the ids ride in a required query
+    // parameter, so an empty list would fetch nothing and 400.
+    const ids = toStringList(this.getNodeParameter('contactIds', itemIndex, ''));
+    if (ids.length === 0) {
+      throw new NodeOperationError(this.getNode(), 'At least one contact ID is required', {
+        itemIndex,
+      });
+    }
+    // The server silently uses only the first 50; refuse rather than drop the rest.
+    if (ids.length > MAX_PROFILE_PICTURE_IDS) {
+      throw new NodeOperationError(
+        this.getNode(),
+        `Contact IDs cannot exceed ${MAX_PROFILE_PICTURE_IDS} entries (got ${ids.length}) — the server ignores the rest`,
+        { itemIndex },
+      );
+    }
+    return {
+      endpoint: `/api/sessions/${sessionId}/contacts/profile-pictures`,
+      method: 'GET',
+      body: {},
+      qs: { ids: ids.join(',') },
+    };
+  }
 
   if (operation === 'checkExists') {
     const phoneNumber = (this.getNodeParameter('phoneNumber', itemIndex) as string)
@@ -47,7 +87,11 @@ export async function buildContactRequest(
     const encoded = encodeURIComponent(contactId);
     switch (operation) {
       case 'getInfo':
-        return { endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`, method: 'GET', body: {} };
+        return {
+          endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`,
+          method: 'GET',
+          body: {},
+        };
       case 'block':
         return {
           endpoint: `/api/sessions/${sessionId}/contacts/${encoded}/block`,
