@@ -7,6 +7,7 @@ const httpStatus_1 = require("./httpStatus");
 const configHash_1 = require("./configHash");
 const sanitizePathParam_1 = require("../shared/sanitizePathParam");
 const webhookEvents_1 = require("../shared/webhookEvents");
+const loadOptions_1 = require("../OpenWa/loadOptions");
 class OpenWaTrigger {
     constructor() {
         this.description = {
@@ -42,12 +43,15 @@ class OpenWaTrigger {
             ],
             properties: [
                 {
-                    displayName: 'Session ID',
+                    displayName: 'Session Name or ID',
                     name: 'sessionId',
-                    type: 'string',
-                    default: 'default',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
                     required: true,
-                    description: 'The ID of the session to receive events from',
+                    description: 'The ID of the session to receive events from. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
                 },
                 {
                     displayName: 'Events',
@@ -83,6 +87,11 @@ class OpenWaTrigger {
                 },
             ],
             usableAsTool: true,
+        };
+        // Shares the action node's session loader, so both nodes offer the same list
+        // from the same credential rather than drifting apart.
+        this.methods = {
+            loadOptions: { getSessions: loadOptions_1.getSessions },
         };
         this.webhookMethods = {
             default: {

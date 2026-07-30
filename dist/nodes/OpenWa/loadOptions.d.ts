@@ -1,0 +1,10 @@
+import type { ILoadOptionsFunctions, INodePropertyOptions } from 'n8n-workflow';
+export declare function getSessions(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getGroups(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getChats(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getContacts(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getTemplates(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getLabels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getWebhooks(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getChannels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;
+export declare function getApiKeys(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]>;

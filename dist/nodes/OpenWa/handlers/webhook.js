@@ -3,8 +3,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildWebhookRequest = buildWebhookRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const params_1 = require("./params");
 async function buildWebhookRequest(operation, itemIndex) {
+    // These two span every session, so they are resolved before the Session ID
+    // field is read — it is not shown for them.
+    if (operation === 'listAll') {
+        const options = this.getNodeParameter('webhookListOptions', itemIndex, {});
+        return { endpoint: '/api/webhooks', method: 'GET', body: {}, qs: (0, params_1.toQueryParams)(options) };
+    }
+    if (operation === 'getDeliveryFailures') {
+        // Its own collection, not the List All one: this route is the only of the
+        // two that accepts a sessionId filter.
+        const options = this.getNodeParameter('deliveryFailureOptions', itemIndex, {});
+        return {
+            endpoint: '/api/webhooks/delivery-failures',
+            method: 'GET',
+            body: {},
+            qs: (0, params_1.toQueryParams)(options),
+        };
+    }
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
+    if (operation === 'list') {
+        return { endpoint: `/api/sessions/${sessionId}/webhooks`, method: 'GET', body: {} };
+    }
+    if (operation === 'get') {
+        const webhookId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('webhookId', itemIndex), 'Webhook ID');
+        return {
+            endpoint: `/api/sessions/${sessionId}/webhooks/${webhookId}`,
+            method: 'GET',
+            body: {},
+        };
+    }
     if (operation === 'create') {
         const events = this.getNodeParameter('events', itemIndex);
         if (!events || events.length === 0) {

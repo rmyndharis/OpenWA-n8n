@@ -1,6 +1,8 @@
 import type {
   IHookFunctions,
   IWebhookFunctions,
+  ILoadOptionsFunctions,
+  INodePropertyOptions,
   INodeType,
   INodeTypeDescription,
   IWebhookResponseData,
@@ -12,6 +14,7 @@ import { httpStatusFromError } from './httpStatus';
 import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
 import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
+import { getSessions } from '../OpenWa/loadOptions';
 
 export class OpenWaTrigger implements INodeType {
   description: INodeTypeDescription = {
@@ -47,12 +50,16 @@ export class OpenWaTrigger implements INodeType {
     ],
     properties: [
       {
-        displayName: 'Session ID',
+        displayName: 'Session Name or ID',
         name: 'sessionId',
-        type: 'string',
-        default: 'default',
+        type: 'options',
+        typeOptions: {
+          loadOptionsMethod: 'getSessions',
+        },
+        default: '',
         required: true,
-        description: 'The ID of the session to receive events from',
+        description:
+          'The ID of the session to receive events from. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
       },
       {
         displayName: 'Events',
@@ -91,6 +98,15 @@ export class OpenWaTrigger implements INodeType {
       },
     ],
     usableAsTool: true,
+  };
+
+  // Shares the action node's session loader, so both nodes offer the same list
+  // from the same credential rather than drifting apart.
+  methods = {
+    loadOptions: { getSessions } as unknown as Record<
+      string,
+      (this: ILoadOptionsFunctions) => Promise<INodePropertyOptions[]>
+    >,
   };
 
   webhookMethods = {

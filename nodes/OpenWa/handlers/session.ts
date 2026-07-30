@@ -1,6 +1,7 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
+import { toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 export async function buildSessionRequest(
@@ -46,7 +47,12 @@ export async function buildSessionRequest(
   }
 
   if (operation === 'listAll') {
-    return { endpoint: '/api/sessions', method: 'GET', body: {} };
+    const options = this.getNodeParameter('sessionListOptions', itemIndex, {}) as IDataObject;
+    return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: toQueryParams(options) };
+  }
+
+  if (operation === 'getStatsOverview') {
+    return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };
   }
 
   // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
