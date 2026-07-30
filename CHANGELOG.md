@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.2...v0.9.0) (2026-07-30)
+
+
+### Features
+
+* extend the node to the full usable OpenWA API surface ([9cecc6f](https://github.com/rmyndharis/OpenWA-n8n/commit/9cecc6ff9849a27788a2f3f99cd54672c7f3678c)), closes [#28](https://github.com/rmyndharis/OpenWA-n8n/issues/28)
+
 ## [0.8.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.1...v0.8.2) (2026-07-26)
 
 
