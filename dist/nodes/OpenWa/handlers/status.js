@@ -66,7 +66,13 @@ async function buildStatusRequest(operation, itemIndex) {
         }
         case 'getMedia': {
             const statusId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('statusId', itemIndex), 'Status ID');
-            return { endpoint: `${base}/${statusId}/media`, method: 'GET', body: {} };
+            // The route streams the stored image or video bytes, not JSON.
+            return {
+                endpoint: `${base}/${statusId}/media`,
+                method: 'GET',
+                body: {},
+                responseFormat: 'binary',
+            };
         }
         case 'delete': {
             const statusId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('statusId', itemIndex), 'Status ID');

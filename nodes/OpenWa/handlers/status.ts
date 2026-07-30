@@ -93,7 +93,13 @@ export async function buildStatusRequest(
         this.getNodeParameter('statusId', itemIndex) as string,
         'Status ID',
       );
-      return { endpoint: `${base}/${statusId}/media`, method: 'GET', body: {} };
+      // The route streams the stored image or video bytes, not JSON.
+      return {
+        endpoint: `${base}/${statusId}/media`,
+        method: 'GET',
+        body: {},
+        responseFormat: 'binary',
+      };
     }
 
     case 'delete': {

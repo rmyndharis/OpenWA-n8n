@@ -16,9 +16,15 @@ export interface RequestSpec {
    */
   qs?: IDataObject;
   /**
-   * Set to 'text' for the routes that answer with something other than JSON.
-   * The executor then skips JSON parsing and wraps the body under `data`, since
-   * a bare string is not a valid item `json` value. Only /api/metrics needs it.
+   * Set for the routes that answer with something other than JSON.
+   *
+   * 'text' — the executor skips JSON parsing and wraps the body under `data`,
+   * since a bare string is not a valid item `json` value. No operation sets this
+   * today; /api/metrics was the only candidate and is not offered.
+   *
+   * 'binary' — the body is raw bytes. The executor requests an arraybuffer and
+   * attaches it as a binary property rather than putting it on `json`, which
+   * would leave the media unreadable to downstream nodes.
    */
-  responseFormat?: 'text';
+  responseFormat?: 'text' | 'binary';
 }

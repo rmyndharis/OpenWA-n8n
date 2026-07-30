@@ -1933,6 +1933,15 @@ export class OpenWa implements INodeType {
         description: 'The ID of the status update',
       },
       {
+        displayName: 'Put Output in Field',
+        name: 'binaryPropertyName',
+        type: 'string',
+        default: 'data',
+        required: true,
+        displayOptions: { show: { resource: ['status'], operation: ['getMedia'] } },
+        description: 'The name of the output binary field to put the media in',
+      },
+      {
         displayName: 'Text',
         name: 'statusText',
         type: 'string',
@@ -2695,15 +2704,20 @@ export class OpenWa implements INodeType {
 
         // Make request
         const isText = spec.responseFormat === 'text';
+        const isBinary = spec.responseFormat === 'binary';
         const options: IHttpRequestOptions = {
           method: spec.method,
           url: `${baseUrl}${spec.endpoint}`,
           headers: {
             'Content-Type': 'application/json',
           },
-          // A text route (only /api/metrics so far) must not be parsed as JSON.
-          json: !isText,
+          // A route that answers with text or raw bytes must not be parsed as JSON.
+          json: !isText && !isBinary,
         };
+
+        if (isBinary) {
+          options.encoding = 'arraybuffer';
+        }
 
         if (spec.method !== 'GET' && Object.keys(spec.body).length > 0) {
           options.body = spec.body;
@@ -2718,6 +2732,35 @@ export class OpenWa implements INodeType {
           'openWaApi',
           options,
         );
+
+        if (isBinary) {
+          // Raw bytes belong on the item's binary property; putting them on
+          // `json` would hand downstream nodes something they cannot read.
+          const media = response as unknown;
+          if (!Buffer.isBuffer(media) && !(media instanceof ArrayBuffer)) {
+            // Without this the Buffer.from below throws a bare TypeError that
+            // says nothing about which operation or item produced it.
+            throw new NodeOperationError(
+              this.getNode(),
+              'Expected media bytes from the server but received a non-binary body',
+              { itemIndex: i },
+            );
+          }
+          const binaryPropertyName = this.getNodeParameter(
+            'binaryPropertyName',
+            i,
+            'data',
+          ) as string;
+          const binaryData = await this.helpers.prepareBinaryData(
+            Buffer.isBuffer(media) ? media : Buffer.from(media),
+          );
+          returnData.push({
+            json: {},
+            binary: { [binaryPropertyName]: binaryData },
+            pairedItem: { item: i },
+          });
+          continue;
+        }
 
         let json: JsonObject;
         if (isText) {

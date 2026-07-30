@@ -42,6 +42,12 @@ function makeCtx({
       },
       assertBinaryData: () => binary ?? { mimeType: 'image/png' },
       getBinaryDataBuffer: async () => Buffer.from('IMGDATA'),
+      // Stands in for n8n's binary-data pipeline: records what it was handed so
+      // a test can assert the bytes survived the round trip.
+      prepareBinaryData: async (buffer) => ({
+        data: buffer.toString('base64'),
+        mimeType: 'application/octet-stream',
+      }),
     },
   };
   return ctx;
@@ -1360,6 +1366,9 @@ mappingCases.push(
     'GET',
     `${SESS}/status/s1/media`,
     undefined,
+    // This route answers with bytes, so the default `{}` stub would not survive
+    // the binary branch.
+    { response: Buffer.from('MEDIABYTES') },
   ],
   [
     'status/delete',
@@ -1693,14 +1702,61 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 });
 
 // --- Response parsing --------------------------------------------------------
-// RequestSpec carries an optional `responseFormat: 'text'` for routes that do
-// not answer with JSON. No operation sets it today — /api/metrics was the only
-// candidate and is not offered, since it authenticates with a bearer token this
-// credential does not carry. The plumbing is kept for the next such route.
+// RequestSpec carries an optional `responseFormat` for routes that do not answer
+// with JSON. 'binary' is used by status/getMedia, which streams the stored media
+// bytes. 'text' has no user today — /api/metrics was the only candidate and is
+// not offered, since it authenticates with a bearer token this credential does
+// not carry — so the plumbing is kept for the next such route.
 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('status/getMedia asks for raw bytes instead of JSON', async () => {
+  const { ctx } = await run(
+    { resource: 'status', operation: 'getMedia', sessionId: 'abc-123', statusId: 's1' },
+    { response: Buffer.from('MEDIABYTES') },
+  );
+  const { options } = singleCall(ctx);
+  assert.equal(options.json, false, 'media bytes must not be JSON-parsed');
+  assert.equal(options.encoding, 'arraybuffer');
+});
+
+test('status/getMedia returns the bytes as binary, not on json', async () => {
+  const { output } = await run(
+    { resource: 'status', operation: 'getMedia', sessionId: 'abc-123', statusId: 's1' },
+    { response: Buffer.from('MEDIABYTES') },
+  );
+  const item = output[0][0];
+  assert.deepEqual(item.json, {}, 'raw bytes must not be cast onto json');
+  assert.equal(item.binary.data.data, Buffer.from('MEDIABYTES').toString('base64'));
+  assert.deepEqual(item.pairedItem, { item: 0 });
+});
+
+test('status/getMedia reports a non-binary body instead of throwing a TypeError', async () => {
+  await assert.rejects(
+    run(
+      { resource: 'status', operation: 'getMedia', sessionId: 'abc-123', statusId: 's1' },
+      { response: { error: 'not bytes' } },
+    ),
+    /Expected media bytes/,
+  );
+});
+
+test('status/getMedia honours a custom output field name', async () => {
+  const { output } = await run(
+    {
+      resource: 'status',
+      operation: 'getMedia',
+      sessionId: 'abc-123',
+      statusId: 's1',
+      binaryPropertyName: 'poster',
+    },
+    { response: Buffer.from('MEDIABYTES') },
+  );
+  assert.ok(output[0][0].binary.poster, 'expected the media under the chosen field');
+  assert.equal(output[0][0].binary.data, undefined);
 });
 
 // --- Query string ------------------------------------------------------------
@@ -1874,6 +1930,45 @@ test('system/search sends the query alongside its filters', async () => {
     sessionId: 'abc-123',
     limit: 5,
   });
+});
+
+// SearchQueryDto binds dateFrom/dateTo as epoch-ms numbers, but the UI fields are
+// `dateTime`, which hand over ISO-8601. Forwarding that string fails validation,
+// so every date-filtered search would 400.
+test('system/search converts ISO dates to the epoch-ms the API binds', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'search',
+    searchQuery: 'invoice',
+    searchFilters: { dateFrom: '2026-07-01T00:00:00.000Z', dateTo: '2026-07-31T23:59:59.000Z' },
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, {
+    q: 'invoice',
+    dateFrom: Date.parse('2026-07-01T00:00:00.000Z'),
+    dateTo: Date.parse('2026-07-31T23:59:59.000Z'),
+  });
+});
+
+test('system/search passes an epoch-ms number through untouched', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'search',
+    searchQuery: 'invoice',
+    searchFilters: { dateFrom: 1782000000000 },
+  });
+  assert.equal(singleCall(ctx).options.qs.dateFrom, 1782000000000);
+});
+
+test('system/search rejects an unparseable date instead of sending NaN', async () => {
+  await assert.rejects(
+    run({
+      resource: 'system',
+      operation: 'search',
+      searchQuery: 'invoice',
+      searchFilters: { dateFrom: 'last tuesday' },
+    }),
+    /Date From is not a valid date/,
+  );
 });
 
 test('system/getAudit renames the keyId field back to the wire name apiKeyId', async () => {
