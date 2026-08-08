@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.0...v0.9.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* offer every webhook event the gateway dispatches ([#37](https://github.com/rmyndharis/OpenWA-n8n/issues/37)) ([5c1ed3d](https://github.com/rmyndharis/OpenWA-n8n/commit/5c1ed3d296ed8be856bbe85cce8af5424971abc8))
+
 ## [0.9.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.2...v0.9.0) (2026-07-30)
 
 
