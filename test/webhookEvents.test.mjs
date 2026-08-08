@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 
 // Imports compiled output, so run `npm run build` before this test.
 import { WEBHOOK_EVENT_VALUES } from '../dist/nodes/shared/webhookEvents.js';
@@ -9,13 +11,22 @@ import * as triggerModule from '../dist/nodes/OpenWaTrigger/OpenWaTrigger.node.j
 const { OpenWa } = actionModule;
 const { OpenWaTrigger } = triggerModule;
 
-// The events OpenWA core actually dispatches (mirrors
-// src/modules/webhook/dto/webhook.dto.ts WEBHOOK_EVENTS in the OpenWA repo).
-// When core adds an event, add it to nodes/shared/webhookEvents.ts; this test
-// then enforces that both nodes surface it — closing the drift that caused
-// group.* events to be mislabeled "reserved" and four events to be unselectable.
-const CORE_WEBHOOK_EVENTS = [
+// A SNAPSHOT of core's WEBHOOK_EVENTS, copied by hand — this repo ships as its own npm package and
+// cannot import from the gateway at test time. Treat it as data with a provenance, not as a live
+// mirror: nothing here can detect that core has moved.
+//
+//   source: src/modules/webhook/dto/webhook.dto.ts in rmyndharis/OpenWA
+//   taken at: 42deab69 (v0.14.5), 2026-08-08
+//   count: 22
+//
+// The previous copy claimed to "mirror" core and had drifted to 17 while asserting the node matched
+// it — so both sides were wrong together and this file stayed green. When core adds an event, update
+// this snapshot AND the provenance line above, then add it to nodes/shared/webhookEvents.ts.
+const CORE_WEBHOOK_EVENTS_SNAPSHOT = [
+  'call.accepted',
+  'call.missed',
   'call.received',
+  'call.rejected',
   'group.join',
   'group.leave',
   'group.update',
@@ -26,10 +37,12 @@ const CORE_WEBHOOK_EVENTS = [
   'message.received',
   'message.revoked',
   'message.sent',
+  'presence.update',
   'session.authenticated',
   'session.disconnected',
   'session.qr',
   'session.reconnect_loop',
+  'session.restriction',
   'session.status',
   'status.received',
 ];
@@ -54,8 +67,15 @@ function collectEventValues(properties) {
   return out;
 }
 
-test('the shared WEBHOOK_EVENT_VALUES list matches the core catalog', () => {
-  assert.deepEqual([...WEBHOOK_EVENT_VALUES].sort(), [...CORE_WEBHOOK_EVENTS].sort());
+test('the snapshot is the size the provenance comment claims', () => {
+  // Cheap tripwire for the failure this file already had once: a copy that lost entries while every
+  // other assertion kept passing, because they all compare against the copy.
+  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 22);
+  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 22, 'snapshot has duplicates');
+});
+
+test('the shared WEBHOOK_EVENT_VALUES list matches the core catalog snapshot', () => {
+  assert.deepEqual([...WEBHOOK_EVENT_VALUES].sort(), [...CORE_WEBHOOK_EVENTS_SNAPSHOT].sort());
 });
 
 test('the Trigger node surfaces exactly the core event catalog', () => {
@@ -63,7 +83,7 @@ test('the Trigger node surfaces exactly the core event catalog', () => {
   const lists = collectEventValues(trigger.description.properties);
   assert.ok(lists.length >= 1, 'Trigger node has no events parameter');
   for (const values of lists) {
-    assert.deepEqual([...values].sort(), [...CORE_WEBHOOK_EVENTS].sort());
+    assert.deepEqual([...values].sort(), [...CORE_WEBHOOK_EVENTS_SNAPSHOT].sort());
   }
 });
 
@@ -73,7 +93,7 @@ test('the action node surfaces exactly the core event catalog on Webhook Create 
   // Create + Update each declare an `events` parameter.
   assert.ok(lists.length >= 2, `expected ≥2 events parameters (Create + Update), found ${lists.length}`);
   for (const values of lists) {
-    assert.deepEqual([...values].sort(), [...CORE_WEBHOOK_EVENTS].sort());
+    assert.deepEqual([...values].sort(), [...CORE_WEBHOOK_EVENTS_SNAPSHOT].sort());
   }
 });
 
@@ -92,4 +112,19 @@ test('no event option carries the stale "Reserved" / "never fires" wording', () 
       }
     }
   }
+});
+
+// The README's Trigger table is what a user reads before choosing events, and it is the copy that
+// drifted furthest — it listed 13 while the node offered 17 and core dispatched 22, and labelled three
+// live events "reserved: not yet emitted". Nothing pointed the three at each other, so each could rot
+// alone. This closes the last edge of that triangle.
+test('the README Trigger table lists exactly the events the node offers', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const documented = [...readme.matchAll(/^\| `([a-z]+\.[a-z_]+)`\s*\|/gm)].map((m) => m[1]);
+  assert.deepEqual([...new Set(documented)].sort(), [...CORE_WEBHOOK_EVENTS_SNAPSHOT].sort());
+});
+
+test('the README carries no stale "reserved / not yet emitted" label', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  assert.doesNotMatch(readme, /reserved: (accepted on subscribe but )?not yet emitted/i);
 });

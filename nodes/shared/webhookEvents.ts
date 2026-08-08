@@ -8,14 +8,37 @@
  * the three cannot drift apart. When core adds an event, add it here once.
  *
  * Order is alphabetical-by-value to keep the diff stable as events are added.
+ *
+ * Some events only ever fire on one engine, because only one adapter produces the callback behind
+ * them. Those say so in their description rather than being omitted: they are real OpenWA events, and
+ * a user on the other engine is better served by knowing why nothing arrives than by not finding the
+ * option at all.
  */
 import type {INodeProperties} from 'n8n-workflow';
 
 export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
   {
+    name: 'Call Accepted',
+    value: 'call.accepted',
+    description:
+      'Triggers when an incoming call is answered. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
+  },
+  {
+    name: 'Call Missed',
+    value: 'call.missed',
+    description:
+      'Triggers when an incoming call goes unanswered. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
+  },
+  {
     name: 'Call Received',
     value: 'call.received',
     description: 'Triggers when an incoming WhatsApp call is detected',
+  },
+  {
+    name: 'Call Rejected',
+    value: 'call.rejected',
+    description:
+      'Triggers when an incoming call is declined, including by auto-reject. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
   },
   {
     name: 'Group Join',
@@ -68,6 +91,12 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
     description: 'Triggers when a message is sent successfully',
   },
   {
+    name: 'Presence Update',
+    value: 'presence.update',
+    description:
+      "Triggers when a subscribed chat's presence changes. Requires POST /presence/subscribe first, and Baileys — whatsapp-web.js cannot observe presence and answers 501.",
+  },
+  {
     name: 'Session Authenticated',
     value: 'session.authenticated',
     description: 'Triggers when the session is authenticated',
@@ -87,6 +116,11 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
     value: 'session.reconnect_loop',
     description:
       'Triggers when a session is stuck in a reconnect loop (once per 5 consecutive attempts; OpenWA ≥ 0.10.0)',
+  },
+  {
+    name: 'Session Restriction',
+    value: 'session.restriction',
+    description: 'Triggers when WhatsApp places or lifts a restriction on the account',
   },
   {
     name: 'Session Status',
