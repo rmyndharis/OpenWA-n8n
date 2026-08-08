@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.0...v0.9.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* offer every webhook event the gateway dispatches ([#37](https://github.com/rmyndharis/OpenWA-n8n/issues/37)) ([5c1ed3d](https://github.com/rmyndharis/OpenWA-n8n/commit/5c1ed3d296ed8be856bbe85cce8af5424971abc8))
+
+
+### Upgrade note
+
+* **This release needs an OpenWA server ≥ 0.14.0**, up from 0.10.9. Five of the events above — `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` — do not exist in core before v0.14.0, and the server validates a webhook registration against its own event list, so a Trigger subscribing to any of them against an older gateway is refused at registration rather than degrading quietly ([#40](https://github.com/rmyndharis/OpenWA-n8n/issues/40))
+
 ## [0.9.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.8.2...v0.9.0) (2026-07-30)
 
 
