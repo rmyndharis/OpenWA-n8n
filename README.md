@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
   <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
-  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.10.9-25D366.svg" alt="OpenWA >= 0.10.9"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.14.0-25D366.svg" alt="OpenWA >= 0.14.0"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
 </p>
 
@@ -307,7 +307,13 @@ OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.10.9**. The Trigger alone works against much older servers — its webhook contract and HMAC verification landed in v0.4.0 — but the action node calls routes that arrived later, and the floor is set by the newest of them: the profile writes, `groups/join`, `groups/{id}/settings`, `messages/edit` and `calls/{id}/reject` arrived in v0.10.3, contact profile-pictures in v0.10.1, and the stored-status media download in v0.10.9. Against an older server those operations answer `404`; everything else still works.
+Requires an OpenWA server **≥ 0.14.0**. A floor is set by the newest thing the node needs, and two things move it independently.
+
+The **routes** the action node calls top out at v0.10.9: the profile writes, `groups/join`, `groups/{id}/settings`, `messages/edit` and `calls/{id}/reject` arrived in v0.10.3, contact profile-pictures in v0.10.1, and the stored-status media download in v0.10.9. Against an older server those specific operations answer `404` and the rest still work.
+
+The **event catalog** is what actually sets 0.14.0. `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist in core before v0.14.0 — a v0.10.9 server knows 17 events, not 22 — so a Trigger subscribing to any of the five is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation, which is why it, and not the routes, is the number in the badge.
+
+The Trigger alone still works against much older servers if you subscribe only to events that existed then; its webhook contract and HMAC verification landed in v0.4.0.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
