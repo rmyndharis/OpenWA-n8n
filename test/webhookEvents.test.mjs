@@ -128,3 +128,15 @@ test('the README carries no stale "reserved / not yet emitted" label', () => {
   const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
   assert.doesNotMatch(readme, /reserved: (accepted on subscribe but )?not yet emitted/i);
 });
+
+// The minimum-server claim lives in two places — a shields.io badge and the Compatibility prose — and
+// they drifted apart from reality together (both said 0.4.0 while the node had come to call routes
+// that arrived in 0.10.9). Bind them to each other so at least a half-update cannot pass.
+test('the README states one minimum server version, in both places', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+  const badge = readme.match(/badge\/OpenWA-%E2%89%A5%20([0-9.]+)-/);
+  const prose = readme.match(/Requires an OpenWA server \*\*≥ ([0-9.]+)\*\*/);
+  assert.ok(badge, 'no OpenWA version badge found');
+  assert.ok(prose, 'no "Requires an OpenWA server" line found');
+  assert.equal(badge[1], prose[1]);
+});
