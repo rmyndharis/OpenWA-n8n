@@ -238,9 +238,18 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 | `session.qr`            | QR code generated for scanning        |
 | `session.authenticated` | Session authenticated                 |
 | `session.disconnected`  | Session lost connection               |
-| `group.join`            | Participant joined a group — _reserved: accepted on subscribe but not yet emitted by OpenWA_ |
-| `group.leave`           | Participant left a group — _reserved: not yet emitted_ |
-| `group.update`          | Group metadata changed — _reserved: not yet emitted_ |
+| `group.join`            | Participant joined a group             |
+| `group.leave`           | Participant left a group               |
+| `group.update`          | Group metadata changed                 |
+| `message.edited`        | Message text or media caption edited   |
+| `status.received`       | A contact's Status (Story) received    |
+| `session.reconnect_loop`| Session stuck in a reconnect loop (server **≥ 0.10.0**) |
+| `session.restriction`   | WhatsApp placed or lifted a restriction on the account |
+| `call.received`         | Incoming call detected                 |
+| `call.accepted`         | Incoming call answered — **Baileys only** |
+| `call.rejected`         | Incoming call declined, including auto-reject — **Baileys only** |
+| `call.missed`           | Incoming call went unanswered — **Baileys only** |
+| `presence.update`       | Subscribed chat's presence changed — needs `POST /presence/subscribe` first, and **Baileys only** |
 
 #### 🔐 Signature verification
 

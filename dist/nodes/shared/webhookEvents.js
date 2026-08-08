@@ -3,9 +3,24 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WEBHOOK_EVENT_VALUES = exports.WEBHOOK_EVENT_OPTIONS = void 0;
 exports.WEBHOOK_EVENT_OPTIONS = [
     {
+        name: 'Call Accepted',
+        value: 'call.accepted',
+        description: 'Triggers when an incoming call is answered. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
+    },
+    {
+        name: 'Call Missed',
+        value: 'call.missed',
+        description: 'Triggers when an incoming call goes unanswered. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
+    },
+    {
         name: 'Call Received',
         value: 'call.received',
         description: 'Triggers when an incoming WhatsApp call is detected',
+    },
+    {
+        name: 'Call Rejected',
+        value: 'call.rejected',
+        description: 'Triggers when an incoming call is declined, including by auto-reject. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
     },
     {
         name: 'Group Join',
@@ -58,6 +73,11 @@ exports.WEBHOOK_EVENT_OPTIONS = [
         description: 'Triggers when a message is sent successfully',
     },
     {
+        name: 'Presence Update',
+        value: 'presence.update',
+        description: "Triggers when a subscribed chat's presence changes. Requires POST /presence/subscribe first, and Baileys — whatsapp-web.js cannot observe presence and answers 501.",
+    },
+    {
         name: 'Session Authenticated',
         value: 'session.authenticated',
         description: 'Triggers when the session is authenticated',
@@ -76,6 +96,11 @@ exports.WEBHOOK_EVENT_OPTIONS = [
         name: 'Session Reconnect Loop',
         value: 'session.reconnect_loop',
         description: 'Triggers when a session is stuck in a reconnect loop (once per 5 consecutive attempts; OpenWA ≥ 0.10.0)',
+    },
+    {
+        name: 'Session Restriction',
+        value: 'session.restriction',
+        description: 'Triggers when WhatsApp places or lifts a restriction on the account',
     },
     {
         name: 'Session Status',

@@ -8,6 +8,11 @@
  * the three cannot drift apart. When core adds an event, add it here once.
  *
  * Order is alphabetical-by-value to keep the diff stable as events are added.
+ *
+ * Some events only ever fire on one engine, because only one adapter produces the callback behind
+ * them. Those say so in their description rather than being omitted: they are real OpenWA events, and
+ * a user on the other engine is better served by knowing why nothing arrives than by not finding the
+ * option at all.
  */
 import type { INodeProperties } from 'n8n-workflow';
 export declare const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'];
