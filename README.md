@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
   <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
-  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.4.0-25D366.svg" alt="OpenWA >= 0.4.0"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.10.9-25D366.svg" alt="OpenWA >= 0.10.9"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
 </p>
 
@@ -216,7 +216,9 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 1. Add an **OpenWA** node
 2. Select the **Message** resource and **Send Text** operation
-3. Configure **Session ID** (`default`), **Chat ID** (`628123456789@c.us`), and **Message**
+3. Configure **Session ID** — pick it from the dropdown, which lists the sessions on your server;
+   it is the session's UUID, not its name, and a literal `default` resolves to nothing — then
+   **Chat ID** (`628123456789@c.us`) and **Message**
 
 > **Provisioning a session:** sessions are identified by a **UUID** (returned by **Create**, **Get Status**, or **List All**). A full end-to-end flow is **Create → Start → Get QR** (scan) or **Request Pairing Code** (enter on the phone) → wait for `session.authenticated`. The Trigger can listen for `session.qr` and `session.authenticated` events; these session operations are what drive those state transitions.
 
@@ -305,7 +307,7 @@ OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC signature verification the Trigger relies on landed in v0.4.0. Verified against OpenWA **v0.8.13**.
+Requires an OpenWA server **≥ 0.10.9**. The Trigger alone works against much older servers — its webhook contract and HMAC verification landed in v0.4.0 — but the action node calls routes that arrived later, and the floor is set by the newest of them: the profile writes, `groups/join`, `groups/{id}/settings`, `messages/edit` and `calls/{id}/reject` arrived in v0.10.3, contact profile-pictures in v0.10.1, and the stored-status media download in v0.10.9. Against an older server those operations answer `404`; everything else still works.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
@@ -318,15 +320,12 @@ Requires an OpenWA server **≥ 0.4.0** — the webhook event contract and HMAC 
 npm install      # install dependencies
 npm run build    # compile TypeScript + copy icons
 npm run dev      # watch mode
-npm run lint     # ESLint (flat config, shared with n8n-node lint)
+npm run lint     # ESLint (.eslintrc.js)
 npm test         # build + signature-verification unit tests
 ```
 
-Linting uses the flat config in `eslint.config.mjs`, which re-exports the shared
-config from `@n8n/node-cli`, so `npm run lint` and `n8n-node lint` apply the same
-rules. `package.json` sets `n8n.strict`, which makes `n8n-node lint` additionally
-verify that config is unmodified — adding project-specific rules there requires
-setting `"strict": false`.
+Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only
+ESLint config in the repository.
 
 CI runs one further gate on top: the n8n Creator Portal scanner (see
 `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.
