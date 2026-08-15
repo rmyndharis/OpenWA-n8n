@@ -97,7 +97,6 @@ export class OpenWaTrigger implements INodeType {
         default: '',
       },
     ],
-    usableAsTool: true,
   };
 
   // Shares the action node's session loader, so both nodes offer the same list

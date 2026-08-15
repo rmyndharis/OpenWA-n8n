@@ -86,7 +86,6 @@ class OpenWaTrigger {
                     default: '',
                 },
             ],
-            usableAsTool: true,
         };
         // Shares the action node's session loader, so both nodes offer the same list
         // from the same credential rather than drifting apart.

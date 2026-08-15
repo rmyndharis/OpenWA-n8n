@@ -16,9 +16,8 @@ const { OpenWaTrigger } = triggerModule;
 // mirror: nothing here can detect that core has moved.
 //
 //   source: src/modules/webhook/dto/webhook.dto.ts in rmyndharis/OpenWA
-//   taken at: 42deab69, 2026-08-08 — a commit on core's main AFTER v0.14.5, not the tag itself.
-//              (`git describe --tags --contains 42deab69` finds no tag; do not read it as a release.)
-//   count: 22
+//   taken at: v0.19.0, 2026-08-15 — the release tag itself.
+//   count: 23
 //
 // The previous copy claimed to "mirror" core and had drifted to 17 while asserting the node matched
 // it — so both sides were wrong together and this file stayed green. When core adds an event, update
@@ -29,6 +28,7 @@ const CORE_WEBHOOK_EVENTS_SNAPSHOT = [
   'call.received',
   'call.rejected',
   'group.join',
+  'group.join_request',
   'group.leave',
   'group.update',
   'message.ack',
@@ -71,8 +71,8 @@ function collectEventValues(properties) {
 test('the snapshot is the size the provenance comment claims', () => {
   // Cheap tripwire for the failure this file already had once: a copy that lost entries while every
   // other assertion kept passing, because they all compare against the copy.
-  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 22);
-  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 22, 'snapshot has duplicates');
+  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 23);
+  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 23, 'snapshot has duplicates');
 });
 
 test('the shared WEBHOOK_EVENT_VALUES list matches the core catalog snapshot', () => {
