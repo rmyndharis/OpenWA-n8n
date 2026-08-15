@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.1...v0.9.2) (2026-08-15)
+
+
+### Bug Fixes
+
+* offer the group.join_request event the gateway dispatches ([#41](https://github.com/rmyndharis/OpenWA-n8n/issues/41)) ([4f8d08c](https://github.com/rmyndharis/OpenWA-n8n/commit/4f8d08c998cf4ef301fec98ff0c74529baa06ea7))
+
 ## [0.9.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.0...v0.9.1) (2026-08-08)
 
 
