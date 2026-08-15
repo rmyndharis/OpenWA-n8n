@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
   <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
-  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.14.0-25D366.svg" alt="OpenWA >= 0.14.0"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.15.0-25D366.svg" alt="OpenWA >= 0.15.0"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
 </p>
 
@@ -252,6 +252,7 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 | `call.rejected`         | Incoming call declined, including auto-reject — **Baileys only** |
 | `call.missed`           | Incoming call went unanswered — **Baileys only** |
 | `presence.update`       | Subscribed chat's presence changed — needs `POST /presence/subscribe` first, and **Baileys only** |
+| `group.join_request`    | Someone asked to join an administered group (server **≥ 0.15.0**) |
 
 #### 🔐 Signature verification
 
@@ -307,11 +308,11 @@ OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.14.0**. A floor is set by the newest thing the node needs, and two things move it independently.
+Requires an OpenWA server **≥ 0.15.0**. A floor is set by the newest thing the node needs, and two things move it independently.
 
 The **routes** the action node calls top out at v0.10.9: the profile writes, `groups/join`, `groups/{id}/settings`, `messages/edit` and `calls/{id}/reject` arrived in v0.10.3, contact profile-pictures in v0.10.1, and the stored-status media download in v0.10.9. Against an older server those specific operations answer `404` and the rest still work.
 
-The **event catalog** is what actually sets 0.14.0. `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist in core before v0.14.0 — a v0.10.9 server knows 17 events, not 22 — so a Trigger subscribing to any of the five is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation, which is why it, and not the routes, is the number in the badge.
+The **event catalog** is what actually sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 — a v0.14.x server knows 22 events, not 23 — so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation, which is why it, and not the routes, is the number in the badge.
 
 The Trigger alone still works against much older servers if you subscribe only to events that existed then; its webhook contract and HMAC verification landed in v0.4.0.
 

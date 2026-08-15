@@ -28,6 +28,11 @@ exports.WEBHOOK_EVENT_OPTIONS = [
         description: 'Triggers when a participant joins a group the session belongs to',
     },
     {
+        name: 'Group Join Request',
+        value: 'group.join_request',
+        description: 'Triggers when someone asks to join a group the session administers (server ≥ 0.15.0; the queue is readable and actionable via the group membership-request routes)',
+    },
+    {
         name: 'Group Leave',
         value: 'group.leave',
         description: 'Triggers when a participant leaves a group the session belongs to',
