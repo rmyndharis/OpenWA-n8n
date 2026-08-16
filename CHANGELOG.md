@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.2...v0.9.3) (2026-08-16)
+
+
+### Bug Fixes
+
+* reject a webhook secret below the server's 16-character floor ([#43](https://github.com/rmyndharis/OpenWA-n8n/issues/43)) ([d507909](https://github.com/rmyndharis/OpenWA-n8n/commit/d5079091dbdc2f7c0ea425759f3c2a4109b235cf))
+
 ## [0.9.2](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.1...v0.9.2) (2026-08-15)
 
 
