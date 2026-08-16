@@ -1,8 +1,19 @@
-import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
+import { isWebhookSecretTooShort, MIN_WEBHOOK_SECRET_LENGTH } from '../../shared/webhookSecret';
 import { toQueryParams } from './params';
 import type { RequestSpec } from './types';
+
+function assertSecretLength(node: INode, secret: string, itemIndex: number): void {
+  if (isWebhookSecretTooShort(secret)) {
+    throw new NodeOperationError(
+      node,
+      `Webhook secret must be at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`,
+      { itemIndex },
+    );
+  }
+}
 
 export async function buildWebhookRequest(
   this: IExecuteFunctions,
@@ -61,6 +72,7 @@ export async function buildWebhookRequest(
       events,
     };
     const webhookSecret = this.getNodeParameter('webhookSecret', itemIndex, '') as string;
+    assertSecretLength(this.getNode(), webhookSecret, itemIndex);
     if (webhookSecret) {
       body.secret = webhookSecret;
     }
@@ -101,6 +113,7 @@ export async function buildWebhookRequest(
     // when it is merely added to the collection. To disable signing, recreate the
     // webhook without a secret.
     if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
+      assertSecretLength(this.getNode(), updateFields.secret, itemIndex);
       body.secret = updateFields.secret;
     }
     // Mirror the create-webhook guard so an empty Events selection fails with a clear

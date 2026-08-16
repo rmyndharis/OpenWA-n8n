@@ -1496,7 +1496,7 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['webhook'], operation: ['create'] },
                     },
-                    description: 'Optional shared secret. If set, OpenWA signs each delivery to this webhook with an X-OpenWA-Signature (HMAC-SHA256) header.',
+                    description: 'Optional shared secret, at least 16 characters (the server rejects a shorter one at registration). If set, OpenWA signs each delivery to this webhook with an X-OpenWA-Signature (HMAC-SHA256) header.',
                 },
                 {
                     displayName: 'Webhook Name or ID',
@@ -1567,7 +1567,7 @@ class OpenWa {
                             type: 'string',
                             typeOptions: { password: true },
                             default: '',
-                            description: 'HMAC-SHA256 signing secret. Set a value to rotate it; an empty value is ignored. To disable signing, recreate the webhook without a secret.',
+                            description: 'HMAC-SHA256 signing secret, at least 16 characters. Set a value to rotate it; an empty value is ignored. To disable signing, recreate the webhook without a secret.',
                         },
                         {
                             displayName: 'URL',
