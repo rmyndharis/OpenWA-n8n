@@ -258,6 +258,8 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 
 The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
 
+> **Secret length:** the secret must be at least **16 characters**. The server enforces this floor at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature). Webhooks registered with a short secret before the floor keep working until re-registered.
+
 > Changing or clearing the secret — or changing the events or session — re-registers the webhook automatically on the next activation (deactivate/reactivate, or an n8n restart). No manual cleanup on the server is needed.
 
 > Signature verification requires the raw request body, which all current n8n versions provide. On a severely outdated n8n that cannot supply it, signed deliveries are rejected with a logged warning — upgrade n8n or leave the secret empty.

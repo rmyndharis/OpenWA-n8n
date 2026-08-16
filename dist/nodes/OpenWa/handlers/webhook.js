@@ -3,7 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildWebhookRequest = buildWebhookRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
+function assertSecretLength(node, secret, itemIndex) {
+    if ((0, webhookSecret_1.isWebhookSecretTooShort)(secret)) {
+        throw new n8n_workflow_1.NodeOperationError(node, `Webhook secret must be at least ${webhookSecret_1.MIN_WEBHOOK_SECRET_LENGTH} characters`, { itemIndex });
+    }
+}
 async function buildWebhookRequest(operation, itemIndex) {
     // These two span every session, so they are resolved before the Session ID
     // field is read — it is not shown for them.
@@ -46,6 +52,7 @@ async function buildWebhookRequest(operation, itemIndex) {
             events,
         };
         const webhookSecret = this.getNodeParameter('webhookSecret', itemIndex, '');
+        assertSecretLength(this.getNode(), webhookSecret, itemIndex);
         if (webhookSecret) {
             body.secret = webhookSecret;
         }
@@ -75,6 +82,7 @@ async function buildWebhookRequest(operation, itemIndex) {
         // when it is merely added to the collection. To disable signing, recreate the
         // webhook without a secret.
         if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
+            assertSecretLength(this.getNode(), updateFields.secret, itemIndex);
             body.secret = updateFields.secret;
         }
         // Mirror the create-webhook guard so an empty Events selection fails with a clear

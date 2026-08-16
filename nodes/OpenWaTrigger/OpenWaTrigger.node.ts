@@ -13,6 +13,7 @@ import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
 import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
+import { isWebhookSecretTooShort, MIN_WEBHOOK_SECRET_LENGTH } from '../shared/webhookSecret';
 import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
 import { getSessions } from '../OpenWa/loadOptions';
 
@@ -79,7 +80,7 @@ export class OpenWaTrigger implements INodeType {
         },
         default: '',
         description:
-          'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
+          'Optional shared secret, at least 16 characters (the server rejects a shorter one at registration). If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
       },
       {
         displayName: 'Deduplicate Deliveries',
@@ -196,6 +197,14 @@ export class OpenWaTrigger implements INodeType {
         if (!events || events.length === 0) {
           throw new NodeOperationError(this.getNode(), 'At least one event must be selected');
         }
+        // A short secret is rejected by the server's registration floor; failing
+        // here names the field instead of surfacing a raw 400 mid-activation.
+        if (isWebhookSecretTooShort(webhookSecret)) {
+          throw new NodeOperationError(
+            this.getNode(),
+            `Webhook secret must be at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`,
+          );
+        }
 
         const body: Record<string, unknown> = {
           url: webhookUrl,
@@ -206,23 +215,18 @@ export class OpenWaTrigger implements INodeType {
           body.secret = webhookSecret;
         }
 
-        const response = await this.helpers.httpRequestWithAuthentication.call(
-          this,
-          'openWaApi',
-          {
-            method: 'POST',
-            url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
-            body,
-            json: true,
-          },
-        );
+        const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+          method: 'POST',
+          url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
+          body,
+          json: true,
+        });
 
         const webhookId = (response as Record<string, unknown>).id;
         if (!webhookId) {
-          throw new NodeApiError(
-            this.getNode(),
-            { message: 'Webhook created but no ID returned in response' } as unknown as JsonObject,
-          );
+          throw new NodeApiError(this.getNode(), {
+            message: 'Webhook created but no ID returned in response',
+          } as unknown as JsonObject);
         }
 
         const webhookData = this.getWorkflowStaticData('node');

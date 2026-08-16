@@ -6,6 +6,7 @@ const verifySignature_1 = require("./verifySignature");
 const httpStatus_1 = require("./httpStatus");
 const configHash_1 = require("./configHash");
 const sanitizePathParam_1 = require("../shared/sanitizePathParam");
+const webhookSecret_1 = require("../shared/webhookSecret");
 const webhookEvents_1 = require("../shared/webhookEvents");
 const loadOptions_1 = require("../OpenWa/loadOptions");
 class OpenWaTrigger {
@@ -70,7 +71,7 @@ class OpenWaTrigger {
                         password: true,
                     },
                     default: '',
-                    description: 'Optional shared secret. If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
+                    description: 'Optional shared secret, at least 16 characters (the server rejects a shorter one at registration). If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
                 },
                 {
                     displayName: 'Deduplicate Deliveries',
@@ -168,6 +169,11 @@ class OpenWaTrigger {
                     if (!events || events.length === 0) {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected');
                     }
+                    // A short secret is rejected by the server's registration floor; failing
+                    // here names the field instead of surfacing a raw 400 mid-activation.
+                    if ((0, webhookSecret_1.isWebhookSecretTooShort)(webhookSecret)) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Webhook secret must be at least ${webhookSecret_1.MIN_WEBHOOK_SECRET_LENGTH} characters`);
+                    }
                     const body = {
                         url: webhookUrl,
                         events,
@@ -184,7 +190,9 @@ class OpenWaTrigger {
                     });
                     const webhookId = response.id;
                     if (!webhookId) {
-                        throw new n8n_workflow_1.NodeApiError(this.getNode(), { message: 'Webhook created but no ID returned in response' });
+                        throw new n8n_workflow_1.NodeApiError(this.getNode(), {
+                            message: 'Webhook created but no ID returned in response',
+                        });
                     }
                     const webhookData = this.getWorkflowStaticData('node');
                     // Normalize to string so checkExists/delete comparisons stay consistent.

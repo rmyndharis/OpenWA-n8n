@@ -40,6 +40,7 @@ function makeCtx({
     calls,
     getWorkflowStaticData: () => staticData,
     getCredentials: async () => ({ serverUrl: 'http://localhost:2785' }),
+    getNode: () => ({ id: 'node-1', name: 'OpenWA Trigger' }),
     getNodeParameter: (name) => params[name],
     getNodeWebhookUrl: () => WEBHOOK_URL,
     helpers: {
@@ -209,7 +210,7 @@ test('create: stores the webhook id, session id, and config hash — never the s
   const { ctx, staticData, calls } = makeCtx({
     webhookId: undefined,
     storedSessionId: undefined,
-    secret: 's3cr3t',
+    secret: 'sixteen-char-secret',
   });
   assert.equal(await hooks().create.call(ctx), true);
   assert.equal(staticData.webhookId, 'w1');
@@ -219,13 +220,23 @@ test('create: stores the webhook id, session id, and config hash — never the s
     webhookConfigHash({
       url: WEBHOOK_URL,
       events: ['message.received'],
-      secret: 's3cr3t',
+      secret: 'sixteen-char-secret',
       sessionId: 'default',
     }),
   );
-  assert.ok(!String(staticData.configHash).includes('s3cr3t'));
+  assert.ok(!String(staticData.configHash).includes('sixteen-char-secret'));
   // the secret still goes to the server on registration
-  assert.equal(calls[0].body.secret, 's3cr3t');
+  assert.equal(calls[0].body.secret, 'sixteen-char-secret');
+});
+
+test('create: rejects a secret shorter than 16 characters before any request', async () => {
+  const { ctx, calls } = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    secret: 's3cr3t',
+  });
+  await assert.rejects(() => hooks().create.call(ctx), /at least 16 characters/);
+  assert.equal(calls.length, 0);
 });
 
 // --- node description ---
