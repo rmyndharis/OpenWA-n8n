@@ -42,6 +42,7 @@ const chat_1 = require("./handlers/chat");
 const contact_1 = require("./handlers/contact");
 const group_1 = require("./handlers/group");
 const label_1 = require("./handlers/label");
+const media_1 = require("./handlers/media");
 const message_1 = require("./handlers/message");
 const presence_1 = require("./handlers/presence");
 const profile_1 = require("./handlers/profile");
@@ -66,6 +67,7 @@ const RESOURCE_BUILDERS = {
     contact: contact_1.buildContactRequest,
     group: group_1.buildGroupRequest,
     label: label_1.buildLabelRequest,
+    media: media_1.buildMediaRequest,
     message: message_1.buildMessageRequest,
     profile: profile_1.buildProfileRequest,
     session: session_1.buildSessionRequest,
@@ -112,6 +114,7 @@ class OpenWa {
                         { name: 'Contact', value: 'contact' },
                         { name: 'Group', value: 'group' },
                         { name: 'Label', value: 'label' },
+                        { name: 'Media', value: 'media' },
                         { name: 'Message', value: 'message' },
                         { name: 'Observability', value: 'observability' },
                         { name: 'Presence', value: 'presence' },
@@ -308,6 +311,113 @@ class OpenWa {
                             description: 'Number of sessions to skip before collecting the result set',
                         },
                     ],
+                },
+                // ============== MEDIA OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['media'] } },
+                    options: [
+                        {
+                            name: 'Check Availability',
+                            value: 'checkConversion',
+                            action: 'Check whether media conversion is available',
+                        },
+                        {
+                            name: 'Convert to Video',
+                            value: 'convertVideo',
+                            action: 'Convert video into a WhatsApp compatible MP4',
+                        },
+                        {
+                            name: 'Convert to Voice Note',
+                            value: 'convertVoice',
+                            action: 'Convert audio into a WhatsApp voice note',
+                        },
+                    ],
+                    default: 'convertVoice',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['media'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Media Source',
+                    name: 'mediaConvertSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'binary',
+                    displayOptions: {
+                        show: { resource: ['media'], operation: ['convertVoice', 'convertVideo'] },
+                    },
+                    description: 'Where the media to convert comes from',
+                },
+                {
+                    displayName: 'Input Binary Field',
+                    name: 'mediaConvertBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['binary'],
+                        },
+                    },
+                    description: 'The name of the input binary field holding the media',
+                },
+                {
+                    displayName: 'Media URL',
+                    name: 'mediaConvertUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['url'],
+                        },
+                    },
+                    description: 'Public URL of the media to convert, fetched by the server',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'mediaConvertBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['base64'],
+                        },
+                    },
+                    description: 'Base64 encoded media to convert',
+                },
+                {
+                    displayName: 'Conversion returns <code>base64</code> and <code>mimetype</code> ready to feed straight into Message > Send Audio (Base64 source, Send as Voice Note on) or Status > Send Voice. Nothing else in the pipeline transcodes, so without this an MP3 sent as a voice note produces a microphone bubble that will not play. Conversion is optional on the server and needs ffmpeg: use Check Availability first, and read a 503 as conversion being disabled or busy rather than as a bad request. No MIME type is sent, because the server reads it from the bytes.',
+                    name: 'mediaConvertNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: {
+                        show: { resource: ['media'], operation: ['convertVoice', 'convertVideo'] },
+                    },
                 },
                 // ============== MESSAGE OPERATIONS ==============
                 {
@@ -2182,6 +2292,11 @@ class OpenWa {
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['profile'] } },
                     options: [
+                        {
+                            name: 'Delete Picture',
+                            value: 'deletePicture',
+                            action: 'Remove the profile picture',
+                        },
                         { name: 'Set Name', value: 'setName', action: 'Set the profile display name' },
                         { name: 'Set Picture', value: 'setPicture', action: 'Set the profile picture' },
                         { name: 'Set Status', value: 'setStatus', action: 'Set the profile about text' },
@@ -2421,6 +2536,7 @@ class OpenWa {
                         { name: 'Send Image', value: 'sendImage', action: 'Post an image status' },
                         { name: 'Send Text', value: 'sendText', action: 'Post a text status' },
                         { name: 'Send Video', value: 'sendVideo', action: 'Post a video status' },
+                        { name: 'Send Voice', value: 'sendVoice', action: 'Post an audio status as a voice note' },
                     ],
                     default: 'list',
                 },
@@ -2483,8 +2599,10 @@ class OpenWa {
                     name: 'statusBackgroundColor',
                     type: 'color',
                     default: '',
-                    displayOptions: { show: { resource: ['status'], operation: ['sendText'] } },
-                    description: 'Background color for the text status. Leave empty for the server default.',
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendText', 'sendVoice'] },
+                    },
+                    description: 'Background color for the status. Leave empty for the server default.',
                 },
                 {
                     displayName: 'Font',
@@ -2516,13 +2634,81 @@ class OpenWa {
                     description: 'Optional caption for the status media (max 1024 characters)',
                 },
                 {
+                    displayName: 'Audio Source',
+                    name: 'statusVoiceSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'binary',
+                    displayOptions: { show: { resource: ['status'], operation: ['sendVoice'] } },
+                    description: 'Where the audio comes from',
+                },
+                {
+                    displayName: 'Input Binary Field',
+                    name: 'statusVoiceBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['binary'] },
+                    },
+                    description: 'The name of the input binary field holding the audio',
+                },
+                {
+                    displayName: 'Audio URL',
+                    name: 'statusVoiceUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['url'] },
+                    },
+                    description: 'URL of the audio to post',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'statusVoiceBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['base64'] },
+                    },
+                    description: 'Base64 encoded audio data',
+                },
+                {
+                    displayName: 'MIME Type',
+                    name: 'statusVoiceMimeType',
+                    type: 'string',
+                    default: 'audio/ogg; codecs=opus',
+                    required: true,
+                    placeholder: 'audio/ogg; codecs=opus',
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['base64'] },
+                    },
+                    description: 'MIME type of the base64 audio data',
+                },
+                {
+                    displayName: 'A voice status needs Ogg/Opus audio, and nothing in the pipeline transcodes: other formats post but will not play. Run the file through Media > Convert to Voice Note first and feed its base64 output in here.',
+                    name: 'statusVoiceNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['status'], operation: ['sendVoice'] } },
+                },
+                {
                     displayName: 'Recipients',
                     name: 'statusRecipients',
                     type: 'string',
                     default: '',
                     placeholder: '628123456789@c.us, 628987654321@c.us',
                     displayOptions: {
-                        show: { resource: ['status'], operation: ['sendText', 'sendImage', 'sendVideo'] },
+                        show: {
+                            resource: ['status'],
+                            operation: ['sendText', 'sendImage', 'sendVideo', 'sendVoice'],
+                        },
                     },
                     description: 'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to every contact regardless, so do not rely on it to limit the audience there.',
                 },
@@ -2916,7 +3102,14 @@ class OpenWa {
                     type: 'options',
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['call'] } },
-                    options: [{ name: 'Reject', value: 'reject', action: 'Reject an incoming call' }],
+                    options: [
+                        {
+                            name: 'Create Link',
+                            value: 'createLink',
+                            action: 'Create a shareable WhatsApp call link',
+                        },
+                        { name: 'Reject', value: 'reject', action: 'Reject an incoming call' },
+                    ],
                     default: 'reject',
                 },
                 {
@@ -2937,8 +3130,28 @@ class OpenWa {
                     type: 'string',
                     default: '',
                     required: true,
-                    displayOptions: { show: { resource: ['call'] } },
+                    displayOptions: { show: { resource: ['call'], operation: ['reject'] } },
                     description: "The ID of the call, as delivered by the Trigger's call events",
+                },
+                {
+                    displayName: 'Call Type',
+                    name: 'callLinkType',
+                    type: 'options',
+                    options: [
+                        { name: 'Video', value: 'video' },
+                        { name: 'Audio', value: 'audio' },
+                    ],
+                    default: 'video',
+                    displayOptions: { show: { resource: ['call'], operation: ['createLink'] } },
+                    description: 'Whether the link opens a video or an audio call',
+                },
+                {
+                    displayName: 'Start Time',
+                    name: 'callLinkStartTime',
+                    type: 'dateTime',
+                    default: '',
+                    displayOptions: { show: { resource: ['call'], operation: ['createLink'] } },
+                    description: 'When the call is due to start. Leave empty for now. The response carries only the link, with no expiry, so the node cannot report how long it stays valid.',
                 },
                 // ============== OBSERVABILITY OPERATIONS ==============
                 {

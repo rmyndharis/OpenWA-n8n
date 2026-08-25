@@ -12,6 +12,13 @@ const STATUS_IMAGE_MEDIA = {
     base64: 'statusImageBase64',
     mimeType: 'statusImageMimeType',
 };
+const STATUS_VOICE_MEDIA = {
+    source: 'statusVoiceSource',
+    binaryProperty: 'statusVoiceBinaryProperty',
+    url: 'statusVoiceUrl',
+    base64: 'statusVoiceBase64',
+    mimeType: 'statusVoiceMimeType',
+};
 const STATUS_VIDEO_MEDIA = {
     source: 'statusVideoSource',
     binaryProperty: 'statusVideoBinaryProperty',
@@ -98,6 +105,22 @@ async function buildStatusRequest(operation, itemIndex) {
                 body.recipients = recipients;
             }
             return { endpoint: `${base}/send-text`, method: 'POST', body };
+        }
+        case 'sendVoice': {
+            // Like the image and video sends, the media nests under its own key rather
+            // than sitting flat on the body.
+            const body = {
+                audio: await media_1.resolveMediaSource.call(this, itemIndex, STATUS_VOICE_MEDIA, 'audio/ogg; codecs=opus'),
+            };
+            const backgroundColor = this.getNodeParameter('statusBackgroundColor', itemIndex, '').trim();
+            if (backgroundColor) {
+                body.backgroundColor = backgroundColor;
+            }
+            const recipients = getRecipients(this, itemIndex);
+            if (recipients) {
+                body.recipients = recipients;
+            }
+            return { endpoint: `${base}/send-voice`, method: 'POST', body };
         }
         case 'sendImage':
         case 'sendVideo': {

@@ -1107,6 +1107,81 @@ const GROUP = '120363021234567890@g.us';
 const CHANNEL = '120363021234567890@newsletter';
 
 mappingCases.push(
+  // --- media conversion ---
+  [
+    'media/checkConversion',
+    { resource: 'media', operation: 'checkConversion', ...S },
+    'GET',
+    `${SESS}/media/convert`,
+    undefined,
+  ],
+  [
+    'media/convertVoice sends no mimetype, which the DTO would refuse',
+    {
+      resource: 'media',
+      operation: 'convertVoice',
+      ...S,
+      mediaConvertSource: 'url',
+      mediaConvertUrl: 'https://example.com/a.mp3',
+    },
+    'POST',
+    `${SESS}/media/convert/voice`,
+    { url: 'https://example.com/a.mp3' },
+  ],
+  [
+    'media/convertVideo from base64',
+    {
+      resource: 'media',
+      operation: 'convertVideo',
+      ...S,
+      mediaConvertSource: 'base64',
+      mediaConvertBase64: 'AAAA',
+    },
+    'POST',
+    `${SESS}/media/convert/video`,
+    { base64: 'AAAA' },
+  ],
+  // --- status, profile and call additions ---
+  [
+    'status/sendVoice nests its media under audio',
+    {
+      resource: 'status',
+      operation: 'sendVoice',
+      ...S,
+      statusVoiceSource: 'url',
+      statusVoiceUrl: 'https://example.com/a.ogg',
+    },
+    'POST',
+    `${SESS}/status/send-voice`,
+    { audio: { url: 'https://example.com/a.ogg' } },
+  ],
+  [
+    'profile/deletePicture',
+    { resource: 'profile', operation: 'deletePicture', ...S },
+    'DELETE',
+    `${SESS}/profile/picture`,
+    undefined,
+  ],
+  [
+    'call/reject still targets the call it names',
+    { resource: 'call', operation: 'reject', ...S, callId: 'c1' },
+    'POST',
+    `${SESS}/calls/c1/reject`,
+    undefined,
+  ],
+  [
+    'call/createLink',
+    {
+      resource: 'call',
+      operation: 'createLink',
+      ...S,
+      callLinkType: 'audio',
+      callLinkStartTime: '2027-01-01T00:00:00Z',
+    },
+    'POST',
+    `${SESS}/calls/link`,
+    { type: 'audio', startTime: Date.parse('2027-01-01T00:00:00Z') },
+  ],
   // --- group: new operations ---
   [
     'group/getJoinInfo',
@@ -2279,6 +2354,23 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('call/createLink defaults a blank start time to now rather than omitting it', async () => {
+  const before = Date.now();
+  const { ctx } = await run({
+    resource: 'call',
+    operation: 'createLink',
+    sessionId: 'abc-123',
+    callLinkType: 'video',
+    callLinkStartTime: '',
+  });
+  const { body } = singleCall(ctx).options;
+  assert.equal(body.type, 'video');
+  assert.ok(
+    Number.isInteger(body.startTime) && body.startTime >= before,
+    `expected an epoch-ms start time, got ${body.startTime}`,
+  );
 });
 
 test('group/getJoinInfo sends the invite code as a query parameter', async () => {
