@@ -33,6 +33,18 @@ export declare function toQueryParams(options: IDataObject | undefined): IDataOb
  */
 export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: string, itemIndex: number): number;
 /**
+ * Reads an optional text field from an update collection, for the fields the server
+ * marks non-empty.
+ *
+ * Three states have to stay distinct. Absent means "leave the stored value alone",
+ * so it returns undefined and the caller omits the key. A real value is trimmed and
+ * returned. A value that is present but blank is neither: the server refuses it, so
+ * there is no reading under which it means anything. Dropping it silently would
+ * report success while leaving the field untouched, so it is refused here with a
+ * message that names the field and says how to leave it unchanged.
+ */
+export declare function optionalNonBlank(ctx: IExecuteFunctions, value: string | undefined, label: string, itemIndex: number, maxLength?: number): string | undefined;
+/**
  * Normalises a list parameter into a trimmed, blank-free array of strings.
  *
  * These fields are plain strings rather than n8n `multipleValues` collections so

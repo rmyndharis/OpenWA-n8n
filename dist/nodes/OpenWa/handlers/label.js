@@ -32,8 +32,11 @@ async function buildLabelRequest(operation, itemIndex) {
         }
         const fields = this.getNodeParameter('labelFields', itemIndex, {});
         const body = {};
-        const name = (fields.labelName ?? '').trim();
-        if (name) {
+        // Refused rather than dropped when blank: the server marks it non-empty, so a
+        // blank cannot mean "clear the name" and dropping it would report success
+        // while leaving the label's name untouched.
+        const name = (0, params_1.optionalNonBlank)(this, fields.labelName, 'Label name', itemIndex, 100);
+        if (name !== undefined) {
             body.name = name;
         }
         // 0 is a real colour, so this tests for presence rather than truthiness. The

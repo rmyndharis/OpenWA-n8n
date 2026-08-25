@@ -57,22 +57,16 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
             return { endpoint: `${base}/${ruleId}`, method: 'DELETE', body: {} };
         case 'update': {
             // A partial update: anything left out keeps its stored value. `name` and
-            // `replyText` are rejected when blank, so a blank one is treated as unset
-            // rather than forwarded as a guaranteed 400.
+            // `replyText` are non-empty on the server, so a blank one is refused by name
+            // rather than dropped, which would report success while leaving it untouched.
             const fields = this.getNodeParameter('ruleUpdateFields', itemIndex, {});
             const body = {};
-            const name = (fields.name ?? '').trim();
-            if (name) {
-                if (name.length > MAX_RULE_NAME_LENGTH) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Name cannot exceed ${MAX_RULE_NAME_LENGTH} characters`, { itemIndex });
-                }
+            const name = (0, params_1.optionalNonBlank)(this, fields.name, 'Name', itemIndex, MAX_RULE_NAME_LENGTH);
+            if (name !== undefined) {
                 body.name = name;
             }
-            const replyText = (fields.replyText ?? '').trim();
-            if (replyText) {
-                if (replyText.length > MAX_REPLY_TEXT_LENGTH) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Reply text cannot exceed ${MAX_REPLY_TEXT_LENGTH} characters`, { itemIndex });
-                }
+            const replyText = (0, params_1.optionalNonBlank)(this, fields.replyText, 'Reply text', itemIndex, MAX_REPLY_TEXT_LENGTH);
+            if (replyText !== undefined) {
                 body.replyText = replyText;
             }
             const conditions = parseConditions(this, fields.conditions, itemIndex);
