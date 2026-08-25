@@ -43,6 +43,21 @@ export async function buildSessionRequest(
       }
       body.config = parsedConfig;
     }
+    // Omit rather than send '': the DTO validates it as a URL, so a blank value is
+    // a 400 while an absent key is the documented "no proxy". The scheme is checked
+    // here so a typo fails in the editor rather than as a 504 half a minute into a
+    // Start that never produces a QR.
+    const proxyUrl = (this.getNodeParameter('proxyUrl', itemIndex, '') as string).trim();
+    if (proxyUrl) {
+      if (!/^(https?|socks[45]):\/\//i.test(proxyUrl)) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Proxy URL must start with http://, https://, socks4:// or socks5://',
+          { itemIndex },
+        );
+      }
+      body.proxyUrl = proxyUrl;
+    }
     return { endpoint: '/api/sessions', method: 'POST', body };
   }
 
@@ -55,8 +70,7 @@ export async function buildSessionRequest(
     return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };
   }
 
-  // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
-  // address a single session by its UUID id.
+  // Everything below addresses a single session by its UUID id.
   const sessionId = sanitizePathParam(
     this.getNodeParameter('sessionId', itemIndex) as string,
     'Session ID',
@@ -75,6 +89,43 @@ export async function buildSessionRequest(
       return { endpoint: `/api/sessions/${sessionId}`, method: 'DELETE', body: {} };
     case 'getQr':
       return { endpoint: `/api/sessions/${sessionId}/qr`, method: 'GET', body: {} };
+    case 'logout':
+      // Unlike Stop, this needs a live engine: it asks WhatsApp to remove this
+      // companion device before tearing down locally.
+      return { endpoint: `/api/sessions/${sessionId}/logout`, method: 'POST', body: {} };
+    case 'getConfig':
+      return { endpoint: `/api/sessions/${sessionId}/config`, method: 'GET', body: {} };
+    case 'updateConfig': {
+      const fields = this.getNodeParameter('sessionConfigFields', itemIndex, {}) as {
+        autoRejectCalls?: boolean;
+        maxReconnectAttempts?: number;
+        reconnectBaseDelay?: number;
+      };
+      const body: Record<string, unknown> = {};
+      // A PATCH merges: an absent key leaves the stored value alone, and an explicit
+      // null resets it to the default. An n8n collection cannot express null, which
+      // is why the unlimited case needs a sentinel.
+      if (fields.autoRejectCalls !== undefined) {
+        body.autoRejectCalls = fields.autoRejectCalls;
+      }
+      if (fields.maxReconnectAttempts !== undefined) {
+        // -1 is the node's "back to unlimited" sentinel; the server spells that null,
+        // and no in-range number expresses it. 0 is a real value meaning never reconnect.
+        body.maxReconnectAttempts =
+          fields.maxReconnectAttempts < 0 ? null : fields.maxReconnectAttempts;
+      }
+      if (fields.reconnectBaseDelay !== undefined) {
+        body.reconnectBaseDelay = fields.reconnectBaseDelay;
+      }
+      if (Object.keys(body).length === 0) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'At least one field must be provided to update',
+          { itemIndex },
+        );
+      }
+      return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
+    }
     case 'requestPairingCode': {
       const phoneNumber = (this.getNodeParameter('pairingPhoneNumber', itemIndex) as string)
         .trim()

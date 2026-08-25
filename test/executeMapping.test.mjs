@@ -1105,6 +1105,91 @@ const CHAT = '628123456789@c.us';
 const SESS = `${BASE}/api/sessions/abc-123`;
 
 mappingCases.push(
+  // --- presence ---
+  [
+    'presence/subscribe',
+    { resource: 'presence', operation: 'subscribe', ...S, chatId: CHAT },
+    'POST',
+    `${SESS}/presence/subscribe`,
+    { chatId: CHAT },
+  ],
+  [
+    'presence/get',
+    { resource: 'presence', operation: 'get', ...S, chatId: CHAT },
+    'GET',
+    `${SESS}/presence/${encodeURIComponent(CHAT)}`,
+    undefined,
+  ],
+  [
+    'presence/setOwn appears offline',
+    { resource: 'presence', operation: 'setOwn', ...S, presenceAvailable: false },
+    'PUT',
+    `${SESS}/presence`,
+    { available: false },
+  ],
+  // --- session additions ---
+  [
+    'session/logout',
+    { resource: 'session', operation: 'logout', ...S },
+    'POST',
+    `${SESS}/logout`,
+    undefined,
+  ],
+  [
+    'session/getConfig',
+    { resource: 'session', operation: 'getConfig', ...S },
+    'GET',
+    `${SESS}/config`,
+    undefined,
+  ],
+  [
+    'session/updateConfig sends only the fields that were set',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { autoRejectCalls: false, reconnectBaseDelay: 10000 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { autoRejectCalls: false, reconnectBaseDelay: 10000 },
+  ],
+  [
+    'session/updateConfig translates the unlimited sentinel to null',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { maxReconnectAttempts: -1 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { maxReconnectAttempts: null },
+  ],
+  [
+    'session/updateConfig keeps a zero cap, which disables reconnection',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { maxReconnectAttempts: 0 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { maxReconnectAttempts: 0 },
+  ],
+  [
+    'session/create forwards a proxy URL',
+    {
+      resource: 'session',
+      operation: 'create',
+      sessionName: 'sales',
+      proxyUrl: 'socks5://127.0.0.1:1080',
+    },
+    'POST',
+    `${BASE}/api/sessions`,
+    { name: 'sales', proxyUrl: 'socks5://127.0.0.1:1080' },
+  ],
   ['chat/list', { resource: 'chat', operation: 'list', ...S }, 'GET', `${SESS}/chats`, undefined],
   [
     'chat/markRead',
@@ -2572,6 +2657,21 @@ const guardCases = [
       templateUpdateFields: { name: '   ' },
     },
     /At least one field must be provided/,
+  ],
+  [
+    'session/create rejects a proxy URL with no scheme',
+    { resource: 'session', operation: 'create', sessionName: 'sales', proxyUrl: '127.0.0.1:1080' },
+    /must start with http:\/\//,
+  ],
+  [
+    'session/updateConfig rejects an empty patch',
+    { resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: {} },
+    /At least one field must be provided/,
+  ],
+  [
+    'presence/subscribe rejects a bare phone number',
+    { resource: 'presence', operation: 'subscribe', sessionId: 'abc-123', chatId: '628123456789' },
+    /full WhatsApp ID including its domain/,
   ],
   [
     'an unknown resource fails with a clear message',

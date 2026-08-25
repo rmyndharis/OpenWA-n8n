@@ -43,6 +43,7 @@ const contact_1 = require("./handlers/contact");
 const group_1 = require("./handlers/group");
 const label_1 = require("./handlers/label");
 const message_1 = require("./handlers/message");
+const presence_1 = require("./handlers/presence");
 const profile_1 = require("./handlers/profile");
 const session_1 = require("./handlers/session");
 const status_1 = require("./handlers/status");
@@ -70,6 +71,7 @@ const RESOURCE_BUILDERS = {
     session: session_1.buildSessionRequest,
     status: status_1.buildStatusRequest,
     observability: observability_1.buildObservabilityRequest,
+    presence: presence_1.buildPresenceRequest,
     system: system_1.buildSystemRequest,
     template: template_1.buildTemplateRequest,
     webhook: webhook_1.buildWebhookRequest,
@@ -112,6 +114,7 @@ class OpenWa {
                         { name: 'Label', value: 'label' },
                         { name: 'Message', value: 'message' },
                         { name: 'Observability', value: 'observability' },
+                        { name: 'Presence', value: 'presence' },
                         { name: 'Profile', value: 'profile' },
                         { name: 'Session', value: 'session' },
                         { name: 'Status', value: 'status' },
@@ -134,6 +137,11 @@ class OpenWa {
                         { name: 'Create', value: 'create', action: 'Create a new session' },
                         { name: 'Delete', value: 'delete', action: 'Delete a session' },
                         { name: 'Force Kill', value: 'forceKill', action: 'Force kill a stuck session' },
+                        {
+                            name: 'Get Config',
+                            value: 'getConfig',
+                            action: 'Get the tunable configuration for a session',
+                        },
                         { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
                         {
                             name: 'Get Stats Overview',
@@ -142,6 +150,7 @@ class OpenWa {
                         },
                         { name: 'Get Status', value: 'getStatus', action: 'Get session status' },
                         { name: 'List All', value: 'listAll', action: 'List all sessions' },
+                        { name: 'Log Out', value: 'logout', action: 'Log out and unlink this device' },
                         {
                             name: 'Request Pairing Code',
                             value: 'requestPairingCode',
@@ -149,6 +158,11 @@ class OpenWa {
                         },
                         { name: 'Start', value: 'start', action: 'Start a session' },
                         { name: 'Stop', value: 'stop', action: 'Stop a session' },
+                        {
+                            name: 'Update Config',
+                            value: 'updateConfig',
+                            action: 'Update the tunable configuration for a session',
+                        },
                     ],
                     default: 'getStatus',
                 },
@@ -172,6 +186,9 @@ class OpenWa {
                                 'delete',
                                 'getQr',
                                 'requestPairingCode',
+                                'logout',
+                                'getConfig',
+                                'updateConfig',
                             ],
                         },
                     },
@@ -197,6 +214,60 @@ class OpenWa {
                         show: { resource: ['session'], operation: ['create'] },
                     },
                     description: 'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+                },
+                {
+                    displayName: 'Proxy URL',
+                    name: 'proxyUrl',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'socks5://127.0.0.1:1080',
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['create'] },
+                    },
+                    description: 'Optional egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5). Credentials in the URL work on Baileys; whatsapp-web.js cannot authenticate a SOCKS proxy. The value is fixed at creation, write-only and never returned by any read, so changing it means recreating the session. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+                },
+                {
+                    displayName: 'Config Fields',
+                    name: 'sessionConfigFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['updateConfig'] },
+                    },
+                    description: 'Only the fields you add are sent. Anything you leave out keeps its stored value.',
+                    options: [
+                        {
+                            displayName: 'Auto Reject Calls',
+                            name: 'autoRejectCalls',
+                            type: 'boolean',
+                            default: false,
+                            description: 'Whether to decline every incoming call automatically. Re-read on each call, so it applies immediately.',
+                        },
+                        {
+                            displayName: 'Max Reconnect Attempts',
+                            name: 'maxReconnectAttempts',
+                            type: 'number',
+                            typeOptions: { minValue: -1, maxValue: 20 },
+                            default: -1,
+                            description: 'How many consecutive reconnects to attempt. Use -1 for unlimited, which is the default and the only way back to it once a cap is set. 0 disables reconnection entirely, leaving the session down until it is started by hand. Applies from the next Start, not to a reconnect already under way.',
+                        },
+                        {
+                            displayName: 'Reconnect Base Delay (Ms)',
+                            name: 'reconnectBaseDelay',
+                            type: 'number',
+                            typeOptions: { minValue: 1000, maxValue: 300000 },
+                            default: 5000,
+                            description: 'Base backoff between reconnect attempts, in milliseconds. Applies from the next Start.',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'Log Out asks WhatsApp to unlink this device, wipes the stored credentials and clears the phone number, so the next Start needs a fresh QR or pairing code. It needs a running session: on a stopped one it fails, so do not put a Stop in front of it. Stop keeps the credentials and reconnects without a QR; Delete removes the session and its data but never tells WhatsApp to unlink, leaving the device in the account\'s Linked Devices list.',
+                    name: 'sessionLogoutNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['session'], operation: ['logout'] } },
                 },
                 {
                     displayName: 'Phone Number',
@@ -1673,6 +1744,75 @@ class OpenWa {
                         },
                     ],
                 },
+                // ============== PRESENCE OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['presence'] } },
+                    options: [
+                        {
+                            name: 'Get',
+                            value: 'get',
+                            action: 'Get the last reported presence for a chat',
+                        },
+                        {
+                            name: 'Set Own Presence',
+                            value: 'setOwn',
+                            action: 'Set whether the account appears online',
+                        },
+                        {
+                            name: 'Subscribe',
+                            value: 'subscribe',
+                            action: 'Subscribe to presence updates for a chat',
+                        },
+                    ],
+                    default: 'subscribe',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['presence'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Chat Name or ID',
+                    name: 'chatId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getChats',
+                        loadOptionsDependsOn: ['sessionId'],
+                    },
+                    default: '',
+                    required: true,
+                    placeholder: '628123456789@c.us',
+                    displayOptions: {
+                        show: { resource: ['presence'], operation: ['subscribe', 'get'] },
+                    },
+                    description: 'The chat to watch, as a full WhatsApp ID with its domain. Read presence back with the @c.us form: the gateway stores each report under a normalized ID, so subscribing with @s.whatsapp.net and reading with the same string returns nothing. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Available',
+                    name: 'presenceAvailable',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['presence'], operation: ['setOwn'] } },
+                    description: 'Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder\'s own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published, and the setting resets on every reconnect.',
+                },
+                {
+                    displayName: 'Presence is connection-scoped. A subscription and the account\'s own availability both live on the socket, so a restart, a Stop/Start, or any automatic reconnect ends them and nothing on the server re-issues them. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.',
+                    name: 'presenceScopeNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['presence'] } },
+                },
                 // ============== PROFILE OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -2686,12 +2826,14 @@ class OpenWa {
                     // than casting it and handing downstream nodes something unreadable.
                     json = { data: typeof response === 'string' ? response : String(response ?? '') };
                 }
-                else if (
-                // A successful DELETE returns 204 No Content (empty body); surface a concrete
-                // result so downstream nodes get an object to read instead of an empty item.
-                spec.method === 'DELETE' &&
-                    (response === '' || response === undefined || response === null)) {
-                    json = { success: true };
+                else if (response === '' || response === undefined || response === null) {
+                    // An empty body reaches here from two places. A successful DELETE answers
+                    // 204 No Content, where `{ success: true }` is the useful result. A route
+                    // that answers 200 with a null payload (Presence > Get before anything has
+                    // been reported) means "nothing yet", and must NOT be dressed up as success.
+                    // Either way a bare '' is not valid item json, so downstream nodes would
+                    // otherwise receive an unreadable item.
+                    json = spec.method === 'DELETE' ? { success: true } : {};
                 }
                 else {
                     json = response;
