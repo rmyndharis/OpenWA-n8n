@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { toQueryParams, toStringList } from './params';
+import { requireText, toQueryParams, toStringList } from './params';
 import type { RequestSpec } from './types';
 
 // The bulk profile-picture route documents "max 50 used" — beyond that the
@@ -71,12 +71,22 @@ export async function buildContactRequest(
     };
   }
 
+  if (operation === 'listBlocked') {
+    return {
+      endpoint: `/api/sessions/${sessionId}/contacts/blocked`,
+      method: 'GET',
+      body: {},
+    };
+  }
+
   if (
     operation === 'getInfo' ||
     operation === 'block' ||
     operation === 'unblock' ||
     operation === 'getProfilePicture' ||
-    operation === 'getPhone'
+    operation === 'getPhone' ||
+    operation === 'save' ||
+    operation === 'delete'
   ) {
     const contactId = (this.getNodeParameter('contactId', itemIndex) as string).trim();
     if (!contactId) {
@@ -108,6 +118,31 @@ export async function buildContactRequest(
         return {
           endpoint: `/api/sessions/${sessionId}/contacts/${encoded}/profile-picture`,
           method: 'GET',
+          body: {},
+        };
+      case 'save': {
+        // A save overwrites the whole entry, so a blank last name is a genuine
+        // clear rather than "leave it alone". The key is still omitted when blank:
+        // an explicit null reaches the engine and is written as one.
+        const body: Record<string, unknown> = {
+          firstName: requireText(this, 'contactFirstName', 'First Name', itemIndex, 100),
+        };
+        const lastName = (
+          this.getNodeParameter('contactLastName', itemIndex, '') as string
+        ).trim();
+        if (lastName) {
+          body.lastName = lastName;
+        }
+        return {
+          endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`,
+          method: 'PUT',
+          body,
+        };
+      }
+      case 'delete':
+        return {
+          endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`,
+          method: 'DELETE',
           body: {},
         };
       default:

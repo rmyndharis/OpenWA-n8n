@@ -51,11 +51,20 @@ async function buildContactRequest(operation, itemIndex) {
             body: {},
         };
     }
+    if (operation === 'listBlocked') {
+        return {
+            endpoint: `/api/sessions/${sessionId}/contacts/blocked`,
+            method: 'GET',
+            body: {},
+        };
+    }
     if (operation === 'getInfo' ||
         operation === 'block' ||
         operation === 'unblock' ||
         operation === 'getProfilePicture' ||
-        operation === 'getPhone') {
+        operation === 'getPhone' ||
+        operation === 'save' ||
+        operation === 'delete') {
         const contactId = this.getNodeParameter('contactId', itemIndex).trim();
         if (!contactId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
@@ -86,6 +95,29 @@ async function buildContactRequest(operation, itemIndex) {
                 return {
                     endpoint: `/api/sessions/${sessionId}/contacts/${encoded}/profile-picture`,
                     method: 'GET',
+                    body: {},
+                };
+            case 'save': {
+                // A save overwrites the whole entry, so a blank last name is a genuine
+                // clear rather than "leave it alone". The key is still omitted when blank:
+                // an explicit null reaches the engine and is written as one.
+                const body = {
+                    firstName: (0, params_1.requireText)(this, 'contactFirstName', 'First Name', itemIndex, 100),
+                };
+                const lastName = this.getNodeParameter('contactLastName', itemIndex, '').trim();
+                if (lastName) {
+                    body.lastName = lastName;
+                }
+                return {
+                    endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`,
+                    method: 'PUT',
+                    body,
+                };
+            }
+            case 'delete':
+                return {
+                    endpoint: `/api/sessions/${sessionId}/contacts/${encoded}`,
+                    method: 'DELETE',
                     body: {},
                 };
             default:

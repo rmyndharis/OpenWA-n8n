@@ -5,9 +5,22 @@ const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
+/**
+ * Parses a JSON object field (headers, filters) supplied as text or already as an
+ * object, so Create and Update read them the same way.
+ */
+function parseJsonObject(node, raw, label, itemIndex) {
+    try {
+        return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    catch {
+        throw new n8n_workflow_1.NodeOperationError(node, `${label} must be valid JSON`, { itemIndex });
+    }
+}
 function assertSecretLength(node, secret, itemIndex) {
-    if ((0, webhookSecret_1.isWebhookSecretTooShort)(secret)) {
-        throw new n8n_workflow_1.NodeOperationError(node, `Webhook secret must be at least ${webhookSecret_1.MIN_WEBHOOK_SECRET_LENGTH} characters`, { itemIndex });
+    const problem = (0, webhookSecret_1.webhookSecretProblem)(secret);
+    if (problem) {
+        throw new n8n_workflow_1.NodeOperationError(node, problem, { itemIndex });
     }
 }
 async function buildWebhookRequest(operation, itemIndex) {
@@ -56,6 +69,22 @@ async function buildWebhookRequest(operation, itemIndex) {
         if (webhookSecret) {
             body.secret = webhookSecret;
         }
+        // The same three optional fields the Update operation already exposes. Filters
+        // are what let the gateway drop uninteresting events before they ever reach n8n.
+        const createFields = this.getNodeParameter('webhookCreateFields', itemIndex, {});
+        if (createFields.retryCount !== undefined) {
+            body.retryCount = createFields.retryCount;
+        }
+        for (const [key, label] of [
+            ['headers', 'Headers'],
+            ['filters', 'Filters'],
+        ]) {
+            const raw = createFields[key];
+            if (raw === undefined || raw === null || raw === '') {
+                continue;
+            }
+            body[key] = parseJsonObject(this.getNode(), raw, label, itemIndex);
+        }
         return { endpoint: `/api/sessions/${sessionId}/webhooks`, method: 'POST', body };
     }
     if (operation === 'delete') {
@@ -102,12 +131,7 @@ async function buildWebhookRequest(operation, itemIndex) {
             }
             if (raw === null || raw === '')
                 continue; // blank value — nothing to send
-            try {
-                body[key] = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            }
-            catch {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${key === 'headers' ? 'Headers' : 'Filters'} must be valid JSON`, { itemIndex });
-            }
+            body[key] = parseJsonObject(this.getNode(), raw, key === 'headers' ? 'Headers' : 'Filters', itemIndex);
         }
         return {
             endpoint: `/api/sessions/${sessionId}/webhooks/${webhookId}`,

@@ -163,6 +163,63 @@ test('dedup enabled: a delivery without a deliveryId always passes', async () =>
   assert.deepEqual(result.workflowData[0][0].json, { event: 'session.status' });
 });
 
+test('dedup enabled: the idempotencyKey is what gets recorded, not the deliveryId', async () => {
+  const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd1', data: {} };
+  const { ctx, staticData } = makeCtx({ deduplicate: true, body });
+  await deliver(ctx);
+  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7']);
+});
+
+test('dedup enabled: a crash replay (same idempotencyKey, NEW deliveryId) is dropped', async () => {
+  // The gateway re-mints deliveryId on every replay because it identifies the
+  // attempt; only idempotencyKey identifies the event. Keying on deliveryId let
+  // this exact delivery run the workflow a second time.
+  const staticData = { recentDeliveryIds: ['evt-7'] };
+  const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd-REPLAY', data: {} };
+  const { ctx, responseCalls } = makeCtx({ deduplicate: true, staticData, body });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData, [[]]);
+  assert.deepEqual(responseCalls, []);
+});
+
+test('dedup enabled: a different event with its own idempotencyKey still runs', async () => {
+  const staticData = { recentDeliveryIds: ['evt-7'] };
+  const body = { event: 'message.received', idempotencyKey: 'evt-8', deliveryId: 'd2', data: {} };
+  const { ctx } = makeCtx({ deduplicate: true, staticData, body });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData[0][0].json, body);
+  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7', 'evt-8']);
+});
+
+test('dedup enabled: falls back to deliveryId when the envelope carries no idempotencyKey', async () => {
+  const staticData = { recentDeliveryIds: ['d1'] };
+  const { ctx } = makeCtx({ deduplicate: true, staticData });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData, [[]]);
+});
+
+test('dedup enabled: a Webhook Test is never de-duplicated', async () => {
+  // The test event's idempotency key is derived from the webhook id alone, so every
+  // test of the same webhook carries the same key. De-duplicating it would drop
+  // every test after the first, which is exactly the probe people use to check a
+  // trigger works.
+  const body = { event: 'test', idempotencyKey: 'evt_test_abc123', deliveryId: 'd9', data: {} };
+  const staticData = { recentDeliveryIds: ['evt_test_abc123'] };
+  const { ctx } = makeCtx({ deduplicate: true, staticData, body });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData[0][0].json, body);
+});
+
+test('dedup enabled: a repeated Webhook Test runs every time', async () => {
+  const body = { event: 'test', idempotencyKey: 'evt_test_abc123', deliveryId: 'd9', data: {} };
+  const staticData = {};
+  for (let i = 0; i < 3; i++) {
+    const { ctx } = makeCtx({ deduplicate: true, staticData, body });
+    const result = await deliver(ctx);
+    assert.equal(result.workflowData[0].length, 1, `test delivery ${i + 1} was dropped`);
+  }
+});
+
 test('dedup state is bounded to the 500 most recent ids', async () => {
   const staticData = {
     recentDeliveryIds: Array.from({ length: 500 }, (_, i) => `old-${i}`),

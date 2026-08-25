@@ -28,9 +28,20 @@ async function buildSessionRequest(operation, itemIndex) {
             if (typeof parsedConfig !== 'object' ||
                 parsedConfig === null ||
                 Array.isArray(parsedConfig)) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be a JSON object (e.g. {"autoReconnect":true})', { itemIndex });
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be a JSON object (e.g. {"autoRejectCalls":true})', { itemIndex });
             }
             body.config = parsedConfig;
+        }
+        // Omit rather than send '': the DTO validates it as a URL, so a blank value is
+        // a 400 while an absent key is the documented "no proxy". The scheme is checked
+        // here so a typo fails in the editor rather than as a 504 half a minute into a
+        // Start that never produces a QR.
+        const proxyUrl = this.getNodeParameter('proxyUrl', itemIndex, '').trim();
+        if (proxyUrl) {
+            if (!/^(https?|socks[45]):\/\//i.test(proxyUrl)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must start with http://, https://, socks4:// or socks5://', { itemIndex });
+            }
+            body.proxyUrl = proxyUrl;
         }
         return { endpoint: '/api/sessions', method: 'POST', body };
     }
@@ -41,8 +52,7 @@ async function buildSessionRequest(operation, itemIndex) {
     if (operation === 'getStatsOverview') {
         return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };
     }
-    // start, stop, forceKill, delete, getQr, getStatus, and requestPairingCode all
-    // address a single session by its UUID id.
+    // Everything below addresses a single session by its UUID id.
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     switch (operation) {
         case 'getStatus':
@@ -57,6 +67,40 @@ async function buildSessionRequest(operation, itemIndex) {
             return { endpoint: `/api/sessions/${sessionId}`, method: 'DELETE', body: {} };
         case 'getQr':
             return { endpoint: `/api/sessions/${sessionId}/qr`, method: 'GET', body: {} };
+        case 'logout':
+            // Unlike Stop, this needs a live engine: it asks WhatsApp to remove this
+            // companion device before tearing down locally.
+            return { endpoint: `/api/sessions/${sessionId}/logout`, method: 'POST', body: {} };
+        case 'getConfig':
+            return { endpoint: `/api/sessions/${sessionId}/config`, method: 'GET', body: {} };
+        case 'updateConfig': {
+            const fields = this.getNodeParameter('sessionConfigFields', itemIndex, {});
+            const body = {};
+            // A PATCH merges: an absent key leaves the stored value alone, and an explicit
+            // null resets it to the default. An n8n collection cannot express null, which
+            // is why the unlimited case needs a sentinel.
+            if (fields.autoRejectCalls !== undefined) {
+                body.autoRejectCalls = fields.autoRejectCalls;
+            }
+            if (fields.maxReconnectAttempts !== undefined) {
+                // -1 is the node's "back to unlimited" sentinel; the server spells that null,
+                // and no in-range number expresses it. 0 is a real value meaning never reconnect.
+                // Guard on Number.isFinite so a NaN from an expression cannot serialize to
+                // null and silently clear the cap instead of failing.
+                const cap = fields.maxReconnectAttempts;
+                if (!Number.isFinite(cap)) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Max Reconnect Attempts must be a number between -1 and 20', { itemIndex });
+                }
+                body.maxReconnectAttempts = cap < 0 ? null : cap;
+            }
+            if (fields.reconnectBaseDelay !== undefined) {
+                body.reconnectBaseDelay = fields.reconnectBaseDelay;
+            }
+            if (Object.keys(body).length === 0) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });
+            }
+            return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
+        }
         case 'requestPairingCode': {
             const phoneNumber = this.getNodeParameter('pairingPhoneNumber', itemIndex)
                 .trim()

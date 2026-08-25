@@ -21,7 +21,7 @@
   <a href="https://www.npmjs.com/package/@rmyndharis/n8n-nodes-openwa"><img src="https://img.shields.io/npm/dm/@rmyndharis/n8n-nodes-openwa.svg" alt="npm downloads"/></a>
   <a href="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml"><img src="https://github.com/rmyndharis/OpenWA-n8n/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
   <img src="https://img.shields.io/badge/n8n-community_node-EA4B71.svg" alt="n8n community node"/>
-  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.15.0-25D366.svg" alt="OpenWA >= 0.15.0"/>
+  <img src="https://img.shields.io/badge/OpenWA-%E2%89%A5%200.16.0-25D366.svg" alt="OpenWA >= 0.16.0"/>
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"/>
 </p>
 
@@ -77,125 +77,187 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 ### OpenWA (action)
 
-| Resource    | Operation           | Description                                   |
-| ----------- | ------------------- | --------------------------------------------- |
-| **Session** | Create              | Create a new session (returns its UUID)       |
-| **Session** | Start               | Start a session and connect to WhatsApp       |
-| **Session** | Stop                | Stop a session and disconnect                 |
-| **Session** | Force Kill          | Force-kill a stuck session's engine           |
-| **Session** | Delete              | Delete a session                              |
-| **Session** | Get QR              | Get the QR code for scanning authentication   |
-| **Session** | Request Pairing Code| Get an 8-char phone linking code              |
-| **Session** | Get Status          | Get the status of a session                   |
-| **Session** | List All            | List all sessions (paginated)                 |
-| **Session** | Get Stats Overview  | Overview statistics across all sessions       |
-| **Message** | Send Text           | Send a text message                           |
-| **Message** | Send Image          | Send an image (binary, URL, or Base64)        |
-| **Message** | Send Video          | Send a video (binary, URL, or Base64)         |
-| **Message** | Send Document       | Send a document / file                        |
-| **Message** | Send Audio          | Send an audio file or a voice note (PTT)      |
-| **Message** | Send Sticker        | Send a sticker (WebP)                         |
-| **Message** | Send Location       | Send a location pin                           |
-| **Message** | Send Contact        | Send a contact card (vCard)                   |
-| **Message** | Reply               | Reply to a message, quoting it                |
-| **Message** | React               | Add or remove an emoji reaction               |
-| **Message** | Delete              | Delete / revoke a message                     |
-| **Message** | Send Poll           | Send a poll with 2–12 options                 |
-| **Message** | Send Template       | Render and send a stored template             |
-| **Message** | Edit                | Edit the body of a sent message               |
-| **Message** | Forward             | Forward a message to another chat             |
-| **Message** | List                | List stored messages (filterable)             |
-| **Message** | Get History         | Get the message history of a chat             |
-| **Message** | Get Reactions       | Get the reactions on a message                |
-| **Message** | Send Bulk           | Send up to 100 messages as a throttled batch  |
-| **Message** | Get Batch Status    | Poll a bulk batch's progress                  |
-| **Message** | Cancel Batch        | Cancel a running bulk batch                   |
-| **Contact** | Check Exists        | Check whether a number is on WhatsApp         |
-| **Contact** | Get Info            | Get contact information                       |
-| **Contact** | Get Profile Picture | Get a contact's profile-photo URL             |
-| **Contact** | Get Phone           | Resolve a contact's phone number              |
-| **Contact** | Get Profile Pictures| Get pictures for up to 50 contacts at once    |
-| **Contact** | List                | List all contacts (paginated)                 |
-| **Contact** | Block               | Block a contact                               |
-| **Contact** | Unblock             | Unblock a contact                             |
-| **Chat**    | List                | List a session's chats (paginated)            |
-| **Chat**    | Mark Read           | Mark a chat as read                           |
-| **Chat**    | Mark Unread         | Mark a chat as unread                         |
-| **Chat**    | Delete              | Delete a chat                                 |
-| **Chat**    | Set State           | Send a typing / recording indicator           |
-| **Group**   | List                | List a session's groups (paginated)           |
-| **Group**   | Get                 | Get group info including participants         |
-| **Group**   | Create              | Create a group with initial participants      |
-| **Group**   | Join                | Join a group via an invite code or link       |
-| **Group**   | Leave               | Leave a group                                 |
-| **Group**   | Add Participants    | Add participants to a group                   |
-| **Group**   | Remove Participants | Remove participants from a group              |
-| **Group**   | Promote Participants| Promote participants to group admin           |
-| **Group**   | Demote Participants | Demote participants from group admin          |
-| **Group**   | Update Subject      | Change the group name / subject               |
-| **Group**   | Update Description  | Change the description (empty clears it)      |
-| **Group**   | Get Settings        | Read announce / locked / disappearing timer   |
-| **Group**   | Update Settings     | Update group settings (partial)               |
-| **Group**   | Get Invite Code     | Get the invite code and link                  |
-| **Group**   | Revoke Invite Code  | Revoke the code and generate a new one        |
-| **Profile** | Set Name            | Set the session's own display name (≤ 25)     |
-| **Profile** | Set Status          | Set the about text (≤ 139, empty clears)      |
-| **Profile** | Set Picture         | Set the profile picture                       |
-| **Label**   | List                | List all labels (WhatsApp Business)           |
-| **Label**   | Get                 | Get one label                                 |
-| **Label**   | Get for Chat        | Get the labels attached to a chat             |
-| **Label**   | Add to Chat         | Attach a label to a chat                      |
-| **Label**   | Remove From Chat    | Detach a label from a chat                    |
-| **Status**  | List                | List the status feed                          |
-| **Status**  | Get by Contact      | Get a contact's status updates                |
-| **Status**  | Get Media           | Get the media of a status update              |
-| **Status**  | Delete              | Delete one of your status updates             |
-| **Status**  | Send Text           | Post a text status (color + font)             |
-| **Status**  | Send Image          | Post an image status                          |
-| **Status**  | Send Video          | Post a video status                           |
-| **Template**| List / Get          | Read stored message templates                 |
-| **Template**| Create              | Create a template with {{variables}}          |
-| **Template**| Update              | Update a template (partial)                   |
-| **Template**| Delete              | Delete a template                             |
-| **Channel** | List / Get          | Read followed channels                        |
-| **Channel** | Get Messages        | Get a channel's messages                      |
-| **Channel** | Subscribe           | Follow a channel by invite code or link       |
-| **Channel** | Unsubscribe         | Unfollow a channel                            |
-| **Call**    | Reject              | Reject an incoming call                       |
-| **Observability** | Check         | Server health (`{ status, timestamp, version }`) |
-| **Observability** | Check Liveness | Liveness probe                              |
-| **Observability** | Check Readiness | Readiness probe, incl. database connections |
-| **System**  | Get Stats           | Overview, message, and per-session statistics |
-| **System**  | Search              | Search messages across sessions               |
-| **System**  | Get Audit Log       | Read the audit log (filterable)               |
-| **System**  | Get Settings        | Read the server settings (read-only)          |
-| **API Key** | List / Get          | Read API keys (admin credential required)     |
-| **API Key** | Create              | Create a key — plaintext is returned once     |
-| **API Key** | Update / Revoke / Delete | Manage an existing key                   |
-| **API Key** | Validate            | Validate the credential currently in use      |
-| **Webhook** | Create              | Register a webhook (optional signing secret)  |
-| **Webhook** | Update              | Update a webhook (partial — only changed fields) |
-| **Webhook** | Test                | Send a test delivery to a webhook             |
-| **Webhook** | List / Get          | Read a session's webhooks                     |
-| **Webhook** | List All            | Read webhooks across all sessions             |
-| **Webhook** | Get Delivery Failures | Inspect failed webhook deliveries           |
-| **Webhook** | Delete              | Remove a webhook                              |
+| Resource            | Operation                   | Description                                          |
+| ------------------- | --------------------------- | ---------------------------------------------------- |
+| **API Key**         | Create                      | Create an API key                                    |
+| **API Key**         | Delete                      | Delete an API key                                    |
+| **API Key**         | Get                         | Get an API key                                       |
+| **API Key**         | List                        | List all API keys                                    |
+| **API Key**         | Revoke                      | Revoke an API key                                    |
+| **API Key**         | Update                      | Update an API key                                    |
+| **API Key**         | Validate                    | Validate the credential in use                       |
+| **Automation Rule** | Create                      | Create an autoreply rule                             |
+| **Automation Rule** | Delete                      | Delete an autoreply rule                             |
+| **Automation Rule** | Get                         | Get an autoreply rule                                |
+| **Automation Rule** | List                        | List the autoreply rules of a session                |
+| **Automation Rule** | Update                      | Update an autoreply rule                             |
+| **Call**            | Create Link                 | Create a shareable call link                         |
+| **Call**            | Reject                      | Reject an incoming call                              |
+| **Catalog**         | Get                         | Get the business catalog                             |
+| **Catalog**         | Get Product                 | Get one catalog product                              |
+| **Catalog**         | List Products               | List catalog products                                |
+| **Channel**         | Create                      | Create a channel                                     |
+| **Channel**         | Delete                      | Permanently delete a channel this account owns       |
+| **Channel**         | Demote Admin                | Demote a channel admin back to a subscriber          |
+| **Channel**         | Get                         | Get a channel                                        |
+| **Channel**         | Get Messages                | Get the messages of a channel                        |
+| **Channel**         | List                        | List followed channels                               |
+| **Channel**         | Mute                        | Mute or unmute a channel                             |
+| **Channel**         | Subscribe                   | Follow a channel by invite code                      |
+| **Channel**         | Transfer Ownership          | Transfer channel ownership to another account        |
+| **Channel**         | Unsubscribe                 | Unfollow a channel                                   |
+| **Chat**            | Archive                     | Archive or unarchive a chat                          |
+| **Chat**            | Clear Messages              | Delete every message in a chat                       |
+| **Chat**            | Delete                      | Delete a chat                                        |
+| **Chat**            | List                        | List all chats                                       |
+| **Chat**            | Mark Read                   | Mark a chat as read                                  |
+| **Chat**            | Mark Unread                 | Mark a chat as unread                                |
+| **Chat**            | Mute                        | Mute or unmute a chat                                |
+| **Chat**            | Pin                         | Pin or unpin a chat                                  |
+| **Chat**            | Set State                   | Send a typing or recording indicator                 |
+| **Contact**         | Block                       | Block a contact                                      |
+| **Contact**         | Check Exists                | Check if a number exists                             |
+| **Contact**         | Delete                      | Delete a contact from the addressbook                |
+| **Contact**         | Get Info                    | Get contact information                              |
+| **Contact**         | Get Phone                   | Resolve a contact phone number                       |
+| **Contact**         | Get Profile Picture         | Get a contact profile picture                        |
+| **Contact**         | Get Profile Pictures        | Get profile pictures for many contacts               |
+| **Contact**         | List                        | List all contacts                                    |
+| **Contact**         | List Blocked                | List blocked contacts                                |
+| **Contact**         | Save                        | Save a contact to the addressbook                    |
+| **Contact**         | Unblock                     | Unblock a contact                                    |
+| **Group**           | Add Participants            | Add participants to a group                          |
+| **Group**           | Approve Membership Requests | Approve pending join requests                        |
+| **Group**           | Create                      | Create a group                                       |
+| **Group**           | Delete Picture              | Remove the group picture                             |
+| **Group**           | Demote Participants         | Demote participants from admin                       |
+| **Group**           | Get                         | Get group info including participants                |
+| **Group**           | Get Invite Code             | Get the group invite code                            |
+| **Group**           | Get Join Info               | Preview a group from its invite code without joining |
+| **Group**           | Get Membership Requests     | List pending join requests                           |
+| **Group**           | Get Picture                 | Get the group picture                                |
+| **Group**           | Get Settings                | Get group settings                                   |
+| **Group**           | Join                        | Join a group via invite code                         |
+| **Group**           | Leave                       | Leave a group                                        |
+| **Group**           | List                        | List all groups                                      |
+| **Group**           | Promote Participants        | Promote participants to admin                        |
+| **Group**           | Reject Membership Requests  | Reject pending join requests                         |
+| **Group**           | Remove Participants         | Remove participants from a group                     |
+| **Group**           | Revoke Invite Code          | Revoke the group invite code                         |
+| **Group**           | Set Picture                 | Set the group picture                                |
+| **Group**           | Update Description          | Update the group description                         |
+| **Group**           | Update Settings             | Update group settings                                |
+| **Group**           | Update Subject              | Update the group subject                             |
+| **Label**           | Add to Chat                 | Add a label to a chat                                |
+| **Label**           | Create or Update            | Create or update a label                             |
+| **Label**           | Delete                      | Delete a label                                       |
+| **Label**           | Get                         | Get a label                                          |
+| **Label**           | Get Chats                   | Get every chat carrying a label                      |
+| **Label**           | Get for Chat                | Get the labels of a chat                             |
+| **Label**           | List                        | List all labels                                      |
+| **Label**           | Remove From Chat            | Remove a label from a chat                           |
+| **Media**           | Check Availability          | Check whether media conversion is available          |
+| **Media**           | Convert to Video            | Convert video into a compatible format               |
+| **Media**           | Convert to Voice Note       | Convert audio into a voice note                      |
+| **Message**         | Cancel Batch                | Cancel a bulk batch                                  |
+| **Message**         | Delete                      | Delete a message                                     |
+| **Message**         | Edit                        | Edit a sent message                                  |
+| **Message**         | Forward                     | Forward a message to another chat                    |
+| **Message**         | Get Batch Status            | Get bulk batch status                                |
+| **Message**         | Get History                 | Get the message history of a chat                    |
+| **Message**         | Get Media                   | Download the stored media of a message               |
+| **Message**         | Get Reactions               | Get the reactions on a message                       |
+| **Message**         | List                        | List stored messages                                 |
+| **Message**         | Pin                         | Pin a message in its chat                            |
+| **Message**         | React                       | React to a message                                   |
+| **Message**         | Reply                       | Reply to a message                                   |
+| **Message**         | Send Audio                  | Send an audio or voice message                       |
+| **Message**         | Send Bulk                   | Send messages in bulk                                |
+| **Message**         | Send Contact                | Send a contact card                                  |
+| **Message**         | Send Document               | Send a document                                      |
+| **Message**         | Send Image                  | Send an image                                        |
+| **Message**         | Send Location               | Send a location                                      |
+| **Message**         | Send Poll                   | Send a poll                                          |
+| **Message**         | Send Product                | Send a product card from the catalog                 |
+| **Message**         | Send Sticker                | Send a sticker                                       |
+| **Message**         | Send Template               | Send a rendered template                             |
+| **Message**         | Send Text                   | Send a text message                                  |
+| **Message**         | Send Video                  | Send a video                                         |
+| **Message**         | Star                        | Star or unstar a message                             |
+| **Message**         | Unpin                       | Remove the pin from a message                        |
+| **Message**         | Vote Poll                   | Cast a vote on a poll                                |
+| **Observability**   | Check                       | Check server health                                  |
+| **Observability**   | Check Liveness              | Check the liveness probe                             |
+| **Observability**   | Check Readiness             | Check the readiness probe                            |
+| **Presence**        | Get                         | Get the last reported presence for a chat            |
+| **Presence**        | Set Own Presence            | Set whether the account appears online               |
+| **Presence**        | Subscribe                   | Subscribe to presence updates for a chat             |
+| **Profile**         | Delete Picture              | Remove the profile picture                           |
+| **Profile**         | Set Name                    | Set the profile display name                         |
+| **Profile**         | Set Picture                 | Set the profile picture                              |
+| **Profile**         | Set Status                  | Set the profile about text                           |
+| **Session**         | Create                      | Create a new session                                 |
+| **Session**         | Delete                      | Delete a session                                     |
+| **Session**         | Force Kill                  | Force kill a stuck session                           |
+| **Session**         | Get Config                  | Get the tunable configuration for a session          |
+| **Session**         | Get QR                      | Get the QR code for authentication                   |
+| **Session**         | Get Stats Overview          | Get an overview of all sessions                      |
+| **Session**         | Get Status                  | Get session status                                   |
+| **Session**         | List All                    | List all sessions                                    |
+| **Session**         | Log Out                     | Log out and unlink this device                       |
+| **Session**         | Request Pairing Code        | Request a phone pairing code                         |
+| **Session**         | Start                       | Start a session                                      |
+| **Session**         | Stop                        | Stop a session                                       |
+| **Session**         | Update Config               | Update the tunable configuration for a session       |
+| **Status**          | Delete                      | Delete a status update                               |
+| **Status**          | Get by Contact              | Get the statuses of a contact                        |
+| **Status**          | Get Media                   | Get the media of a status update                     |
+| **Status**          | List                        | List the status feed                                 |
+| **Status**          | Send Image                  | Post an image status                                 |
+| **Status**          | Send Text                   | Post a text status                                   |
+| **Status**          | Send Video                  | Post a video status                                  |
+| **Status**          | Send Voice                  | Post an audio status as a voice note                 |
+| **System**          | Get Audit Log               | Get the audit log                                    |
+| **System**          | Get Message Stats           | Get message statistics                               |
+| **System**          | Get Session Stats           | Get statistics for one session                       |
+| **System**          | Get Settings                | Get the server settings                              |
+| **System**          | Get Stats Overview          | Get an overview of the statistics                    |
+| **System**          | Search                      | Search messages across sessions                      |
+| **Template**        | Create                      | Create a template                                    |
+| **Template**        | Delete                      | Delete a template                                    |
+| **Template**        | Get                         | Get a template                                       |
+| **Template**        | List                        | List all templates                                   |
+| **Template**        | Update                      | Update a template                                    |
+| **Webhook**         | Create                      | Create a webhook                                     |
+| **Webhook**         | Delete                      | Delete a webhook                                     |
+| **Webhook**         | Get                         | Get a webhook                                        |
+| **Webhook**         | Get Delivery Failures       | List failed webhook deliveries                       |
+| **Webhook**         | List                        | List the webhooks of a session                       |
+| **Webhook**         | List All                    | List webhooks across all sessions                    |
+| **Webhook**         | Test                        | Send a test delivery to a webhook                    |
+| **Webhook**         | Update                      | Update a webhook                                     |
 
-> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key and the whole **API Key** resource needs an **ADMIN** one — a `403` almost always means the credential's role is too low, not that the request was malformed.
+> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: the whole **API Key** resource, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
 
 > **Observability:** **Check** / **Check Liveness** / **Check Readiness** return the server's health JSON as-is, so a workflow can alert on availability. **Check Readiness** is the one that also probes the database connections. `/api/metrics` is deliberately not offered — it authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here.
 
-> **Not offered, because the server cannot serve them:** catalog reads, Send Catalog and Send Product are documented as "not supported by any engine" (`501`), and settings are environment-derived and read-only at runtime. **Search** needs a search provider configured server-side, otherwise it too answers `501`.
+> **Not offered:** the server's administration surface, which a workflow has no business driving: the infrastructure, plugin, ingress and integration controllers, plus `/api/metrics`, which authenticates with its own bearer token rather than the API key this credential carries. **Send Catalog** is gone from the server entirely. Settings are environment-derived, and the server publishes no write route for them, so the System resource reads them only. **Search** needs a search provider configured server-side, otherwise it answers `501`, and can answer `502` or `503` when a plugin provider misbehaves or does not respond.
+
+> **Engine split:** several operations exist on one engine only, and the node says so on the field or resource rather than leaving a `501` to explain itself. **Catalog** and **Send Product** are Baileys only, as is **Presence > Subscribe** and both label writes; **Vote Poll**, the **Channel** listing and **Channel > Get Messages** are whatsapp-web.js only, and the label reads with them. Because the channel listing is whatsapp-web.js only, the Channel ID dropdown cannot populate on Baileys: supply the ID (`<digits>@newsletter`) from an expression there.
+
+> **Send Product** returns `{id, timestamp}` where every other send returns `{messageId, timestamp}`. The node passes the response through unchanged rather than normalising it, so the difference stays visible.
 
 > **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page of up to 1000 entries. On an account with more than that, set the field from an expression instead of picking from the list.
 
-> **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list; on whatsapp-web.js an empty list posts to all contacts.
+> **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list and is the only engine that honors it. whatsapp-web.js ignores the list entirely and posts to every contact whether one is supplied or not, so do not rely on it to limit the audience there.
 
 > **Group operations:** reads (List, Get, Get Settings, Get Invite Code) work with a plain API key, but every write — create, join, leave, participant changes, subject/description/settings, and invite-code revoke — needs a key with the **OPERATOR** role, otherwise the server answers `403`. Add/Remove/Promote/Demote report a per-participant outcome in `results[]` and a partial refusal does *not* fail the batch, so check `results[].success` rather than the top-level `success`. **Update Settings** is partial — fields you leave out stay untouched — and `ephemeralSeconds` is Baileys-only (whatsapp-web.js returns `501`).
 
 > **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
-> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, Send Document and **Edit** accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+>
+> On **Edit** the list is re-applied rather than preserved, because an edit replaces the message content: name every ID the edited message should still tag, or leave it empty to drop the tags the original carried. The server also accepts mentions on Reply, Send Audio, Send Sticker and Send Template, which this node does not surface yet.
 
 > **Message actions:** Reply, React, and Delete act on an existing message identified by its full serialized ID (e.g. `true_628123456789@c.us_3EB0…`) — the value returned by the send operations and delivered by the Trigger. React with an empty **Emoji** to remove your reaction; Delete defaults to revoking for everyone.
 
@@ -254,11 +316,23 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 | `presence.update`       | Subscribed chat's presence changed — needs `POST /presence/subscribe` first, and **Baileys only** |
 | `group.join_request`    | Someone asked to join an administered group (server **≥ 0.15.0**) |
 
+#### 🎯 Server-side filters
+
+The Trigger's optional **Filters** field is registered with the webhook, so the gateway drops non-matching events before delivering them and they never start a workflow execution. Supply it as JSON:
+
+```json
+{ "conditions": [{ "field": "isGroup", "operator": "is", "value": false }] }
+```
+
+Conditions are ANDed, at most 20. The fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `fromMe`, `hasMedia` and `mentions`. Value shape is enforced at registration: the id, mentions and type fields take a non-empty array, `body` takes a plain string, and the boolean fields take a real boolean.
+
+> Two things are worth knowing before relying on them. Filters only narrow **message** events, so `session.*`, `group.*` and `call.*` events are delivered whatever the filter says. And a filtered-out delivery is silent: from n8n it is indistinguishable from nothing having happened, so an over-strict filter looks like a broken trigger. Changing the filter re-registers the webhook on the next activation.
+
 #### 🔐 Signature verification
 
 The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
 
-> **Secret length:** the secret must be at least **16 characters**. The server enforces this floor at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature). Webhooks registered with a short secret before the floor keep working until re-registered.
+> **Secret length:** the secret must be between **16 and 255 characters**. The server enforces both bounds at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature), and the node checks them before sending so the error names the field instead of surfacing a raw `400`. Webhooks registered with a short secret before the floor keep working until re-registered.
 
 > Changing or clearing the secret — or changing the events or session — re-registers the webhook automatically on the next activation (deactivate/reactivate, or an n8n restart). No manual cleanup on the server is needed.
 
@@ -288,13 +362,15 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 >
 > - Each delivery is an envelope (`event`, `timestamp`, `sessionId`, `idempotencyKey`, `deliveryId`, …); the actual event payload is under `data`. Read message fields from `data` (e.g. `data.body`, `data.chatId`).
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
-> - OpenWA retries failed deliveries with the same `deliveryId` — de-duplicate on it if your downstream actions aren't idempotent.
+> - De-duplicate on `idempotencyKey`, not `deliveryId`. `idempotencyKey` identifies the *event* and is reused across both retries and crash replays; `deliveryId` identifies a single *attempt* and is re-minted on every replay, so keying on it misses exactly the duplicate you are trying to catch.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
 #### ♻️ Duplicate deliveries
 
-OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose acknowledgement was lost (n8n restart, a slow network) can arrive twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent delivery IDs (kept in workflow static data). Trade-offs: a retry whose first execution *failed* is also dropped, and two deliveries arriving at the exact same moment can both pass — enable it when downstream actions are not idempotent and failed runs are rare.
+OpenWA guarantees at-least-once delivery: it retries a failed POST, and it replays any delivery stranded by a gateway crash. Both carry the same `idempotencyKey`, so the same event can reach n8n twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent idempotency keys (kept in workflow static data), falling back to `deliveryId` on a gateway too old to send one.
+
+It is best-effort: workflow static data is saved per execution, so two deliveries arriving at the exact same moment can both pass. Enable it when downstream actions are not idempotent.
 
 ---
 
@@ -310,13 +386,24 @@ OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.15.0**. A floor is set by the newest thing the node needs, and two things move it independently.
+Requires an OpenWA server **≥ 0.16.0**. A floor is set by the newest thing the node needs, and three things move it independently.
 
-The **routes** the action node calls top out at v0.10.9: the profile writes, `groups/join`, `groups/{id}/settings`, `messages/edit` and `calls/{id}/reject` arrived in v0.10.3, contact profile-pictures in v0.10.1, and the stored-status media download in v0.10.9. Against an older server those specific operations answer `404` and the rest still work.
+The **routes** the action node calls top out at v0.16.0, which is what now sets the badge: **Call > Create Link** arrived there. Most of the rest of the surface landed in v0.14.0 (message pin/star/vote, chat archive/mute/pin/clear, presence, media conversion, voice statuses, group pictures and join preview, channel administration, label writes and automation rules) with membership requests, the blocklist read and session config in v0.15.0. Against an older server those specific operations answer `404` and everything else still works.
 
-The **event catalog** is what actually sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 — a v0.14.x server knows 22 events, not 23 — so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation, which is why it, and not the routes, is the number in the badge.
+The **event catalog** sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 (a v0.14.x server knows 22 events, not 23), so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation.
+
+A few **optional fields** need a server newer than the badge. They are opt-in, so a workflow that leaves them alone runs against any server at or above the floor, but filling one in against an older server returns a `400`, because the server rejects a request body carrying a field it does not know.
+
+| Field | Where | Needs |
+| ----- | ----- | ----- |
+| **Quoted Message ID** | the nine single-message sends | server **≥ 0.17.0** |
+| **Message IDs** | Chat > Mark Read | server **≥ 0.23.0** |
+| **Mentions** | Message > Edit and Message > Reply | server **≥ 0.23.0** |
+| **Link Preview** | Message > Send Template | server **≥ 0.23.0** |
 
 The Trigger alone still works against much older servers if you subscribe only to events that existed then; its webhook contract and HMAC verification landed in v0.4.0.
+
+The Trigger also re-registers its webhook when the registration on the server no longer matches what the node created: deactivated, repointed at another URL, or subscribed to a different event set. `active`, `url` and `events` have been part of the webhook response since v0.4.0, so this needs nothing newer.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
@@ -330,7 +417,7 @@ npm install      # install dependencies
 npm run build    # compile TypeScript + copy icons
 npm run dev      # watch mode
 npm run lint     # ESLint (.eslintrc.js)
-npm test         # build + signature-verification unit tests
+npm test         # build + unit tests (route mapping, guards, trigger delivery, webhook lifecycle)
 ```
 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only

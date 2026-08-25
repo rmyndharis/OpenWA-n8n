@@ -11,8 +11,8 @@ const params_1 = require("./params");
  * does not share a resource with reading its configuration.
  *
  * Settings are read-only here on purpose: the server derives them from its
- * environment and answers `PUT /api/settings` with 501, so there is no Update
- * Settings operation to offer.
+ * environment and publishes no write route at all, so there is no Update Settings
+ * operation to offer.
  *
  * These are not scoped to a session, so this resource has no Session ID field —
  * except Get Session Stats, which names one explicitly.
@@ -23,8 +23,12 @@ async function buildSystemRequest(operation, itemIndex) {
             return { endpoint: '/api/settings', method: 'GET', body: {} };
         case 'getStatsOverview':
             return { endpoint: '/api/stats/overview', method: 'GET', body: {} };
-        case 'getStatsMessages':
-            return { endpoint: '/api/stats/messages', method: 'GET', body: {} };
+        case 'getStatsMessages': {
+            // This route binds its query to a DTO, so `period` is the only key it accepts
+            // and anything else is refused rather than ignored.
+            const period = this.getNodeParameter('statsPeriod', itemIndex, '24h');
+            return { endpoint: '/api/stats/messages', method: 'GET', body: {}, qs: { period } };
+        }
         case 'getSessionStats': {
             const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
             return { endpoint: `/api/stats/sessions/${sessionId}`, method: 'GET', body: {} };

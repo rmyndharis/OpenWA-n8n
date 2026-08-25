@@ -38,6 +38,9 @@ async function buildProfileRequest(operation, itemIndex) {
             }
             return { endpoint: `${base}/status`, method: 'PUT', body: { status } };
         }
+        case 'deletePicture': {
+            return { endpoint: `${base}/picture`, method: 'DELETE', body: {} };
+        }
         case 'setPicture':
             return {
                 endpoint: `${base}/picture`,

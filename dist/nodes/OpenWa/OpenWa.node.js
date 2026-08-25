@@ -36,13 +36,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWa = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const apiKey_1 = require("./handlers/apiKey");
+const automationRule_1 = require("./handlers/automationRule");
 const call_1 = require("./handlers/call");
+const catalog_1 = require("./handlers/catalog");
 const channel_1 = require("./handlers/channel");
 const chat_1 = require("./handlers/chat");
 const contact_1 = require("./handlers/contact");
 const group_1 = require("./handlers/group");
 const label_1 = require("./handlers/label");
+const media_1 = require("./handlers/media");
 const message_1 = require("./handlers/message");
+const presence_1 = require("./handlers/presence");
 const profile_1 = require("./handlers/profile");
 const session_1 = require("./handlers/session");
 const status_1 = require("./handlers/status");
@@ -59,17 +63,21 @@ const webhookEvents_1 = require("../shared/webhookEvents");
  */
 const RESOURCE_BUILDERS = {
     apiKey: apiKey_1.buildApiKeyRequest,
+    automationRule: automationRule_1.buildAutomationRuleRequest,
     call: call_1.buildCallRequest,
+    catalog: catalog_1.buildCatalogRequest,
     channel: channel_1.buildChannelRequest,
     chat: chat_1.buildChatRequest,
     contact: contact_1.buildContactRequest,
     group: group_1.buildGroupRequest,
     label: label_1.buildLabelRequest,
+    media: media_1.buildMediaRequest,
     message: message_1.buildMessageRequest,
     profile: profile_1.buildProfileRequest,
     session: session_1.buildSessionRequest,
     status: status_1.buildStatusRequest,
     observability: observability_1.buildObservabilityRequest,
+    presence: presence_1.buildPresenceRequest,
     system: system_1.buildSystemRequest,
     template: template_1.buildTemplateRequest,
     webhook: webhook_1.buildWebhookRequest,
@@ -104,14 +112,18 @@ class OpenWa {
                     noDataExpression: true,
                     options: [
                         { name: 'API Key', value: 'apiKey' },
+                        { name: 'Automation Rule', value: 'automationRule' },
                         { name: 'Call', value: 'call' },
+                        { name: 'Catalog', value: 'catalog' },
                         { name: 'Channel', value: 'channel' },
                         { name: 'Chat', value: 'chat' },
                         { name: 'Contact', value: 'contact' },
                         { name: 'Group', value: 'group' },
                         { name: 'Label', value: 'label' },
+                        { name: 'Media', value: 'media' },
                         { name: 'Message', value: 'message' },
                         { name: 'Observability', value: 'observability' },
+                        { name: 'Presence', value: 'presence' },
                         { name: 'Profile', value: 'profile' },
                         { name: 'Session', value: 'session' },
                         { name: 'Status', value: 'status' },
@@ -134,6 +146,11 @@ class OpenWa {
                         { name: 'Create', value: 'create', action: 'Create a new session' },
                         { name: 'Delete', value: 'delete', action: 'Delete a session' },
                         { name: 'Force Kill', value: 'forceKill', action: 'Force kill a stuck session' },
+                        {
+                            name: 'Get Config',
+                            value: 'getConfig',
+                            action: 'Get the tunable configuration for a session',
+                        },
                         { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
                         {
                             name: 'Get Stats Overview',
@@ -142,6 +159,7 @@ class OpenWa {
                         },
                         { name: 'Get Status', value: 'getStatus', action: 'Get session status' },
                         { name: 'List All', value: 'listAll', action: 'List all sessions' },
+                        { name: 'Log Out', value: 'logout', action: 'Log out and unlink this device' },
                         {
                             name: 'Request Pairing Code',
                             value: 'requestPairingCode',
@@ -149,6 +167,11 @@ class OpenWa {
                         },
                         { name: 'Start', value: 'start', action: 'Start a session' },
                         { name: 'Stop', value: 'stop', action: 'Stop a session' },
+                        {
+                            name: 'Update Config',
+                            value: 'updateConfig',
+                            action: 'Update the tunable configuration for a session',
+                        },
                     ],
                     default: 'getStatus',
                 },
@@ -172,6 +195,9 @@ class OpenWa {
                                 'delete',
                                 'getQr',
                                 'requestPairingCode',
+                                'logout',
+                                'getConfig',
+                                'updateConfig',
                             ],
                         },
                     },
@@ -196,7 +222,61 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['session'], operation: ['create'] },
                     },
-                    description: 'Optional session config as a JSON object, e.g. {"autoReconnect":true}',
+                    description: 'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+                },
+                {
+                    displayName: 'Proxy URL',
+                    name: 'proxyUrl',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'socks5://127.0.0.1:1080',
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['create'] },
+                    },
+                    description: 'Optional egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5). Credentials in the URL work on Baileys; whatsapp-web.js cannot authenticate a SOCKS proxy. The value is fixed at creation, write-only and never returned by any read, so changing it means recreating the session. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+                },
+                {
+                    displayName: 'Config Fields',
+                    name: 'sessionConfigFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: {
+                        show: { resource: ['session'], operation: ['updateConfig'] },
+                    },
+                    description: 'Only the fields you add are sent. Anything you leave out keeps its stored value.',
+                    options: [
+                        {
+                            displayName: 'Auto Reject Calls',
+                            name: 'autoRejectCalls',
+                            type: 'boolean',
+                            default: false,
+                            description: 'Whether to decline every incoming call automatically. Re-read on each call, so it applies immediately.',
+                        },
+                        {
+                            displayName: 'Max Reconnect Attempts',
+                            name: 'maxReconnectAttempts',
+                            type: 'number',
+                            typeOptions: { minValue: -1, maxValue: 20 },
+                            default: -1,
+                            description: 'How many consecutive reconnects to attempt. Use -1 for unlimited, which is the default and the only way back to it once a cap is set. 0 disables reconnection entirely, leaving the session down until it is started by hand. Applies from the next Start, not to a reconnect already under way.',
+                        },
+                        {
+                            displayName: 'Reconnect Base Delay (Ms)',
+                            name: 'reconnectBaseDelay',
+                            type: 'number',
+                            typeOptions: { minValue: 1000, maxValue: 300000 },
+                            default: 5000,
+                            description: 'Base backoff between reconnect attempts, in milliseconds. Applies from the next Start.',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'Log Out asks WhatsApp to unlink this device, wipes the stored credentials and clears the phone number, so the next Start needs a fresh QR or pairing code. It needs a running session: on a stopped one it fails, so do not put a Stop in front of it. Stop keeps the credentials and reconnects without a QR; Delete removes the session and its data but never tells WhatsApp to unlink, leaving the device in the account\'s Linked Devices list.',
+                    name: 'sessionLogoutNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['session'], operation: ['logout'] } },
                 },
                 {
                     displayName: 'Phone Number',
@@ -238,6 +318,113 @@ class OpenWa {
                         },
                     ],
                 },
+                // ============== MEDIA OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['media'] } },
+                    options: [
+                        {
+                            name: 'Check Availability',
+                            value: 'checkConversion',
+                            action: 'Check whether media conversion is available',
+                        },
+                        {
+                            name: 'Convert to Video',
+                            value: 'convertVideo',
+                            action: 'Convert video into a compatible format',
+                        },
+                        {
+                            name: 'Convert to Voice Note',
+                            value: 'convertVoice',
+                            action: 'Convert audio into a voice note',
+                        },
+                    ],
+                    default: 'convertVoice',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['media'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Media Source',
+                    name: 'mediaConvertSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'binary',
+                    displayOptions: {
+                        show: { resource: ['media'], operation: ['convertVoice', 'convertVideo'] },
+                    },
+                    description: 'Where the media to convert comes from',
+                },
+                {
+                    displayName: 'Input Binary Field',
+                    name: 'mediaConvertBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['binary'],
+                        },
+                    },
+                    description: 'The name of the input binary field holding the media',
+                },
+                {
+                    displayName: 'Media URL',
+                    name: 'mediaConvertUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['url'],
+                        },
+                    },
+                    description: 'Public URL of the media to convert, fetched by the server',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'mediaConvertBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['media'],
+                            operation: ['convertVoice', 'convertVideo'],
+                            mediaConvertSource: ['base64'],
+                        },
+                    },
+                    description: 'Base64 encoded media to convert',
+                },
+                {
+                    displayName: 'Conversion returns <code>base64</code> and <code>mimetype</code> ready to feed straight into Message > Send Audio (Base64 source, Send as Voice Note on) or Status > Send Voice. Nothing else in the pipeline transcodes, so without this an MP3 sent as a voice note produces a microphone bubble that will not play. Conversion is optional on the server and needs ffmpeg: use Check Availability first, and read a 503 as conversion being disabled or busy rather than as a bad request. No MIME type is sent, because the server reads it from the bytes.',
+                    name: 'mediaConvertNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: {
+                        show: { resource: ['media'], operation: ['convertVoice', 'convertVideo'] },
+                    },
+                },
                 // ============== MESSAGE OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -254,12 +441,14 @@ class OpenWa {
                         { name: 'Forward', value: 'forward', action: 'Forward a message to another chat' },
                         { name: 'Get Batch Status', value: 'getBatchStatus', action: 'Get bulk batch status' },
                         { name: 'Get History', value: 'getHistory', action: 'Get the message history of a chat' },
+                        { name: 'Get Media', value: 'getMedia', action: 'Download the stored media of a message' },
                         {
                             name: 'Get Reactions',
                             value: 'getReactions',
                             action: 'Get the reactions on a message',
                         },
                         { name: 'List', value: 'list', action: 'List stored messages' },
+                        { name: 'Pin', value: 'pin', action: 'Pin a message in its chat' },
                         { name: 'React', value: 'react', action: 'React to a message' },
                         { name: 'Reply', value: 'reply', action: 'Reply to a message' },
                         { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
@@ -269,10 +458,18 @@ class OpenWa {
                         { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
                         { name: 'Send Location', value: 'sendLocation', action: 'Send a location' },
                         { name: 'Send Poll', value: 'sendPoll', action: 'Send a poll' },
+                        {
+                            name: 'Send Product',
+                            value: 'sendProduct',
+                            action: 'Send a product card from the catalog',
+                        },
                         { name: 'Send Sticker', value: 'sendSticker', action: 'Send a sticker' },
                         { name: 'Send Template', value: 'sendTemplate', action: 'Send a rendered template' },
                         { name: 'Send Text', value: 'sendText', action: 'Send a text message' },
                         { name: 'Send Video', value: 'sendVideo', action: 'Send a video' },
+                        { name: 'Star', value: 'star', action: 'Star or unstar a message' },
+                        { name: 'Unpin', value: 'unpin', action: 'Remove the pin from a message' },
+                        { name: 'Vote Poll', value: 'votePoll', action: 'Cast a vote on a poll' },
                     ],
                     default: 'sendText',
                 },
@@ -321,6 +518,12 @@ class OpenWa {
                                 'edit',
                                 'getHistory',
                                 'getReactions',
+                                'getMedia',
+                                'pin',
+                                'unpin',
+                                'star',
+                                'votePoll',
+                                'sendProduct',
                             ],
                         },
                     },
@@ -584,6 +787,15 @@ class OpenWa {
                     },
                     description: 'Name of the location',
                 },
+                {
+                    displayName: 'Address',
+                    name: 'locationAddress',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'Jl. Sudirman No. 1, Jakarta',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendLocation'] } },
+                    description: 'Optional street address, rendered on the line under the location name. Both engines carry it.',
+                },
                 // Send Video fields
                 {
                     displayName: 'Video Source',
@@ -720,7 +932,78 @@ class OpenWa {
                     displayOptions: { show: { resource: ['message'], operation: ['sendContact'] } },
                     description: 'Phone number for the shared contact, including country code (it is not auto-prefixed)',
                 },
-                // Mentions (Send Text / Image / Video / Document)
+                {
+                    displayName: 'Quoted Message ID',
+                    name: 'sendQuotedMessageId',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'true_628123456789@c.us_3EB0...',
+                    displayOptions: {
+                        show: {
+                            resource: ['message'],
+                            operation: [
+                                'sendText',
+                                'sendImage',
+                                'sendVideo',
+                                'sendAudio',
+                                'sendDocument',
+                                'sendSticker',
+                                'sendLocation',
+                                'sendContact',
+                                'sendPoll',
+                            ],
+                        },
+                    },
+                    description: 'Optionally quote an earlier message, so a reply can carry media, a location, a contact or a poll rather than only text. Leave empty to send without a quote. An ID the engine cannot resolve fails the send outright rather than delivering it unquoted, and Baileys can only quote a message it has already stored.',
+                },
+                {
+                    displayName: 'Link Preview',
+                    name: 'linkPreview',
+                    type: 'options',
+                    options: [
+                        { name: 'Engine Default', value: 'default' },
+                        { name: 'Generate a Preview', value: 'yes' },
+                        { name: 'No Preview', value: 'no' },
+                    ],
+                    default: 'default',
+                    displayOptions: {
+                        show: { resource: ['message'], operation: ['sendText', 'sendTemplate'] },
+                    },
+                    description: 'Whether a URL in the message renders a preview card. The engines differ on what the default means: whatsapp-web.js builds one unless told not to, while on Baileys previews are opt-in. Choosing Generate a Preview on Baileys makes the server fetch every URL in the message before sending, which stalls the send on a slow or dead link.',
+                },
+                {
+                    displayName: 'Custom Link Preview',
+                    name: 'customLinkPreview',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: { show: { resource: ['message'], operation: ['sendText'] } },
+                    description: 'Attach a preview card of your own instead of letting the engine build one. Baileys only: whatsapp-web.js answers 501 rather than dropping it silently. Both URL and Title must be set or nothing is sent, and the URL must also appear in the message text or WhatsApp renders no card at all.',
+                    options: [
+                        {
+                            displayName: 'URL',
+                            name: 'previewUrl',
+                            type: 'string',
+                            default: '',
+                            description: 'The URL the card points at. It must also appear literally in the message text.',
+                        },
+                        {
+                            displayName: 'Title',
+                            name: 'previewTitle',
+                            type: 'string',
+                            default: '',
+                            description: 'Card title. WhatsApp renders no preview without one.',
+                        },
+                        {
+                            displayName: 'Description',
+                            name: 'previewDescription',
+                            type: 'string',
+                            default: '',
+                            description: 'Optional line under the title',
+                        },
+                    ],
+                },
+                // Mentions (Send Text / Image / Video / Document / Edit)
                 {
                     displayName: 'Mentions',
                     name: 'mentions',
@@ -730,10 +1013,20 @@ class OpenWa {
                     displayOptions: {
                         show: {
                             resource: ['message'],
-                            operation: ['sendText', 'sendImage', 'sendDocument', 'sendVideo'],
+                            operation: [
+                                'sendText',
+                                'sendImage',
+                                'sendDocument',
+                                'sendVideo',
+                                'sendAudio',
+                                'sendSticker',
+                                'sendTemplate',
+                                'reply',
+                                'edit',
+                            ],
                         },
                     },
-                    description: 'WhatsApp IDs to @mention. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render.',
+                    description: 'WhatsApp IDs to @mention. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render. On Edit the tags are re-applied rather than preserved, because an edit replaces the message content: list every ID the edited message should still tag, or leave empty to drop the tags the original carried.',
                 },
                 // Reply / React / Delete target message
                 {
@@ -758,10 +1051,76 @@ class OpenWa {
                     displayOptions: {
                         show: {
                             resource: ['message'],
-                            operation: ['react', 'delete', 'edit', 'forward', 'getReactions'],
+                            operation: [
+                                'react',
+                                'delete',
+                                'edit',
+                                'forward',
+                                'getReactions',
+                                'getMedia',
+                                'pin',
+                                'unpin',
+                                'star',
+                                'votePoll',
+                            ],
                         },
                     },
                     description: 'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger',
+                },
+                {
+                    displayName: 'A 404 here does not only mean the message is missing. The same answer covers a message with no media, media whose download was disabled or exceeded the storage cap, and media sent by URL, whose bytes the gateway never stores. Media sent from a binary field or base64 is retrievable; the same send done from a URL is not. The response is raw bytes, so the server\'s explanation does not reach the workflow.',
+                    name: 'messageGetMediaNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['message'], operation: ['getMedia'] } },
+                },
+                {
+                    displayName: 'Pin Duration',
+                    name: 'pinDurationSeconds',
+                    type: 'options',
+                    options: [
+                        { name: '24 Hours', value: 86400 },
+                        { name: '7 Days', value: 604800 },
+                        { name: '30 Days', value: 2592000 },
+                    ],
+                    default: 86400,
+                    displayOptions: { show: { resource: ['message'], operation: ['pin'] } },
+                    description: 'How long the pin lasts. WhatsApp accepts only these three windows. There is no way to read a pin back, so a workflow cannot check or refresh one.',
+                },
+                {
+                    displayName: 'Star',
+                    name: 'star',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['message'], operation: ['star'] } },
+                    description: 'Whether to star the message. Turn off to remove the star. A star is private to this account and is never visible to the other party.',
+                },
+                {
+                    displayName: 'Selected Options',
+                    name: 'pollVoteOptions',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'Pizza, Sushi',
+                    displayOptions: { show: { resource: ['message'], operation: ['votePoll'] } },
+                    description: 'The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll\'s own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.',
+                },
+                {
+                    displayName: 'Product ID',
+                    name: 'productId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['message'], operation: ['sendProduct'] } },
+                    description: 'The ID of the product in this account\'s catalog. A product with no image cannot be sent as a card, which the server reports as a 400.',
+                },
+                {
+                    displayName: 'Message',
+                    name: 'productBody',
+                    type: 'string',
+                    typeOptions: { rows: 2 },
+                    default: '',
+                    displayOptions: { show: { resource: ['message'], operation: ['sendProduct'] } },
+                    description: 'Optional text to send alongside the product card',
                 },
                 {
                     displayName: 'Emoji',
@@ -1021,6 +1380,7 @@ class OpenWa {
                     options: [
                         { name: 'Block', value: 'block', action: 'Block a contact' },
                         { name: 'Check Exists', value: 'checkExists', action: 'Check if a number exists' },
+                        { name: 'Delete', value: 'delete', action: 'Delete a contact from the addressbook' },
                         { name: 'Get Info', value: 'getInfo', action: 'Get contact information' },
                         { name: 'Get Phone', value: 'getPhone', action: 'Resolve a contact phone number' },
                         {
@@ -1034,6 +1394,8 @@ class OpenWa {
                             action: 'Get profile pictures for many contacts',
                         },
                         { name: 'List', value: 'list', action: 'List all contacts' },
+                        { name: 'List Blocked', value: 'listBlocked', action: 'List blocked contacts' },
+                        { name: 'Save', value: 'save', action: 'Save a contact to the addressbook' },
                         { name: 'Unblock', value: 'unblock', action: 'Unblock a contact' },
                     ],
                     default: 'checkExists',
@@ -1078,10 +1440,42 @@ class OpenWa {
                     displayOptions: {
                         show: {
                             resource: ['contact'],
-                            operation: ['getInfo', 'block', 'unblock', 'getProfilePicture', 'getPhone'],
+                            operation: [
+                                'getInfo',
+                                'block',
+                                'unblock',
+                                'getProfilePicture',
+                                'getPhone',
+                                'save',
+                                'delete',
+                            ],
                         },
                     },
                     description: 'The contact ID (WhatsApp JID, e.g. 628123456789@c.us). Only the first 1000 are listed; use an expression for anything beyond that. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'First Name',
+                    name: 'contactFirstName',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['contact'], operation: ['save'] } },
+                    description: 'Given name for the addressbook entry (max 100 characters). Saving overwrites the whole entry, so leaving Last Name empty clears any last name already stored.',
+                },
+                {
+                    displayName: 'Last Name',
+                    name: 'contactLastName',
+                    type: 'string',
+                    default: '',
+                    displayOptions: { show: { resource: ['contact'], operation: ['save'] } },
+                    description: 'Family name for the addressbook entry (max 100 characters)',
+                },
+                {
+                    displayName: 'The addressbook is keyed by phone number, so this needs a plain <code>@c.us</code> contact ID. A privacy ID (<code>@lid</code>), a group, or a channel is refused. The entry is stored on the gateway only and is not written to the phone\'s own contacts.',
+                    name: 'contactSaveNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['contact'], operation: ['save'] } },
                 },
                 {
                     displayName: 'Contact IDs',
@@ -1138,7 +1532,17 @@ class OpenWa {
                             value: 'addParticipants',
                             action: 'Add participants to a group',
                         },
+                        {
+                            name: 'Approve Membership Requests',
+                            value: 'approveMembershipRequests',
+                            action: 'Approve pending join requests',
+                        },
                         { name: 'Create', value: 'create', action: 'Create a group' },
+                        {
+                            name: 'Delete Picture',
+                            value: 'deletePicture',
+                            action: 'Remove the group picture',
+                        },
                         {
                             name: 'Demote Participants',
                             value: 'demoteParticipants',
@@ -1146,6 +1550,17 @@ class OpenWa {
                         },
                         { name: 'Get', value: 'get', action: 'Get group info including participants' },
                         { name: 'Get Invite Code', value: 'getInviteCode', action: 'Get the group invite code' },
+                        {
+                            name: 'Get Join Info',
+                            value: 'getJoinInfo',
+                            action: 'Preview a group from its invite code without joining',
+                        },
+                        {
+                            name: 'Get Membership Requests',
+                            value: 'getMembershipRequests',
+                            action: 'List pending join requests',
+                        },
+                        { name: 'Get Picture', value: 'getPicture', action: 'Get the group picture' },
                         { name: 'Get Settings', value: 'getSettings', action: 'Get group settings' },
                         { name: 'Join', value: 'join', action: 'Join a group via invite code' },
                         { name: 'Leave', value: 'leave', action: 'Leave a group' },
@@ -1154,6 +1569,11 @@ class OpenWa {
                             name: 'Promote Participants',
                             value: 'promoteParticipants',
                             action: 'Promote participants to admin',
+                        },
+                        {
+                            name: 'Reject Membership Requests',
+                            value: 'rejectMembershipRequests',
+                            action: 'Reject pending join requests',
                         },
                         {
                             name: 'Remove Participants',
@@ -1165,6 +1585,7 @@ class OpenWa {
                             value: 'revokeInviteCode',
                             action: 'Revoke the group invite code',
                         },
+                        { name: 'Set Picture', value: 'setPicture', action: 'Set the group picture' },
                         {
                             name: 'Update Description',
                             value: 'updateDescription',
@@ -1216,6 +1637,12 @@ class OpenWa {
                                 'updateSubject',
                                 'updateDescription',
                                 'updateSettings',
+                                'getMembershipRequests',
+                                'approveMembershipRequests',
+                                'rejectMembershipRequests',
+                                'getPicture',
+                                'setPicture',
+                                'deletePicture',
                             ],
                         },
                     },
@@ -1261,7 +1688,7 @@ class OpenWa {
                     required: true,
                     placeholder: 'XyZ987654321',
                     displayOptions: {
-                        show: { resource: ['group'], operation: ['join'] },
+                        show: { resource: ['group'], operation: ['join', 'getJoinInfo'] },
                     },
                     description: 'The group invite code — the part after https://chat.whatsapp.com/. A full invite link is accepted and reduced to the code.',
                 },
@@ -1288,6 +1715,82 @@ class OpenWa {
                         show: { resource: ['group'], operation: ['updateDescription'] },
                     },
                     description: 'The new group description. Leave empty to clear the existing description.',
+                },
+                {
+                    displayName: 'Requesters',
+                    name: 'groupRequestParticipants',
+                    type: 'string',
+                    default: '',
+                    placeholder: '628123456789@c.us, 628987654321@c.us',
+                    displayOptions: {
+                        show: {
+                            resource: ['group'],
+                            operation: ['approveMembershipRequests', 'rejectMembershipRequests'],
+                        },
+                    },
+                    description: 'Which pending requests to act on, at most 256. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Leave empty to act on every pending request.',
+                },
+                {
+                    displayName: 'Picture Source',
+                    name: 'groupPictureSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'binary',
+                    displayOptions: { show: { resource: ['group'], operation: ['setPicture'] } },
+                    description: 'Where the picture comes from',
+                },
+                {
+                    displayName: 'Input Binary Field',
+                    name: 'groupPictureBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['group'],
+                            operation: ['setPicture'],
+                            groupPictureSource: ['binary'],
+                        },
+                    },
+                    description: 'The name of the input binary field holding the picture',
+                },
+                {
+                    displayName: 'Picture URL',
+                    name: 'groupPictureUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['group'], operation: ['setPicture'], groupPictureSource: ['url'] },
+                    },
+                    description: 'URL of the picture to set',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'groupPictureBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['group'], operation: ['setPicture'], groupPictureSource: ['base64'] },
+                    },
+                    description: 'Base64 encoded picture data',
+                },
+                {
+                    displayName: 'MIME Type',
+                    name: 'groupPictureMimeType',
+                    type: 'string',
+                    default: 'image/jpeg',
+                    required: true,
+                    placeholder: 'image/jpeg',
+                    displayOptions: {
+                        show: { resource: ['group'], operation: ['setPicture'], groupPictureSource: ['base64'] },
+                    },
+                    description: 'MIME type of the base64 picture data',
                 },
                 {
                     displayName: 'Settings',
@@ -1321,6 +1824,17 @@ class OpenWa {
                             type: 'boolean',
                             default: false,
                             description: 'Whether only admins can edit the group info',
+                        },
+                        {
+                            displayName: 'Member Add Mode',
+                            name: 'memberAddMode',
+                            type: 'options',
+                            options: [
+                                { name: 'All Members', value: 'all' },
+                                { name: 'Admins Only', value: 'admins' },
+                            ],
+                            default: 'all',
+                            description: 'Who may add new participants to the group',
                         },
                     ],
                 },
@@ -1486,6 +2000,38 @@ class OpenWa {
                     description: 'Events to subscribe to',
                 },
                 {
+                    displayName: 'Additional Fields',
+                    name: 'webhookCreateFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: { show: { resource: ['webhook'], operation: ['create'] } },
+                    options: [
+                        {
+                            displayName: 'Filters',
+                            name: 'filters',
+                            type: 'json',
+                            default: '',
+                            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+                        },
+                        {
+                            displayName: 'Headers',
+                            name: 'headers',
+                            type: 'json',
+                            default: '',
+                            description: 'Extra headers to send with each delivery, as a JSON object. Reserved headers the gateway sets itself cannot be overridden.',
+                        },
+                        {
+                            displayName: 'Retry Count',
+                            name: 'retryCount',
+                            type: 'number',
+                            typeOptions: { minValue: 0, maxValue: 5 },
+                            default: 3,
+                            description: 'Maximum delivery attempts (0-5)',
+                        },
+                    ],
+                },
+                {
                     displayName: 'Webhook Secret',
                     name: 'webhookSecret',
                     type: 'string',
@@ -1586,10 +2132,18 @@ class OpenWa {
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['chat'] } },
                     options: [
+                        { name: 'Archive', value: 'archive', action: 'Archive or unarchive a chat' },
+                        {
+                            name: 'Clear Messages',
+                            value: 'clearMessages',
+                            action: 'Delete every message in a chat',
+                        },
                         { name: 'Delete', value: 'delete', action: 'Delete a chat' },
                         { name: 'List', value: 'list', action: 'List all chats' },
                         { name: 'Mark Read', value: 'markRead', action: 'Mark a chat as read' },
                         { name: 'Mark Unread', value: 'markUnread', action: 'Mark a chat as unread' },
+                        { name: 'Mute', value: 'mute', action: 'Mute or unmute a chat' },
+                        { name: 'Pin', value: 'pin', action: 'Pin or unpin a chat' },
                         { name: 'Set State', value: 'setState', action: 'Send a typing or recording indicator' },
                     ],
                     default: 'list',
@@ -1620,10 +2174,52 @@ class OpenWa {
                     displayOptions: {
                         show: {
                             resource: ['chat'],
-                            operation: ['markRead', 'markUnread', 'delete', 'setState'],
+                            operation: [
+                                'markRead',
+                                'markUnread',
+                                'delete',
+                                'setState',
+                                'archive',
+                                'pin',
+                                'mute',
+                                'clearMessages',
+                            ],
                         },
                     },
                     description: 'The chat to act on (e.g. 628123456789@c.us, or ...@g.us for a group). Only the first 1000 are listed; use an expression for anything beyond that. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Message IDs',
+                    name: 'readMessageIds',
+                    type: 'string',
+                    default: '',
+                    placeholder: '3EB0C767D26B8A3F1A2B, 3EB0C767D26B8A3F1A2C',
+                    displayOptions: { show: { resource: ['chat'], operation: ['markRead'] } },
+                    description: 'Specific message IDs to acknowledge (max 100). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Baileys acknowledges individual messages, so without this only the newest message the engine still holds in memory gets a receipt: a burst leaves its earlier messages unread, and a restarted session has nothing to acknowledge at all. Ignored by whatsapp-web.js, whose own read receipt is chat-level.',
+                },
+                {
+                    displayName: 'Archive',
+                    name: 'archive',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['chat'], operation: ['archive'] } },
+                    description: 'Whether to archive the chat. Turn off to bring it back to the chat list.',
+                },
+                {
+                    displayName: 'Pin',
+                    name: 'pin',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['chat'], operation: ['pin'] } },
+                    description: 'Whether to pin the chat. Turn off to unpin. WhatsApp allows at most three pinned chats, and a fourth is refused: check the returned success flag rather than assuming the pin stuck.',
+                },
+                {
+                    displayName: 'Mute Until',
+                    name: 'muteUntil',
+                    type: 'dateTime',
+                    default: '',
+                    displayOptions: { show: { resource: ['chat'], operation: ['mute'] } },
+                    description: 'When the mute expires. Leave empty to unmute now. There is no duration form, so a fixed mute is expressed as a moment in the future, and a date already past is accepted but expires immediately.',
                 },
                 {
                     displayName: 'State',
@@ -1664,6 +2260,75 @@ class OpenWa {
                         },
                     ],
                 },
+                // ============== PRESENCE OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['presence'] } },
+                    options: [
+                        {
+                            name: 'Get',
+                            value: 'get',
+                            action: 'Get the last reported presence for a chat',
+                        },
+                        {
+                            name: 'Set Own Presence',
+                            value: 'setOwn',
+                            action: 'Set whether the account appears online',
+                        },
+                        {
+                            name: 'Subscribe',
+                            value: 'subscribe',
+                            action: 'Subscribe to presence updates for a chat',
+                        },
+                    ],
+                    default: 'subscribe',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['presence'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Chat Name or ID',
+                    name: 'chatId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getChats',
+                        loadOptionsDependsOn: ['sessionId'],
+                    },
+                    default: '',
+                    required: true,
+                    placeholder: '628123456789@c.us',
+                    displayOptions: {
+                        show: { resource: ['presence'], operation: ['subscribe', 'get'] },
+                    },
+                    description: 'The chat to watch, as a full WhatsApp ID with its domain. Read presence back with the @c.us form: the gateway stores each report under a normalized ID, so subscribing with @s.whatsapp.net and reading with the same string returns nothing. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Available',
+                    name: 'presenceAvailable',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['presence'], operation: ['setOwn'] } },
+                    description: 'Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder\'s own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published, and the setting resets on every reconnect.',
+                },
+                {
+                    displayName: 'Presence is connection-scoped. A subscription and the account\'s own availability both live on the socket, so a restart, a Stop/Start, or any automatic reconnect ends them and nothing on the server re-issues them. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.',
+                    name: 'presenceScopeNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['presence'] } },
+                },
                 // ============== PROFILE OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -1672,6 +2337,11 @@ class OpenWa {
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['profile'] } },
                     options: [
+                        {
+                            name: 'Delete Picture',
+                            value: 'deletePicture',
+                            action: 'Remove the profile picture',
+                        },
                         { name: 'Set Name', value: 'setName', action: 'Set the profile display name' },
                         { name: 'Set Picture', value: 'setPicture', action: 'Set the profile picture' },
                         { name: 'Set Status', value: 'setStatus', action: 'Set the profile about text' },
@@ -1785,7 +2455,14 @@ class OpenWa {
                     displayOptions: { show: { resource: ['label'] } },
                     options: [
                         { name: 'Add to Chat', value: 'addToChat', action: 'Add a label to a chat' },
+                        {
+                            name: 'Create or Update',
+                            value: 'upsert',
+                            action: 'Create or update a label',
+                        },
+                        { name: 'Delete', value: 'delete', action: 'Delete a label' },
                         { name: 'Get', value: 'get', action: 'Get a label' },
+                        { name: 'Get Chats', value: 'getChats', action: 'Get every chat carrying a label' },
                         { name: 'Get for Chat', value: 'getForChat', action: 'Get the labels of a chat' },
                         { name: 'List', value: 'list', action: 'List all labels' },
                         {
@@ -1835,9 +2512,55 @@ class OpenWa {
                     default: '',
                     required: true,
                     displayOptions: {
-                        show: { resource: ['label'], operation: ['get', 'addToChat', 'removeFromChat'] },
+                        show: {
+                            resource: ['label'],
+                            operation: ['get', 'getChats', 'addToChat', 'removeFromChat'],
+                        },
                     },
                     description: 'The ID of the label. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Label ID',
+                    name: 'newLabelId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['label'], operation: ['upsert', 'delete'] } },
+                    description: 'The ID of the label. This is plain text rather than a picker, because the ID is chosen by the caller and the label listing these operations would need is unavailable on the engine that serves them. On Create or Update, reusing an existing ID rewrites that label instead of failing.',
+                },
+                {
+                    displayName: 'Fields',
+                    name: 'labelFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    required: true,
+                    displayOptions: { show: { resource: ['label'], operation: ['upsert'] } },
+                    description: 'At least one is required. On an existing label, anything left out keeps its current value.',
+                    options: [
+                        {
+                            displayName: 'Name',
+                            name: 'labelName',
+                            type: 'string',
+                            default: '',
+                            description: 'Label text, up to 100 characters',
+                        },
+                        {
+                            displayName: 'Color',
+                            name: 'labelColor',
+                            type: 'number',
+                            typeOptions: { minValue: 0, maxValue: 19 },
+                            default: 0,
+                            description: 'Which of WhatsApp\'s 20 predefined label colours to use, as an index from 0 to 19. This is not a hex value, and the colour a read returns is a hex string that cannot be converted back, so a read then write cannot preserve it.',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'The two halves of this resource run on opposite engines. Reading labels (List, Get, Get Chats, Get for Chat) works on whatsapp-web.js and answers 501 on Baileys, while writing them (Create or Update, Delete) works on Baileys and answers 501 on whatsapp-web.js. On one session you can create a label you cannot then list.',
+                    name: 'labelEngineNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['label'] } },
                 },
                 // ============== STATUS OPERATIONS ==============
                 {
@@ -1858,6 +2581,7 @@ class OpenWa {
                         { name: 'Send Image', value: 'sendImage', action: 'Post an image status' },
                         { name: 'Send Text', value: 'sendText', action: 'Post a text status' },
                         { name: 'Send Video', value: 'sendVideo', action: 'Post a video status' },
+                        { name: 'Send Voice', value: 'sendVoice', action: 'Post an audio status as a voice note' },
                     ],
                     default: 'list',
                 },
@@ -1902,7 +2626,7 @@ class OpenWa {
                     type: 'string',
                     default: 'data',
                     required: true,
-                    displayOptions: { show: { resource: ['status'], operation: ['getMedia'] } },
+                    displayOptions: { show: { resource: ['message', 'status'], operation: ['getMedia'] } },
                     description: 'The name of the output binary field to put the media in',
                 },
                 {
@@ -1920,8 +2644,10 @@ class OpenWa {
                     name: 'statusBackgroundColor',
                     type: 'color',
                     default: '',
-                    displayOptions: { show: { resource: ['status'], operation: ['sendText'] } },
-                    description: 'Background color for the text status. Leave empty for the server default.',
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendText', 'sendVoice'] },
+                    },
+                    description: 'Background color for the status. Leave empty for the server default.',
                 },
                 {
                     displayName: 'Font',
@@ -1953,15 +2679,83 @@ class OpenWa {
                     description: 'Optional caption for the status media (max 1024 characters)',
                 },
                 {
+                    displayName: 'Audio Source',
+                    name: 'statusVoiceSource',
+                    type: 'options',
+                    options: [
+                        { name: 'Binary', value: 'binary' },
+                        { name: 'URL', value: 'url' },
+                        { name: 'Base64', value: 'base64' },
+                    ],
+                    default: 'binary',
+                    displayOptions: { show: { resource: ['status'], operation: ['sendVoice'] } },
+                    description: 'Where the audio comes from',
+                },
+                {
+                    displayName: 'Input Binary Field',
+                    name: 'statusVoiceBinaryProperty',
+                    type: 'string',
+                    default: 'data',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['binary'] },
+                    },
+                    description: 'The name of the input binary field holding the audio',
+                },
+                {
+                    displayName: 'Audio URL',
+                    name: 'statusVoiceUrl',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['url'] },
+                    },
+                    description: 'URL of the audio to post',
+                },
+                {
+                    displayName: 'Base64 Data',
+                    name: 'statusVoiceBase64',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['base64'] },
+                    },
+                    description: 'Base64 encoded audio data',
+                },
+                {
+                    displayName: 'MIME Type',
+                    name: 'statusVoiceMimeType',
+                    type: 'string',
+                    default: 'audio/ogg; codecs=opus',
+                    required: true,
+                    placeholder: 'audio/ogg; codecs=opus',
+                    displayOptions: {
+                        show: { resource: ['status'], operation: ['sendVoice'], statusVoiceSource: ['base64'] },
+                    },
+                    description: 'MIME type of the base64 audio data',
+                },
+                {
+                    displayName: 'A voice status needs Ogg/Opus audio, and nothing in the pipeline transcodes: other formats post but will not play. Run the file through Media > Convert to Voice Note first and feed its base64 output in here.',
+                    name: 'statusVoiceNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['status'], operation: ['sendVoice'] } },
+                },
+                {
                     displayName: 'Recipients',
                     name: 'statusRecipients',
                     type: 'string',
                     default: '',
                     placeholder: '628123456789@c.us, 628987654321@c.us',
                     displayOptions: {
-                        show: { resource: ['status'], operation: ['sendText', 'sendImage', 'sendVideo'] },
+                        show: {
+                            resource: ['status'],
+                            operation: ['sendText', 'sendImage', 'sendVideo', 'sendVoice'],
+                        },
                     },
-                    description: 'Who may see this status (max 256, @c.us or @lid — never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine; leave empty on whatsapp-web.js to post to all contacts.',
+                    description: 'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to every contact regardless, so do not rely on it to limit the audience there.',
                 },
                 {
                     displayName: 'Image Source',
@@ -2195,6 +2989,74 @@ class OpenWa {
                         },
                     ],
                 },
+                // ============== CATALOG OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['catalog'] } },
+                    options: [
+                        { name: 'Get', value: 'get', action: 'Get the business catalog' },
+                        { name: 'Get Product', value: 'getProduct', action: 'Get one catalog product' },
+                        { name: 'List Products', value: 'listProducts', action: 'List catalog products' },
+                    ],
+                    default: 'listProducts',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['catalog'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Product ID',
+                    name: 'productId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['catalog'], operation: ['getProduct'] } },
+                    description: 'The ID of the product, as returned by List Products',
+                },
+                {
+                    displayName: 'Options',
+                    name: 'catalogListOptions',
+                    type: 'collection',
+                    placeholder: 'Add Option',
+                    default: {},
+                    displayOptions: { show: { resource: ['catalog'], operation: ['listProducts'] } },
+                    options: [
+                        {
+                            displayName: 'Limit',
+                            name: 'limit',
+                            type: 'number',
+                            typeOptions: { minValue: 1 },
+                            default: 50,
+                            description: 'Max number of results to return',
+                        },
+                        {
+                            displayName: 'Page',
+                            name: 'page',
+                            type: 'number',
+                            typeOptions: { minValue: 1 },
+                            default: 1,
+                            description: 'Which page of products to return',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs.',
+                    name: 'catalogEngineNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['catalog'] } },
+                },
                 // ============== CHANNEL OPERATIONS ==============
                 {
                     displayName: 'Operation',
@@ -2203,10 +3065,27 @@ class OpenWa {
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['channel'] } },
                     options: [
+                        { name: 'Create', value: 'create', action: 'Create a channel' },
+                        {
+                            name: 'Delete',
+                            value: 'delete',
+                            action: 'Permanently delete a channel this account owns',
+                        },
+                        {
+                            name: 'Demote Admin',
+                            value: 'demoteAdmin',
+                            action: 'Demote a channel admin back to a subscriber',
+                        },
                         { name: 'Get', value: 'get', action: 'Get a channel' },
                         { name: 'Get Messages', value: 'getMessages', action: 'Get the messages of a channel' },
                         { name: 'List', value: 'list', action: 'List followed channels' },
+                        { name: 'Mute', value: 'mute', action: 'Mute or unmute a channel' },
                         { name: 'Subscribe', value: 'subscribe', action: 'Follow a channel by invite code' },
+                        {
+                            name: 'Transfer Ownership',
+                            value: 'transferOwnership',
+                            action: 'Transfer channel ownership to another account',
+                        },
                         { name: 'Unsubscribe', value: 'unsubscribe', action: 'Unfollow a channel' },
                     ],
                     default: 'list',
@@ -2234,9 +3113,73 @@ class OpenWa {
                     default: '',
                     required: true,
                     displayOptions: {
-                        show: { resource: ['channel'], operation: ['get', 'unsubscribe', 'getMessages'] },
+                        show: {
+                            resource: ['channel'],
+                            operation: [
+                                'get',
+                                'unsubscribe',
+                                'getMessages',
+                                'delete',
+                                'mute',
+                                'demoteAdmin',
+                                'transferOwnership',
+                            ],
+                        },
                     },
-                    description: 'The ID of the channel. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                    description: 'The ID of the channel, in the form 1234567890@newsletter. The list is populated by the channel listing, which only whatsapp-web.js supports: on Baileys it stays empty and the ID has to be supplied from an expression. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Channel Name',
+                    name: 'channelName',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['channel'], operation: ['create'] } },
+                    description: 'Name for the new channel, up to 100 characters',
+                },
+                {
+                    displayName: 'Description',
+                    name: 'channelDescription',
+                    type: 'string',
+                    typeOptions: { rows: 3 },
+                    default: '',
+                    displayOptions: { show: { resource: ['channel'], operation: ['create'] } },
+                    description: 'Optional description for the new channel, up to 2048 characters',
+                },
+                {
+                    displayName: 'Mute',
+                    name: 'channelMute',
+                    type: 'boolean',
+                    default: true,
+                    displayOptions: { show: { resource: ['channel'], operation: ['mute'] } },
+                    description: 'Whether to mute the channel. Turn off to unmute.',
+                },
+                {
+                    displayName: 'User ID',
+                    name: 'channelUserId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: '628123456789@c.us',
+                    displayOptions: { show: { resource: ['channel'], operation: ['demoteAdmin'] } },
+                    description: 'The admin to demote back to a subscriber. A bare phone number is accepted and qualified by the server.',
+                },
+                {
+                    displayName: 'New Owner ID',
+                    name: 'channelNewOwnerId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: '628123456789@c.us',
+                    displayOptions: { show: { resource: ['channel'], operation: ['transferOwnership'] } },
+                    description: 'The account to hand the channel to. A bare phone number is accepted and qualified by the server.',
+                },
+                {
+                    displayName: 'Delete destroys the channel for every subscriber and cannot be undone, and only its owner can do it. Unsubscribe merely unfollows it for this account and can be reversed by subscribing again.',
+                    name: 'channelDeleteNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['channel'], operation: ['delete'] } },
                 },
                 {
                     displayName: 'Invite Code',
@@ -2259,11 +3202,158 @@ class OpenWa {
                             displayName: 'Limit',
                             name: 'limit',
                             type: 'number',
-                            typeOptions: { minValue: 1 },
+                            typeOptions: { minValue: 1, maxValue: 100 },
                             default: 50,
                             description: 'Max number of results to return',
                         },
                     ],
+                },
+                // ============== AUTOMATION RULE OPERATIONS ==============
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: { show: { resource: ['automationRule'] } },
+                    options: [
+                        { name: 'Create', value: 'create', action: 'Create an autoreply rule' },
+                        { name: 'Delete', value: 'delete', action: 'Delete an autoreply rule' },
+                        { name: 'Get', value: 'get', action: 'Get an autoreply rule' },
+                        { name: 'List', value: 'list', action: 'List the autoreply rules of a session' },
+                        { name: 'Update', value: 'update', action: 'Update an autoreply rule' },
+                    ],
+                    default: 'list',
+                },
+                {
+                    displayName: 'Session Name or ID',
+                    name: 'sessionId',
+                    type: 'options',
+                    typeOptions: {
+                        loadOptionsMethod: 'getSessions',
+                    },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['automationRule'] } },
+                    description: 'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+                },
+                {
+                    displayName: 'Rule ID',
+                    name: 'ruleId',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    displayOptions: {
+                        show: { resource: ['automationRule'], operation: ['get', 'update', 'delete'] },
+                    },
+                    description: 'The ID of the rule, as returned by Create or List',
+                },
+                {
+                    displayName: 'Name',
+                    name: 'ruleName',
+                    type: 'string',
+                    default: '',
+                    required: true,
+                    placeholder: 'Greet new enquiries',
+                    displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+                    description: 'Display name for the rule, up to 100 characters',
+                },
+                {
+                    displayName: 'Reply Text',
+                    name: 'ruleReplyText',
+                    type: 'string',
+                    typeOptions: { rows: 3 },
+                    default: '',
+                    required: true,
+                    displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+                    description: 'What the gateway sends back when the rule matches, up to 4096 characters',
+                },
+                {
+                    displayName: 'Conditions',
+                    name: 'ruleConditions',
+                    type: 'json',
+                    default: '',
+                    displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+                    description: 'Which messages the rule answers, as JSON in the same shape as webhook filters: <code>{"conditions":[{"field":"isGroup","operator":"is","value":false}]}</code>. All conditions must match. Leave empty and the rule answers every inbound message.',
+                },
+                {
+                    displayName: 'Additional Fields',
+                    name: 'ruleFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+                    options: [
+                        {
+                            displayName: 'Cooldown (Seconds)',
+                            name: 'cooldownSeconds',
+                            type: 'number',
+                            typeOptions: { minValue: 0, maxValue: 86400 },
+                            default: 60,
+                            description: 'How long the rule stays quiet in a chat after replying there. This is what stops two auto-repliers answering each other forever, so set 0 only deliberately.',
+                        },
+                        {
+                            displayName: 'Enabled',
+                            name: 'enabled',
+                            type: 'boolean',
+                            default: true,
+                            description: 'Whether the rule is active',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'Update Fields',
+                    name: 'ruleUpdateFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: { show: { resource: ['automationRule'], operation: ['update'] } },
+                    description: 'Only the fields you add are sent. Anything left out keeps its stored value.',
+                    options: [
+                        {
+                            displayName: 'Conditions',
+                            name: 'conditions',
+                            type: 'json',
+                            default: '',
+                            description: 'Match conditions as JSON, in the same shape as webhook filters. Leave the field empty to match every inbound message; an empty object is refused, so use {"conditions":[]} if you want to send a match-all explicitly.',
+                        },
+                        {
+                            displayName: 'Cooldown (Seconds)',
+                            name: 'cooldownSeconds',
+                            type: 'number',
+                            typeOptions: { minValue: 0, maxValue: 86400 },
+                            default: 60,
+                            description: 'How long the rule stays quiet in a chat after replying there',
+                        },
+                        {
+                            displayName: 'Enabled',
+                            name: 'enabled',
+                            type: 'boolean',
+                            default: true,
+                            description: 'Whether the rule is active',
+                        },
+                        {
+                            displayName: 'Name',
+                            name: 'name',
+                            type: 'string',
+                            default: '',
+                            description: 'Display name for the rule, up to 100 characters',
+                        },
+                        {
+                            displayName: 'Reply Text',
+                            name: 'replyText',
+                            type: 'string',
+                            typeOptions: { rows: 3 },
+                            default: '',
+                            description: 'What the gateway sends back when the rule matches',
+                        },
+                    ],
+                },
+                {
+                    displayName: 'These rules run on the gateway, not in n8n: a matching message is answered even when this workflow is not running. That makes them the right tool for an out-of-hours acknowledgement, and the wrong one for anything needing workflow logic. Conditions use the same field set as webhook filters and therefore only see message events.',
+                    name: 'automationRuleNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['automationRule'] } },
                 },
                 // ============== CALL OPERATIONS ==============
                 {
@@ -2272,7 +3362,14 @@ class OpenWa {
                     type: 'options',
                     noDataExpression: true,
                     displayOptions: { show: { resource: ['call'] } },
-                    options: [{ name: 'Reject', value: 'reject', action: 'Reject an incoming call' }],
+                    options: [
+                        {
+                            name: 'Create Link',
+                            value: 'createLink',
+                            action: 'Create a shareable call link',
+                        },
+                        { name: 'Reject', value: 'reject', action: 'Reject an incoming call' },
+                    ],
                     default: 'reject',
                 },
                 {
@@ -2293,8 +3390,28 @@ class OpenWa {
                     type: 'string',
                     default: '',
                     required: true,
-                    displayOptions: { show: { resource: ['call'] } },
+                    displayOptions: { show: { resource: ['call'], operation: ['reject'] } },
                     description: "The ID of the call, as delivered by the Trigger's call events",
+                },
+                {
+                    displayName: 'Call Type',
+                    name: 'callLinkType',
+                    type: 'options',
+                    options: [
+                        { name: 'Video', value: 'video' },
+                        { name: 'Audio', value: 'audio' },
+                    ],
+                    default: 'video',
+                    displayOptions: { show: { resource: ['call'], operation: ['createLink'] } },
+                    description: 'Whether the link opens a video or an audio call',
+                },
+                {
+                    displayName: 'Start Time',
+                    name: 'callLinkStartTime',
+                    type: 'dateTime',
+                    default: '',
+                    displayOptions: { show: { resource: ['call'], operation: ['createLink'] } },
+                    description: 'When the call is due to start. Leave empty for now. The response carries only the link, with no expiry, so the node cannot report how long it stays valid.',
                 },
                 // ============== OBSERVABILITY OPERATIONS ==============
                 {
@@ -2454,6 +3571,19 @@ class OpenWa {
                     ],
                 },
                 {
+                    displayName: 'Period',
+                    name: 'statsPeriod',
+                    type: 'options',
+                    options: [
+                        { name: 'Last 24 Hours', value: '24h' },
+                        { name: 'Last 7 Days', value: '7d' },
+                        { name: 'Last 30 Days', value: '30d' },
+                    ],
+                    default: '24h',
+                    displayOptions: { show: { resource: ['system'], operation: ['getStatsMessages'] } },
+                    description: 'The window to report on. The bucket size follows from it: hourly for 24 hours, daily for the longer windows.',
+                },
+                {
                     displayName: 'Filters',
                     name: 'auditFilters',
                     type: 'collection',
@@ -2466,7 +3596,8 @@ class OpenWa {
                             name: 'action',
                             type: 'string',
                             default: '',
-                            description: 'Only return entries for this action',
+                            placeholder: 'session_started',
+                            description: 'Only return entries for this action, e.g. session_started or message_failed. An action the server does not recognise returns an empty page rather than an error, so a typo looks exactly like no matching activity.',
                         },
                         {
                             displayName: 'API Key Name or ID',
@@ -2482,7 +3613,7 @@ class OpenWa {
                             displayName: 'Limit',
                             name: 'limit',
                             type: 'number',
-                            typeOptions: { minValue: 1 },
+                            typeOptions: { minValue: 1, maxValue: 200 },
                             default: 50,
                             description: 'Max number of results to return',
                         },
@@ -2507,9 +3638,14 @@ class OpenWa {
                         {
                             displayName: 'Severity',
                             name: 'severity',
-                            type: 'string',
-                            default: '',
-                            description: 'Only return entries of this severity',
+                            type: 'options',
+                            options: [
+                                { name: 'Error', value: 'error' },
+                                { name: 'Info', value: 'info' },
+                                { name: 'Warn', value: 'warn' },
+                            ],
+                            default: 'info',
+                            description: 'Only return entries at this severity',
                         },
                     ],
                 },
@@ -2576,8 +3712,8 @@ class OpenWa {
                             name: 'allowedSessions',
                             type: 'string',
                             default: '',
-                            placeholder: 'session-a, session-b',
-                            description: 'Restrict the key to these session IDs. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
+                            placeholder: '3f2b1c40-9a7e-4d21-8b55-0c1e2f3a4b5c',
+                            description: 'Restrict the key to these session IDs. These are the session UUIDs, not the session names shown in the picker: a name never matches and silently restricts the key to nothing. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
                         },
                         {
                             displayName: 'Expires At',
@@ -2677,12 +3813,14 @@ class OpenWa {
                     // than casting it and handing downstream nodes something unreadable.
                     json = { data: typeof response === 'string' ? response : String(response ?? '') };
                 }
-                else if (
-                // A successful DELETE returns 204 No Content (empty body); surface a concrete
-                // result so downstream nodes get an object to read instead of an empty item.
-                spec.method === 'DELETE' &&
-                    (response === '' || response === undefined || response === null)) {
-                    json = { success: true };
+                else if (response === '' || response === undefined || response === null) {
+                    // An empty body reaches here from two places. A successful DELETE answers
+                    // 204 No Content, where `{ success: true }` is the useful result. A route
+                    // that answers 200 with a null payload (Presence > Get before anything has
+                    // been reported) means "nothing yet", and must NOT be dressed up as success.
+                    // Either way a bare '' is not valid item json, so downstream nodes would
+                    // otherwise receive an unreadable item.
+                    json = spec.method === 'DELETE' ? { success: true } : {};
                 }
                 else {
                     json = response;

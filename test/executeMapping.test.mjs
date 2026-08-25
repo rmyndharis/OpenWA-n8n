@@ -1103,8 +1103,739 @@ mappingCases.push(
 const S = { sessionId: 'abc-123' };
 const CHAT = '628123456789@c.us';
 const SESS = `${BASE}/api/sessions/abc-123`;
+const GROUP = '120363021234567890@g.us';
+const CHANNEL = '120363021234567890@newsletter';
 
 mappingCases.push(
+  // --- catalog ---
+  [
+    'catalog/get',
+    { resource: 'catalog', operation: 'get', ...S },
+    'GET',
+    `${SESS}/catalog`,
+    undefined,
+  ],
+  [
+    'catalog/listProducts',
+    { resource: 'catalog', operation: 'listProducts', ...S },
+    'GET',
+    `${SESS}/catalog/products`,
+    undefined,
+  ],
+  [
+    'catalog/getProduct',
+    { resource: 'catalog', operation: 'getProduct', ...S, productId: 'p1' },
+    'GET',
+    `${SESS}/catalog/products/p1`,
+    undefined,
+  ],
+  // --- automation rules ---
+  [
+    'automationRule/list',
+    { resource: 'automationRule', operation: 'list', ...S },
+    'GET',
+    `${SESS}/automation-rules`,
+    undefined,
+  ],
+  [
+    'automationRule/create',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      ...S,
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+      ruleConditions: '{"conditions":[{"field":"isGroup","operator":"is","value":false}]}',
+      ruleFields: { cooldownSeconds: 0 },
+    },
+    'POST',
+    `${SESS}/automation-rules`,
+    {
+      name: 'Greet',
+      replyText: 'Thanks',
+      conditions: { conditions: [{ field: 'isGroup', operator: 'is', value: false }] },
+      cooldownSeconds: 0,
+    },
+  ],
+  [
+    'automationRule/create leaves the server defaults alone when nothing is set',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      ...S,
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+    },
+    'POST',
+    `${SESS}/automation-rules`,
+    { name: 'Greet', replyText: 'Thanks' },
+  ],
+  [
+    'automationRule/get',
+    { resource: 'automationRule', operation: 'get', ...S, ruleId: 'r1' },
+    'GET',
+    `${SESS}/automation-rules/r1`,
+    undefined,
+  ],
+  [
+    'automationRule/update sends only what was set',
+    {
+      resource: 'automationRule',
+      operation: 'update',
+      ...S,
+      ruleId: 'r1',
+      ruleUpdateFields: { enabled: false },
+    },
+    'PUT',
+    `${SESS}/automation-rules/r1`,
+    { enabled: false },
+  ],
+  [
+    'automationRule/delete',
+    { resource: 'automationRule', operation: 'delete', ...S, ruleId: 'r1' },
+    'DELETE',
+    `${SESS}/automation-rules/r1`,
+    undefined,
+  ],
+  // --- system: the one operation the mapping suite never covered ---
+  [
+    'system/getStatsMessages defaults to the 24 hour window',
+    { resource: 'system', operation: 'getStatsMessages' },
+    'GET',
+    `${BASE}/api/stats/messages`,
+    undefined,
+  ],
+  // --- webhook create additional fields ---
+  [
+    'webhook/create registers filters, headers and a retry count',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      ...S,
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookCreateFields: {
+        filters: '{"conditions":[{"field":"fromMe","operator":"is","value":false}]}',
+        headers: '{"X-Team":"support"}',
+        retryCount: 5,
+      },
+    },
+    'POST',
+    `${SESS}/webhooks`,
+    {
+      url: 'https://n8n.example/hook',
+      events: ['message.received'],
+      retryCount: 5,
+      headers: { 'X-Team': 'support' },
+      filters: { conditions: [{ field: 'fromMe', operator: 'is', value: false }] },
+    },
+  ],
+  [
+    'webhook/create sends nothing extra when no additional fields are set',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      ...S,
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+    },
+    'POST',
+    `${SESS}/webhooks`,
+    { url: 'https://n8n.example/hook', events: ['message.received'] },
+  ],
+  // --- media conversion ---
+  [
+    'media/checkConversion',
+    { resource: 'media', operation: 'checkConversion', ...S },
+    'GET',
+    `${SESS}/media/convert`,
+    undefined,
+  ],
+  [
+    'media/convertVoice sends no mimetype, which the DTO would refuse',
+    {
+      resource: 'media',
+      operation: 'convertVoice',
+      ...S,
+      mediaConvertSource: 'url',
+      mediaConvertUrl: 'https://example.com/a.mp3',
+    },
+    'POST',
+    `${SESS}/media/convert/voice`,
+    { url: 'https://example.com/a.mp3' },
+  ],
+  [
+    'media/convertVideo from base64',
+    {
+      resource: 'media',
+      operation: 'convertVideo',
+      ...S,
+      mediaConvertSource: 'base64',
+      mediaConvertBase64: 'AAAA',
+    },
+    'POST',
+    `${SESS}/media/convert/video`,
+    { base64: 'AAAA' },
+  ],
+  // --- status, profile and call additions ---
+  [
+    'status/sendVoice nests its media under audio',
+    {
+      resource: 'status',
+      operation: 'sendVoice',
+      ...S,
+      statusVoiceSource: 'url',
+      statusVoiceUrl: 'https://example.com/a.ogg',
+    },
+    'POST',
+    `${SESS}/status/send-voice`,
+    { audio: { url: 'https://example.com/a.ogg' } },
+  ],
+  [
+    'profile/deletePicture',
+    { resource: 'profile', operation: 'deletePicture', ...S },
+    'DELETE',
+    `${SESS}/profile/picture`,
+    undefined,
+  ],
+  [
+    'call/reject still targets the call it names',
+    { resource: 'call', operation: 'reject', ...S, callId: 'c1' },
+    'POST',
+    `${SESS}/calls/c1/reject`,
+    undefined,
+  ],
+  [
+    'call/createLink',
+    {
+      resource: 'call',
+      operation: 'createLink',
+      ...S,
+      callLinkType: 'audio',
+      callLinkStartTime: '2027-01-01T00:00:00Z',
+    },
+    'POST',
+    `${SESS}/calls/link`,
+    { type: 'audio', startTime: Date.parse('2027-01-01T00:00:00Z') },
+  ],
+  // --- group: new operations ---
+  [
+    'group/getJoinInfo',
+    { resource: 'group', operation: 'getJoinInfo', ...S, groupInviteCode: 'XyZ987' },
+    'GET',
+    `${SESS}/groups/join-info`,
+    undefined,
+  ],
+  [
+    'group/getMembershipRequests',
+    { resource: 'group', operation: 'getMembershipRequests', ...S, groupId: GROUP },
+    'GET',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests`,
+    undefined,
+  ],
+  [
+    'group/approveMembershipRequests names the requesters',
+    {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      ...S,
+      groupId: GROUP,
+      groupRequestParticipants: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests/approve`,
+    { participants: ['628123456789@c.us'] },
+  ],
+  [
+    'group/rejectMembershipRequests with no list means every pending request',
+    { resource: 'group', operation: 'rejectMembershipRequests', ...S, groupId: GROUP },
+    'POST',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests/reject`,
+    undefined,
+  ],
+  [
+    'group/getPicture',
+    { resource: 'group', operation: 'getPicture', ...S, groupId: GROUP },
+    'GET',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    undefined,
+  ],
+  [
+    'group/setPicture',
+    {
+      resource: 'group',
+      operation: 'setPicture',
+      ...S,
+      groupId: GROUP,
+      groupPictureSource: 'url',
+      groupPictureUrl: 'https://example.com/g.png',
+    },
+    'PUT',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    { url: 'https://example.com/g.png' },
+  ],
+  [
+    'group/deletePicture',
+    { resource: 'group', operation: 'deletePicture', ...S, groupId: GROUP },
+    'DELETE',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    undefined,
+  ],
+  [
+    'group/updateSettings carries memberAddMode',
+    {
+      resource: 'group',
+      operation: 'updateSettings',
+      ...S,
+      groupId: GROUP,
+      groupSettings: { memberAddMode: 'admins' },
+    },
+    'PUT',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/settings`,
+    { memberAddMode: 'admins' },
+  ],
+  // --- channel: new operations ---
+  [
+    'channel/create',
+    { resource: 'channel', operation: 'create', ...S, channelName: 'Updates' },
+    'POST',
+    `${SESS}/channels`,
+    { name: 'Updates' },
+  ],
+  [
+    'channel/delete is a POST on its own path, not the unsubscribe DELETE',
+    { resource: 'channel', operation: 'delete', ...S, channelId: CHANNEL },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/delete`,
+    undefined,
+  ],
+  [
+    'channel/unsubscribe stays a DELETE on the channel itself',
+    { resource: 'channel', operation: 'unsubscribe', ...S, channelId: CHANNEL },
+    'DELETE',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}`,
+    undefined,
+  ],
+  [
+    'channel/mute',
+    { resource: 'channel', operation: 'mute', ...S, channelId: CHANNEL, channelMute: false },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/mute`,
+    { mute: false },
+  ],
+  [
+    'channel/demoteAdmin',
+    {
+      resource: 'channel',
+      operation: 'demoteAdmin',
+      ...S,
+      channelId: CHANNEL,
+      channelUserId: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/admins/demote`,
+    { userId: '628123456789@c.us' },
+  ],
+  [
+    'channel/transferOwnership',
+    {
+      resource: 'channel',
+      operation: 'transferOwnership',
+      ...S,
+      channelId: CHANNEL,
+      channelNewOwnerId: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/owner/transfer`,
+    { newOwnerId: '628123456789@c.us' },
+  ],
+  // --- chat: new operations ---
+  [
+    'chat/archive',
+    { resource: 'chat', operation: 'archive', ...S, chatId: CHAT, archive: false },
+    'POST',
+    `${SESS}/chats/archive`,
+    { chatId: CHAT, archive: false },
+  ],
+  [
+    'chat/pin',
+    { resource: 'chat', operation: 'pin', ...S, chatId: CHAT },
+    'POST',
+    `${SESS}/chats/pin`,
+    { chatId: CHAT, pin: true },
+  ],
+  [
+    'chat/mute converts the picker value to epoch milliseconds',
+    { resource: 'chat', operation: 'mute', ...S, chatId: CHAT, muteUntil: '2027-01-01T00:00:00Z' },
+    'POST',
+    `${SESS}/chats/mute`,
+    { chatId: CHAT, muteUntil: Date.parse('2027-01-01T00:00:00Z') },
+  ],
+  [
+    'chat/mute sends an explicit null to unmute, never dropping the key',
+    { resource: 'chat', operation: 'mute', ...S, chatId: CHAT, muteUntil: '' },
+    'POST',
+    `${SESS}/chats/mute`,
+    { chatId: CHAT, muteUntil: null },
+  ],
+  [
+    'chat/clearMessages names its chat in the path, unlike its siblings',
+    { resource: 'chat', operation: 'clearMessages', ...S, chatId: CHAT },
+    'DELETE',
+    `${SESS}/chats/${encodeURIComponent(CHAT)}/messages`,
+    undefined,
+  ],
+  // --- contact: new operations ---
+  [
+    'contact/listBlocked',
+    { resource: 'contact', operation: 'listBlocked', ...S },
+    'GET',
+    `${SESS}/contacts/blocked`,
+    undefined,
+  ],
+  [
+    'contact/save',
+    {
+      resource: 'contact',
+      operation: 'save',
+      ...S,
+      contactId: CHAT,
+      contactFirstName: 'Ada',
+      contactLastName: 'Lovelace',
+    },
+    'PUT',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    { firstName: 'Ada', lastName: 'Lovelace' },
+  ],
+  [
+    'contact/save omits a blank last name rather than sending an empty one',
+    { resource: 'contact', operation: 'save', ...S, contactId: CHAT, contactFirstName: 'Ada' },
+    'PUT',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    { firstName: 'Ada' },
+  ],
+  [
+    'contact/delete',
+    { resource: 'contact', operation: 'delete', ...S, contactId: CHAT },
+    'DELETE',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    undefined,
+  ],
+  // --- label: new operations ---
+  [
+    'label/getChats',
+    { resource: 'label', operation: 'getChats', ...S, labelId: 'l1' },
+    'GET',
+    `${SESS}/labels/l1/chats`,
+    undefined,
+  ],
+  [
+    'label/upsert',
+    {
+      resource: 'label',
+      operation: 'upsert',
+      ...S,
+      newLabelId: 'l9',
+      labelFields: { labelName: 'VIP', labelColor: 3 },
+    },
+    'PUT',
+    `${SESS}/labels/l9`,
+    { name: 'VIP', color: 3 },
+  ],
+  [
+    'label/upsert keeps colour zero, which is a real colour',
+    {
+      resource: 'label',
+      operation: 'upsert',
+      ...S,
+      newLabelId: 'l9',
+      labelFields: { labelColor: 0 },
+    },
+    'PUT',
+    `${SESS}/labels/l9`,
+    { color: 0 },
+  ],
+  [
+    'label/delete',
+    { resource: 'label', operation: 'delete', ...S, newLabelId: 'l9' },
+    'DELETE',
+    `${SESS}/labels/l9`,
+    undefined,
+  ],
+  // --- message: new operations ---
+  [
+    'message/pin',
+    { resource: 'message', operation: 'pin', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/pin`,
+    { chatId: CHAT, messageId: 'm1', durationSeconds: 86400 },
+  ],
+  [
+    'message/pin honours a longer window',
+    {
+      resource: 'message',
+      operation: 'pin',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      pinDurationSeconds: 604800,
+    },
+    'POST',
+    `${SESS}/messages/pin`,
+    { chatId: CHAT, messageId: 'm1', durationSeconds: 604800 },
+  ],
+  [
+    'message/unpin never carries a duration',
+    { resource: 'message', operation: 'unpin', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/unpin`,
+    { chatId: CHAT, messageId: 'm1' },
+  ],
+  [
+    'message/star',
+    { resource: 'message', operation: 'star', ...S, chatId: CHAT, messageId: 'm1', star: false },
+    'POST',
+    `${SESS}/messages/star`,
+    { chatId: CHAT, messageId: 'm1', star: false },
+  ],
+  [
+    'message/votePoll uses the pollMessageId wire name',
+    {
+      resource: 'message',
+      operation: 'votePoll',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      pollVoteOptions: 'Pizza, Sushi',
+    },
+    'POST',
+    `${SESS}/messages/vote-poll`,
+    { chatId: CHAT, pollMessageId: 'm1', options: ['Pizza', 'Sushi'] },
+  ],
+  [
+    'message/votePoll sends an empty selection, which clears the vote',
+    { resource: 'message', operation: 'votePoll', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/vote-poll`,
+    { chatId: CHAT, pollMessageId: 'm1', options: [] },
+  ],
+  [
+    'message/sendProduct',
+    {
+      resource: 'message',
+      operation: 'sendProduct',
+      ...S,
+      chatId: CHAT,
+      productId: 'p1',
+      productBody: 'Have a look',
+    },
+    'POST',
+    `${SESS}/messages/send-product`,
+    { chatId: CHAT, productId: 'p1', body: 'Have a look' },
+  ],
+  // --- message: new shared fields ---
+  [
+    'message/sendImage can quote a message',
+    {
+      resource: 'message',
+      operation: 'sendImage',
+      ...S,
+      chatId: CHAT,
+      imageSource: 'url',
+      imageUrl: 'https://example.com/i.png',
+      sendQuotedMessageId: 'm1',
+    },
+    'POST',
+    `${SESS}/messages/send-image`,
+    { chatId: CHAT, url: 'https://example.com/i.png', quotedMessageId: 'm1' },
+  ],
+  [
+    'message/sendTemplate does not accept a quote, so it never rides along',
+    {
+      resource: 'message',
+      operation: 'sendTemplate',
+      ...S,
+      chatId: CHAT,
+      sendTemplateName: 'welcome',
+      sendQuotedMessageId: 'm1',
+    },
+    'POST',
+    `${SESS}/messages/send-template`,
+    { chatId: CHAT, templateName: 'welcome' },
+  ],
+  [
+    'message/reply can now tag participants',
+    {
+      resource: 'message',
+      operation: 'reply',
+      ...S,
+      chatId: CHAT,
+      quotedMessageId: 'm1',
+      message: 'hi @628123456789',
+      mentions: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/messages/reply`,
+    {
+      chatId: CHAT,
+      quotedMessageId: 'm1',
+      text: 'hi @628123456789',
+      mentions: ['628123456789@c.us'],
+    },
+  ],
+  [
+    'message/sendText suppresses a link preview on request',
+    { resource: 'message', operation: 'sendText', ...S, chatId: CHAT, message: 'x', linkPreview: 'no' },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x', linkPreview: false },
+  ],
+  [
+    'message/sendText leaves the preview to the engine by default',
+    { resource: 'message', operation: 'sendText', ...S, chatId: CHAT, message: 'x' },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x' },
+  ],
+  [
+    'message/sendText attaches a complete custom preview',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      ...S,
+      chatId: CHAT,
+      message: 'see https://example.com',
+      customLinkPreview: { previewUrl: 'https://example.com', previewTitle: 'Example' },
+    },
+    'POST',
+    `${SESS}/messages/send-text`,
+    {
+      chatId: CHAT,
+      text: 'see https://example.com',
+      customLinkPreview: { url: 'https://example.com', title: 'Example' },
+    },
+  ],
+  [
+    'message/sendText drops a half-filled custom preview rather than sending an object the server refuses',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      ...S,
+      chatId: CHAT,
+      message: 'x',
+      customLinkPreview: { previewUrl: 'https://example.com' },
+    },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x' },
+  ],
+  [
+    'message/sendLocation carries an address alongside the label',
+    {
+      resource: 'message',
+      operation: 'sendLocation',
+      ...S,
+      chatId: CHAT,
+      latitude: 1,
+      longitude: 2,
+      locationName: 'Office',
+      locationAddress: 'Jl. Sudirman No. 1',
+    },
+    'POST',
+    `${SESS}/messages/send-location`,
+    {
+      chatId: CHAT,
+      latitude: 1,
+      longitude: 2,
+      description: 'Office',
+      address: 'Jl. Sudirman No. 1',
+    },
+  ],
+  // --- presence ---
+  [
+    'presence/subscribe',
+    { resource: 'presence', operation: 'subscribe', ...S, chatId: CHAT },
+    'POST',
+    `${SESS}/presence/subscribe`,
+    { chatId: CHAT },
+  ],
+  [
+    'presence/get',
+    { resource: 'presence', operation: 'get', ...S, chatId: CHAT },
+    'GET',
+    `${SESS}/presence/${encodeURIComponent(CHAT)}`,
+    undefined,
+  ],
+  [
+    'presence/setOwn appears offline',
+    { resource: 'presence', operation: 'setOwn', ...S, presenceAvailable: false },
+    'PUT',
+    `${SESS}/presence`,
+    { available: false },
+  ],
+  // --- session additions ---
+  [
+    'session/logout',
+    { resource: 'session', operation: 'logout', ...S },
+    'POST',
+    `${SESS}/logout`,
+    undefined,
+  ],
+  [
+    'session/getConfig',
+    { resource: 'session', operation: 'getConfig', ...S },
+    'GET',
+    `${SESS}/config`,
+    undefined,
+  ],
+  [
+    'session/updateConfig sends only the fields that were set',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { autoRejectCalls: false, reconnectBaseDelay: 10000 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { autoRejectCalls: false, reconnectBaseDelay: 10000 },
+  ],
+  [
+    'session/updateConfig translates the unlimited sentinel to null',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { maxReconnectAttempts: -1 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { maxReconnectAttempts: null },
+  ],
+  [
+    'session/updateConfig keeps a zero cap, which disables reconnection',
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      ...S,
+      sessionConfigFields: { maxReconnectAttempts: 0 },
+    },
+    'PATCH',
+    `${SESS}/config`,
+    { maxReconnectAttempts: 0 },
+  ],
+  [
+    'session/create forwards a proxy URL',
+    {
+      resource: 'session',
+      operation: 'create',
+      sessionName: 'sales',
+      proxyUrl: 'socks5://127.0.0.1:1080',
+    },
+    'POST',
+    `${BASE}/api/sessions`,
+    { name: 'sales', proxyUrl: 'socks5://127.0.0.1:1080' },
+  ],
   ['chat/list', { resource: 'chat', operation: 'list', ...S }, 'GET', `${SESS}/chats`, undefined],
   [
     'chat/markRead',
@@ -1112,6 +1843,19 @@ mappingCases.push(
     'POST',
     `${SESS}/chats/read`,
     { chatId: CHAT },
+  ],
+  [
+    'chat/markRead with explicit message ids',
+    {
+      resource: 'chat',
+      operation: 'markRead',
+      ...S,
+      chatId: CHAT,
+      readMessageIds: 'm1, m2',
+    },
+    'POST',
+    `${SESS}/chats/read`,
+    { chatId: CHAT, messageIds: ['m1', 'm2'] },
   ],
   [
     'chat/markUnread',
@@ -1216,6 +1960,26 @@ mappingCases.push(
     'POST',
     `${SESS}/messages/edit`,
     { chatId: CHAT, messageId: 'm1', body: 'corrected text' },
+  ],
+  [
+    'message/edit re-applies mentions',
+    {
+      resource: 'message',
+      operation: 'edit',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      message: 'corrected @628123456789',
+      mentions: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/messages/edit`,
+    {
+      chatId: CHAT,
+      messageId: 'm1',
+      body: 'corrected @628123456789',
+      mentions: ['628123456789@c.us'],
+    },
   ],
   [
     'message/forward uses its own from/to chats',
@@ -1472,6 +2236,21 @@ mappingCases.push(
     { body: 'Hello {{name}}' },
   ],
   [
+    'template/update forwards a blank footer, which clears it server-side',
+    // Only `name` and `body` are IsNotEmpty on the server; a blank header or
+    // footer is a deliberate clear and must still be sent.
+    {
+      resource: 'template',
+      operation: 'update',
+      ...S,
+      templateId: 't1',
+      templateUpdateFields: { footer: '' },
+    },
+    'PUT',
+    `${SESS}/templates/t1`,
+    { footer: '' },
+  ],
+  [
     'template/delete',
     { resource: 'template', operation: 'delete', ...S, templateId: 't1' },
     'DELETE',
@@ -1711,6 +2490,81 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('system/getStatsMessages sends the period as a query parameter', async () => {
+  const { ctx } = await run({ resource: 'system', operation: 'getStatsMessages' });
+  assert.deepEqual(singleCall(ctx).options.qs, { period: '24h' });
+});
+
+test('system/getStatsMessages honours a longer window', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'getStatsMessages',
+    statsPeriod: '30d',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { period: '30d' });
+});
+
+test('call/createLink defaults a blank start time to now rather than omitting it', async () => {
+  const before = Date.now();
+  const { ctx } = await run({
+    resource: 'call',
+    operation: 'createLink',
+    sessionId: 'abc-123',
+    callLinkType: 'video',
+    callLinkStartTime: '',
+  });
+  const { body } = singleCall(ctx).options;
+  assert.equal(body.type, 'video');
+  assert.ok(
+    Number.isInteger(body.startTime) && body.startTime >= before,
+    `expected an epoch-ms start time, got ${body.startTime}`,
+  );
+});
+
+test('group/getJoinInfo sends the invite code as a query parameter', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'XyZ987',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'XyZ987' });
+});
+
+test('group/getJoinInfo reduces a full invite link to its code', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'https://chat.whatsapp.com/XyZ987',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'XyZ987' });
+});
+
+test('message/getMedia downloads the bytes from the message media route', async () => {
+  const { ctx, output } = await run(
+    {
+      resource: 'message',
+      operation: 'getMedia',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'true_628123456789@c.us_3EB0',
+    },
+    { response: Buffer.from('MEDIABYTES') },
+  );
+  const { options } = singleCall(ctx);
+  assert.equal(options.method, 'GET');
+  assert.equal(
+    options.url,
+    `${BASE}/api/sessions/abc-123/messages/${encodeURIComponent('628123456789@c.us')}/${encodeURIComponent('true_628123456789@c.us_3EB0')}/media`,
+  );
+  assert.equal(options.json, false);
+  assert.equal(options.encoding, 'arraybuffer');
+  const item = output[0][0];
+  assert.deepEqual(item.json, {});
+  assert.equal(item.binary.data.data, Buffer.from('MEDIABYTES').toString('base64'));
 });
 
 test('status/getMedia asks for raw bytes instead of JSON', async () => {
@@ -2488,6 +3342,178 @@ const guardCases = [
       updateFields: { secret: 'short' },
     },
     /at least 16 characters/,
+  ],
+  [
+    'webhook/create rejects a secret longer than 255 characters',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      sessionId: 'abc-123',
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookSecret: 'x'.repeat(256),
+    },
+    /cannot exceed 255 characters/,
+  ],
+  [
+    'chat/markRead rejects more than 100 message ids',
+    {
+      resource: 'chat',
+      operation: 'markRead',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      readMessageIds: Array.from({ length: 101 }, (_, i) => `m${i}`),
+    },
+    /at most 100 message IDs/,
+  ],
+  [
+    'template/update treats a blank name as no patch at all',
+    // `name` and `body` are IsNotEmpty on the server, so a blank one is a
+    // guaranteed 400. Dropping it here surfaces the real problem instead.
+    {
+      resource: 'template',
+      operation: 'update',
+      sessionId: 'abc-123',
+      templateId: 't1',
+      templateUpdateFields: { name: '   ' },
+    },
+    /At least one field must be provided/,
+  ],
+  [
+    'session/create rejects a proxy URL with no scheme',
+    { resource: 'session', operation: 'create', sessionName: 'sales', proxyUrl: '127.0.0.1:1080' },
+    /must start with http:\/\//,
+  ],
+  [
+    'session/updateConfig rejects an empty patch',
+    { resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: {} },
+    /At least one field must be provided/,
+  ],
+  [
+    'presence/subscribe rejects a bare phone number',
+    { resource: 'presence', operation: 'subscribe', sessionId: 'abc-123', chatId: '628123456789' },
+    /full WhatsApp ID including its domain/,
+  ],
+  [
+    'message/votePoll rejects more than twelve selections',
+    {
+      resource: 'message',
+      operation: 'votePoll',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'm1',
+      pollVoteOptions: Array.from({ length: 13 }, (_, i) => `o${i}`),
+    },
+    /at most 12 options/,
+  ],
+  [
+    'message/sendText refuses a custom preview paired with No Preview',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      message: 'x',
+      linkPreview: 'no',
+      customLinkPreview: { previewUrl: 'https://example.com', previewTitle: 'Example' },
+    },
+    /cannot be combined with Link Preview set to No Preview/,
+  ],
+  [
+    'message/sendProduct rejects a blank product id',
+    {
+      resource: 'message',
+      operation: 'sendProduct',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      productId: '   ',
+    },
+    /Product ID/,
+  ],
+  [
+    'label/upsert rejects an empty patch',
+    { resource: 'label', operation: 'upsert', sessionId: 'abc-123', newLabelId: 'l9', labelFields: {} },
+    /At least one of Name or Color/,
+  ],
+  [
+    'label/addToChat rejects a blank label id instead of sending one',
+    {
+      resource: 'label',
+      operation: 'addToChat',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      labelId: '   ',
+    },
+    /Label ID/,
+  ],
+  [
+    'contact/save rejects a blank first name',
+    {
+      resource: 'contact',
+      operation: 'save',
+      sessionId: 'abc-123',
+      contactId: '628123456789@c.us',
+      contactFirstName: '  ',
+    },
+    /First Name/,
+  ],
+  [
+    'chat/mute rejects an unparseable date',
+    {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      muteUntil: 'not a date',
+    },
+    /Mute Until is not a valid date/,
+  ],
+  [
+    'webhook/create rejects filters that are not valid JSON',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      sessionId: 'abc-123',
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookCreateFields: { filters: '{not json' },
+    },
+    /Filters must be valid JSON/,
+  ],
+  [
+    'automationRule/update rejects an empty patch',
+    {
+      resource: 'automationRule',
+      operation: 'update',
+      sessionId: 'abc-123',
+      ruleId: 'r1',
+      ruleUpdateFields: {},
+    },
+    /At least one field must be provided/,
+  ],
+  [
+    'automationRule/create rejects conditions that are not valid JSON',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      sessionId: 'abc-123',
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+      ruleConditions: '{not json',
+    },
+    /Conditions must be valid JSON/,
+  ],
+  [
+    'session/updateConfig refuses a non-numeric reconnect cap instead of clearing it',
+    // NaN < 0 is false, so an unguarded sentinel would send `null` and silently
+    // reset the cap to unlimited rather than failing.
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      sessionId: 'abc-123',
+      sessionConfigFields: { maxReconnectAttempts: Number.NaN },
+    },
+    /Max Reconnect Attempts must be a number/,
   ],
   [
     'an unknown resource fails with a clear message',

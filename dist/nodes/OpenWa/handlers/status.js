@@ -12,6 +12,13 @@ const STATUS_IMAGE_MEDIA = {
     base64: 'statusImageBase64',
     mimeType: 'statusImageMimeType',
 };
+const STATUS_VOICE_MEDIA = {
+    source: 'statusVoiceSource',
+    binaryProperty: 'statusVoiceBinaryProperty',
+    url: 'statusVoiceUrl',
+    base64: 'statusVoiceBase64',
+    mimeType: 'statusVoiceMimeType',
+};
 const STATUS_VIDEO_MEDIA = {
     source: 'statusVideoSource',
     binaryProperty: 'statusVideoBinaryProperty',
@@ -26,8 +33,10 @@ const MAX_RECIPIENTS = 256;
  * Reads the optional recipient list shared by all three send operations.
  *
  * WhatsApp Status is never posted to a group, so these are `@c.us`/`@lid` JIDs.
- * The Baileys engine requires an explicit list; whatsapp-web.js posts to the
- * whole contact list when it is omitted.
+ * The Baileys engine requires an explicit list and honors it. whatsapp-web.js
+ * does NOT: it posts to the whole contact list whether a list is given or not,
+ * and the server logs a warning when one is supplied. Treat a recipient list as
+ * an audience restriction on Baileys only.
  */
 function getRecipients(ctx, itemIndex) {
     const recipients = (0, params_1.toStringList)(ctx.getNodeParameter('statusRecipients', itemIndex, ''));
@@ -96,6 +105,22 @@ async function buildStatusRequest(operation, itemIndex) {
                 body.recipients = recipients;
             }
             return { endpoint: `${base}/send-text`, method: 'POST', body };
+        }
+        case 'sendVoice': {
+            // Like the image and video sends, the media nests under its own key rather
+            // than sitting flat on the body.
+            const body = {
+                audio: await media_1.resolveMediaSource.call(this, itemIndex, STATUS_VOICE_MEDIA, 'audio/ogg; codecs=opus'),
+            };
+            const backgroundColor = this.getNodeParameter('statusBackgroundColor', itemIndex, '').trim();
+            if (backgroundColor) {
+                body.backgroundColor = backgroundColor;
+            }
+            const recipients = getRecipients(this, itemIndex);
+            if (recipients) {
+                body.recipients = recipients;
+            }
+            return { endpoint: `${base}/send-voice`, method: 'POST', body };
         }
         case 'sendImage':
         case 'sendVideo': {

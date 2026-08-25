@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
+import { stableStringify } from '../shared/jsonParam';
 
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
  * registration depends on: the delivery URL n8n advertises, the subscribed
- * events, the signing secret, and the session. When any of these changes, the
+ * events, the signing secret, the session, and any server-side filters. When any of these changes, the
  * stored registration is stale and must be re-created — checkExists compares
  * this hash and re-registers on a mismatch.
  *
@@ -15,12 +16,38 @@ export function webhookConfigHash(config: {
   events: string[];
   secret: string;
   sessionId: string;
+  filters?: unknown;
 }): string {
   const canonical = JSON.stringify({
     url: config.url,
     events: [...config.events].sort(),
     secret: config.secret,
     sessionId: config.sessionId,
+    // Normalised here rather than at the call sites, so checkExists and create
+    // cannot disagree. A `json` parameter arrives as text or as a resolved object
+    // depending on whether an expression drives it, and reformatting or reordering
+    // the same filter must not read as a change.
+    filters: filtersFingerprint(config.filters),
   });
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+function filtersFingerprint(filters: unknown): string {
+  if (filters === undefined || filters === null || filters === '') {
+    return '';
+  }
+  if (typeof filters === 'string') {
+    const trimmed = filters.trim();
+    if (!trimmed) {
+      return '';
+    }
+    try {
+      return stableStringify(JSON.parse(trimmed));
+    } catch {
+      // Not valid JSON: fingerprint the text so a later correction still registers
+      // as a change. create() is where the user gets told it is malformed.
+      return trimmed;
+    }
+  }
+  return stableStringify(filters);
 }

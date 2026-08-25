@@ -11,8 +11,8 @@ import type { RequestSpec } from './types';
  * does not share a resource with reading its configuration.
  *
  * Settings are read-only here on purpose: the server derives them from its
- * environment and answers `PUT /api/settings` with 501, so there is no Update
- * Settings operation to offer.
+ * environment and publishes no write route at all, so there is no Update Settings
+ * operation to offer.
  *
  * These are not scoped to a session, so this resource has no Session ID field —
  * except Get Session Stats, which names one explicitly.
@@ -28,8 +28,12 @@ export async function buildSystemRequest(
 
     case 'getStatsOverview':
       return { endpoint: '/api/stats/overview', method: 'GET', body: {} };
-    case 'getStatsMessages':
-      return { endpoint: '/api/stats/messages', method: 'GET', body: {} };
+    case 'getStatsMessages': {
+      // This route binds its query to a DTO, so `period` is the only key it accepts
+      // and anything else is refused rather than ignored.
+      const period = this.getNodeParameter('statsPeriod', itemIndex, '24h') as string;
+      return { endpoint: '/api/stats/messages', method: 'GET', body: {}, qs: { period } };
+    }
     case 'getSessionStats': {
       const sessionId = sanitizePathParam(
         this.getNodeParameter('sessionId', itemIndex) as string,

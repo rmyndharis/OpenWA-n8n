@@ -4,6 +4,7 @@ exports.buildGroupRequest = buildGroupRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const params_1 = require("./params");
+const media_1 = require("../media");
 /**
  * Reads a WhatsApp group JID (e.g. 120363021234567890@g.us) from the node
  * parameters. Kept separate from sanitizePathParam because a JID legitimately
@@ -40,6 +41,13 @@ function getParticipants(itemIndex) {
     }
     return participants;
 }
+const GROUP_PICTURE_MEDIA = {
+    source: 'groupPictureSource',
+    binaryProperty: 'groupPictureBinaryProperty',
+    url: 'groupPictureUrl',
+    base64: 'groupPictureBase64',
+    mimeType: 'groupPictureMimeType',
+};
 async function buildGroupRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     const base = `/api/sessions/${sessionId}/groups`;
@@ -83,6 +91,19 @@ async function buildGroupRequest(operation, itemIndex) {
         }
         return { endpoint: `${base}/join`, method: 'POST', body: { inviteCode } };
     }
+    if (operation === 'getJoinInfo') {
+        // Same link-tolerance as join: pasting the whole invite URL is the common slip.
+        const inviteCode = this.getNodeParameter('groupInviteCode', itemIndex)
+            .trim()
+            .replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+        if (!inviteCode) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
+        }
+        if (inviteCode.length > MAX_INVITE_CODE_LENGTH) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invite code cannot exceed ${MAX_INVITE_CODE_LENGTH} characters`, { itemIndex });
+        }
+        return { endpoint: `${base}/join-info`, method: 'GET', body: {}, qs: { code: inviteCode } };
+    }
     // --- Group-scoped operations ----------------------------------------------
     const groupId = getGroupId.call(this, itemIndex);
     const groupBase = `${base}/${groupId}`;
@@ -93,6 +114,37 @@ async function buildGroupRequest(operation, itemIndex) {
             return { endpoint: `${groupBase}/invite-code`, method: 'GET', body: {} };
         case 'getSettings':
             return { endpoint: `${groupBase}/settings`, method: 'GET', body: {} };
+        case 'getMembershipRequests':
+            return { endpoint: `${groupBase}/membership-requests`, method: 'GET', body: {} };
+        case 'approveMembershipRequests':
+        case 'rejectMembershipRequests': {
+            const action = operation === 'approveMembershipRequests' ? 'approve' : 'reject';
+            const requesters = (0, params_1.toStringList)(this.getNodeParameter('groupRequestParticipants', itemIndex, ''));
+            if (requesters.length > MAX_PARTICIPANTS) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Requesters cannot exceed ${MAX_PARTICIPANTS} entries (got ${requesters.length})`, { itemIndex });
+            }
+            // An omitted list means "act on every pending request", which is why this
+            // does not route through getParticipants: that helper refuses an empty list.
+            const body = {};
+            if (requesters.length > 0) {
+                body.participants = requesters;
+            }
+            return {
+                endpoint: `${groupBase}/membership-requests/${action}`,
+                method: 'POST',
+                body,
+            };
+        }
+        case 'getPicture':
+            return { endpoint: `${groupBase}/picture`, method: 'GET', body: {} };
+        case 'setPicture':
+            return {
+                endpoint: `${groupBase}/picture`,
+                method: 'PUT',
+                body: await media_1.resolveMediaSource.call(this, itemIndex, GROUP_PICTURE_MEDIA, 'image/jpeg'),
+            };
+        case 'deletePicture':
+            return { endpoint: `${groupBase}/picture`, method: 'DELETE', body: {} };
         case 'leave':
             return { endpoint: `${groupBase}/leave`, method: 'POST', body: {} };
         case 'revokeInviteCode':
@@ -157,6 +209,9 @@ async function buildGroupRequest(operation, itemIndex) {
             }
             if (settings.ephemeralSeconds !== undefined) {
                 body.ephemeralSeconds = settings.ephemeralSeconds;
+            }
+            if (settings.memberAddMode !== undefined) {
+                body.memberAddMode = settings.memberAddMode;
             }
             if (Object.keys(body).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one setting must be provided to update', { itemIndex });

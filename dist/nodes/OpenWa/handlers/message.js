@@ -24,6 +24,24 @@ const MAX_POLL_NAME_LENGTH = 255;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_OPTIONS = 12;
+// A vote may select at most this many of the poll's options. Zero is legal and
+// clears the caller's vote, so this is an upper bound only.
+const MAX_POLL_VOTE_OPTIONS = 12;
+/**
+ * Sends whose DTO declares `quotedMessageId`. Send Template and Edit do not, and the
+ * server rejects any body field its DTO does not declare, so the set is explicit.
+ */
+const QUOTABLE_SENDS = new Set([
+    'sendText',
+    'sendImage',
+    'sendVideo',
+    'sendAudio',
+    'sendDocument',
+    'sendSticker',
+    'sendLocation',
+    'sendContact',
+    'sendPoll',
+]);
 const IMAGE_MEDIA = {
     source: 'imageSource',
     binaryProperty: 'imageBinaryProperty',
@@ -59,6 +77,42 @@ const STICKER_MEDIA = {
     base64: 'stickerBase64',
     mimeType: 'stickerMimeType',
 };
+/**
+ * Three states, which a boolean cannot express: leave it to the engine, ask for a
+ * preview, or suppress one. The engines disagree about what "leave it" means, so the
+ * distinction is real. On whatsapp-web.js a preview is built by default and only an
+ * explicit false is forwarded; on Baileys previews are opt-in, and asking for one
+ * costs a blocking fetch of every URL in the message before the send goes out.
+ */
+function applyLinkPreview(body, itemIndex) {
+    const choice = this.getNodeParameter('linkPreview', itemIndex, 'default');
+    if (choice === 'yes') {
+        body.linkPreview = true;
+    }
+    else if (choice === 'no') {
+        body.linkPreview = false;
+    }
+}
+/**
+ * A caller-supplied preview card, or undefined when the user opened the collection
+ * without filling it in. An n8n collection yields `{}` as soon as it is opened, and
+ * the server refuses that, so the object is rebuilt from the trimmed values instead
+ * of being forwarded as-is.
+ */
+function readCustomLinkPreview(itemIndex) {
+    const fields = this.getNodeParameter('customLinkPreview', itemIndex, {});
+    const url = (fields.previewUrl ?? '').trim();
+    const title = (fields.previewTitle ?? '').trim();
+    if (!url || !title) {
+        return undefined;
+    }
+    const preview = { url, title };
+    const description = (fields.previewDescription ?? '').trim();
+    if (description) {
+        preview.description = description;
+    }
+    return preview;
+}
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     // Bulk / batch operations are not addressed to a single chat, and Forward and
@@ -102,6 +156,20 @@ async function buildMessageRequest(operation, itemIndex) {
             body: {},
         };
     }
+    if (operation === 'getMedia') {
+        const messageId = this.getNodeParameter('messageId', itemIndex).trim();
+        if (!messageId) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
+        }
+        // Served from the gateway's own archive rather than the engine, so this works
+        // while the session is stopped. The only failure is a 404.
+        return {
+            endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/media`,
+            method: 'GET',
+            body: {},
+            responseFormat: 'binary',
+        };
+    }
     let endpoint = '';
     let body = {};
     if (operation === 'sendText') {
@@ -110,6 +178,16 @@ async function buildMessageRequest(operation, itemIndex) {
             chatId,
             text: this.getNodeParameter('message', itemIndex),
         };
+        applyLinkPreview.call(this, body, itemIndex);
+        const preview = readCustomLinkPreview.call(this, itemIndex);
+        if (preview) {
+            // The server refuses exactly this pair. `true` plus a custom preview is fine,
+            // and so is a custom preview with no linkPreview at all.
+            if (body.linkPreview === false) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'A Custom Link Preview cannot be combined with Link Preview set to No Preview', { itemIndex });
+            }
+            body.customLinkPreview = preview;
+        }
     }
     else if (operation === 'sendImage') {
         endpoint = `/api/sessions/${sessionId}/messages/send-image`;
@@ -145,6 +223,12 @@ async function buildMessageRequest(operation, itemIndex) {
         if (locationName) {
             // OpenWA's SendLocationDto uses `description` for the location label.
             body.description = locationName;
+        }
+        // A separate field from the label: WhatsApp renders `description` as the place
+        // name and `address` as the line under it.
+        const address = this.getNodeParameter('locationAddress', itemIndex, '').trim();
+        if (address) {
+            body.address = address;
         }
     }
     else if (operation === 'sendAudio') {
@@ -244,6 +328,9 @@ async function buildMessageRequest(operation, itemIndex) {
             }
             body.vars = parsedVars;
         }
+        // Send Template renders the template and hands it to the text sender, so it
+        // carries linkPreview. It does NOT declare customLinkPreview.
+        applyLinkPreview.call(this, body, itemIndex);
     }
     else if (operation === 'edit') {
         endpoint = `/api/sessions/${sessionId}/messages/edit`;
@@ -260,9 +347,55 @@ async function buildMessageRequest(operation, itemIndex) {
             toChatId: (0, params_1.requireJid)(this, 'toChatId', 'To Chat ID', itemIndex),
             messageId: this.getNodeParameter('messageId', itemIndex).trim(),
         };
-        // send-catalog and send-product are deliberately absent: the server
-        // documents both as "not supported by any engine" and answers 501, with no
-        // success response at all. Same for the whole Catalog resource.
+        // send-catalog has no branch because the route no longer exists at all; the
+        // server removed it. The catalog reads live on the Catalog resource.
+    }
+    else if (operation === 'pin' || operation === 'unpin') {
+        endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
+        body = {
+            chatId,
+            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+        };
+        if (operation === 'pin') {
+            // UnpinMessageDto does not declare this field, so it must not ride along.
+            body.durationSeconds = this.getNodeParameter('pinDurationSeconds', itemIndex, 86400);
+        }
+    }
+    else if (operation === 'star') {
+        endpoint = `/api/sessions/${sessionId}/messages/star`;
+        // `star` has no server-side default: omitting it is a 400, so it is always sent.
+        body = {
+            chatId,
+            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            star: this.getNodeParameter('star', itemIndex, true),
+        };
+    }
+    else if (operation === 'votePoll') {
+        endpoint = `/api/sessions/${sessionId}/messages/vote-poll`;
+        const selections = (0, params_1.toStringList)(this.getNodeParameter('pollVoteOptions', itemIndex, ''));
+        if (selections.length > MAX_POLL_VOTE_OPTIONS) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `A vote can select at most ${MAX_POLL_VOTE_OPTIONS} options (got ${selections.length})`, { itemIndex });
+        }
+        body = {
+            chatId,
+            // The wire name is pollMessageId here, not messageId.
+            pollMessageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            // Always sent, including empty: omitting the key is a 400, and an empty
+            // array is how a vote is cleared.
+            options: selections,
+        };
+    }
+    else if (operation === 'sendProduct') {
+        endpoint = `/api/sessions/${sessionId}/messages/send-product`;
+        body = {
+            chatId,
+            productId: (0, params_1.requireText)(this, 'productId', 'Product ID', itemIndex),
+        };
+        // The wire field really is called `body`, inside the request body object.
+        const productBody = this.getNodeParameter('productBody', itemIndex, '').trim();
+        if (productBody) {
+            body.body = productBody;
+        }
     }
     else if (operation === 'sendContact') {
         endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
@@ -310,13 +443,33 @@ async function buildMessageRequest(operation, itemIndex) {
     else {
         return null;
     }
-    // Optional @mentions — only send-text/image/video/document accept them. Guard by
-    // operation (not just the hidden field) so a mentions value can never ride
-    // along on a sendLocation request, whose DTO rejects unknown fields (400).
+    // Optional quoted message. The quotable set and the mentions set below are
+    // genuinely different: Send Location and Send Contact can quote but cannot tag,
+    // and Send Template and Edit can tag but cannot quote. Neither is derived from
+    // the other.
+    if (QUOTABLE_SENDS.has(operation)) {
+        const quoted = this.getNodeParameter('sendQuotedMessageId', itemIndex, '').trim();
+        if (quoted) {
+            body.quotedMessageId = quoted;
+        }
+    }
+    // Optional @mentions. Guard by operation (not just the hidden field) so a mentions
+    // value can never ride along on a request whose DTO rejects unknown fields (400),
+    // such as sendLocation.
+    //
+    // `edit` is in this list for a different reason than the sends: EditMessageDto
+    // carries `mentions` because an edit REPLACES the message content, so the tags are
+    // re-applied rather than preserved. Omitting the field strips whatever the original
+    // body tagged, which the server reports as a success.
     if (operation === 'sendText' ||
         operation === 'sendImage' ||
         operation === 'sendDocument' ||
-        operation === 'sendVideo') {
+        operation === 'sendVideo' ||
+        operation === 'sendAudio' ||
+        operation === 'sendSticker' ||
+        operation === 'sendTemplate' ||
+        operation === 'reply' ||
+        operation === 'edit') {
         const mentions = (0, params_1.toStringList)(this.getNodeParameter('mentions', itemIndex, ''));
         if (mentions.length > 0) {
             body.mentions = mentions;

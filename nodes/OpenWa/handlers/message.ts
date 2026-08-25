@@ -25,6 +25,25 @@ const MAX_POLL_NAME_LENGTH = 255;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_OPTIONS = 12;
+// A vote may select at most this many of the poll's options. Zero is legal and
+// clears the caller's vote, so this is an upper bound only.
+const MAX_POLL_VOTE_OPTIONS = 12;
+
+/**
+ * Sends whose DTO declares `quotedMessageId`. Send Template and Edit do not, and the
+ * server rejects any body field its DTO does not declare, so the set is explicit.
+ */
+const QUOTABLE_SENDS = new Set([
+  'sendText',
+  'sendImage',
+  'sendVideo',
+  'sendAudio',
+  'sendDocument',
+  'sendSticker',
+  'sendLocation',
+  'sendContact',
+  'sendPoll',
+]);
 
 const IMAGE_MEDIA: MediaParamNames = {
   source: 'imageSource',
@@ -61,6 +80,54 @@ const STICKER_MEDIA: MediaParamNames = {
   base64: 'stickerBase64',
   mimeType: 'stickerMimeType',
 };
+
+/**
+ * Three states, which a boolean cannot express: leave it to the engine, ask for a
+ * preview, or suppress one. The engines disagree about what "leave it" means, so the
+ * distinction is real. On whatsapp-web.js a preview is built by default and only an
+ * explicit false is forwarded; on Baileys previews are opt-in, and asking for one
+ * costs a blocking fetch of every URL in the message before the send goes out.
+ */
+function applyLinkPreview(
+  this: IExecuteFunctions,
+  body: Record<string, unknown>,
+  itemIndex: number,
+): void {
+  const choice = this.getNodeParameter('linkPreview', itemIndex, 'default') as string;
+  if (choice === 'yes') {
+    body.linkPreview = true;
+  } else if (choice === 'no') {
+    body.linkPreview = false;
+  }
+}
+
+/**
+ * A caller-supplied preview card, or undefined when the user opened the collection
+ * without filling it in. An n8n collection yields `{}` as soon as it is opened, and
+ * the server refuses that, so the object is rebuilt from the trimmed values instead
+ * of being forwarded as-is.
+ */
+function readCustomLinkPreview(
+  this: IExecuteFunctions,
+  itemIndex: number,
+): Record<string, string> | undefined {
+  const fields = this.getNodeParameter('customLinkPreview', itemIndex, {}) as {
+    previewUrl?: string;
+    previewTitle?: string;
+    previewDescription?: string;
+  };
+  const url = (fields.previewUrl ?? '').trim();
+  const title = (fields.previewTitle ?? '').trim();
+  if (!url || !title) {
+    return undefined;
+  }
+  const preview: Record<string, string> = { url, title };
+  const description = (fields.previewDescription ?? '').trim();
+  if (description) {
+    preview.description = description;
+  }
+  return preview;
+}
 
 export async function buildMessageRequest(
   this: IExecuteFunctions,
@@ -117,6 +184,21 @@ export async function buildMessageRequest(
     };
   }
 
+  if (operation === 'getMedia') {
+    const messageId = (this.getNodeParameter('messageId', itemIndex) as string).trim();
+    if (!messageId) {
+      throw new NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
+    }
+    // Served from the gateway's own archive rather than the engine, so this works
+    // while the session is stopped. The only failure is a 404.
+    return {
+      endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/media`,
+      method: 'GET',
+      body: {},
+      responseFormat: 'binary',
+    };
+  }
+
   let endpoint = '';
   let body: Record<string, unknown> = {};
 
@@ -126,6 +208,20 @@ export async function buildMessageRequest(
       chatId,
       text: this.getNodeParameter('message', itemIndex) as string,
     };
+    applyLinkPreview.call(this, body, itemIndex);
+    const preview = readCustomLinkPreview.call(this, itemIndex);
+    if (preview) {
+      // The server refuses exactly this pair. `true` plus a custom preview is fine,
+      // and so is a custom preview with no linkPreview at all.
+      if (body.linkPreview === false) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'A Custom Link Preview cannot be combined with Link Preview set to No Preview',
+          { itemIndex },
+        );
+      }
+      body.customLinkPreview = preview;
+    }
   } else if (operation === 'sendImage') {
     endpoint = `/api/sessions/${sessionId}/messages/send-image`;
     body = { chatId };
@@ -164,6 +260,12 @@ export async function buildMessageRequest(
     if (locationName) {
       // OpenWA's SendLocationDto uses `description` for the location label.
       body.description = locationName;
+    }
+    // A separate field from the label: WhatsApp renders `description` as the place
+    // name and `address` as the line under it.
+    const address = (this.getNodeParameter('locationAddress', itemIndex, '') as string).trim();
+    if (address) {
+      body.address = address;
     }
   } else if (operation === 'sendAudio') {
     endpoint = `/api/sessions/${sessionId}/messages/send-audio`;
@@ -278,6 +380,9 @@ export async function buildMessageRequest(
       }
       body.vars = parsedVars;
     }
+    // Send Template renders the template and hands it to the text sender, so it
+    // carries linkPreview. It does NOT declare customLinkPreview.
+    applyLinkPreview.call(this, body, itemIndex);
   } else if (operation === 'edit') {
     endpoint = `/api/sessions/${sessionId}/messages/edit`;
     body = {
@@ -292,9 +397,59 @@ export async function buildMessageRequest(
       toChatId: requireJid(this, 'toChatId', 'To Chat ID', itemIndex),
       messageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
     };
-    // send-catalog and send-product are deliberately absent: the server
-    // documents both as "not supported by any engine" and answers 501, with no
-    // success response at all. Same for the whole Catalog resource.
+    // send-catalog has no branch because the route no longer exists at all; the
+    // server removed it. The catalog reads live on the Catalog resource.
+  } else if (operation === 'pin' || operation === 'unpin') {
+    endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
+    body = {
+      chatId,
+      messageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
+    };
+    if (operation === 'pin') {
+      // UnpinMessageDto does not declare this field, so it must not ride along.
+      body.durationSeconds = this.getNodeParameter(
+        'pinDurationSeconds',
+        itemIndex,
+        86400,
+      ) as number;
+    }
+  } else if (operation === 'star') {
+    endpoint = `/api/sessions/${sessionId}/messages/star`;
+    // `star` has no server-side default: omitting it is a 400, so it is always sent.
+    body = {
+      chatId,
+      messageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
+      star: this.getNodeParameter('star', itemIndex, true) as boolean,
+    };
+  } else if (operation === 'votePoll') {
+    endpoint = `/api/sessions/${sessionId}/messages/vote-poll`;
+    const selections = toStringList(this.getNodeParameter('pollVoteOptions', itemIndex, ''));
+    if (selections.length > MAX_POLL_VOTE_OPTIONS) {
+      throw new NodeOperationError(
+        this.getNode(),
+        `A vote can select at most ${MAX_POLL_VOTE_OPTIONS} options (got ${selections.length})`,
+        { itemIndex },
+      );
+    }
+    body = {
+      chatId,
+      // The wire name is pollMessageId here, not messageId.
+      pollMessageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
+      // Always sent, including empty: omitting the key is a 400, and an empty
+      // array is how a vote is cleared.
+      options: selections,
+    };
+  } else if (operation === 'sendProduct') {
+    endpoint = `/api/sessions/${sessionId}/messages/send-product`;
+    body = {
+      chatId,
+      productId: requireText(this, 'productId', 'Product ID', itemIndex),
+    };
+    // The wire field really is called `body`, inside the request body object.
+    const productBody = (this.getNodeParameter('productBody', itemIndex, '') as string).trim();
+    if (productBody) {
+      body.body = productBody;
+    }
   } else if (operation === 'sendContact') {
     endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
     body = {
@@ -343,14 +498,35 @@ export async function buildMessageRequest(
     return null;
   }
 
-  // Optional @mentions — only send-text/image/video/document accept them. Guard by
-  // operation (not just the hidden field) so a mentions value can never ride
-  // along on a sendLocation request, whose DTO rejects unknown fields (400).
+  // Optional quoted message. The quotable set and the mentions set below are
+  // genuinely different: Send Location and Send Contact can quote but cannot tag,
+  // and Send Template and Edit can tag but cannot quote. Neither is derived from
+  // the other.
+  if (QUOTABLE_SENDS.has(operation)) {
+    const quoted = (this.getNodeParameter('sendQuotedMessageId', itemIndex, '') as string).trim();
+    if (quoted) {
+      body.quotedMessageId = quoted;
+    }
+  }
+
+  // Optional @mentions. Guard by operation (not just the hidden field) so a mentions
+  // value can never ride along on a request whose DTO rejects unknown fields (400),
+  // such as sendLocation.
+  //
+  // `edit` is in this list for a different reason than the sends: EditMessageDto
+  // carries `mentions` because an edit REPLACES the message content, so the tags are
+  // re-applied rather than preserved. Omitting the field strips whatever the original
+  // body tagged, which the server reports as a success.
   if (
     operation === 'sendText' ||
     operation === 'sendImage' ||
     operation === 'sendDocument' ||
-    operation === 'sendVideo'
+    operation === 'sendVideo' ||
+    operation === 'sendAudio' ||
+    operation === 'sendSticker' ||
+    operation === 'sendTemplate' ||
+    operation === 'reply' ||
+    operation === 'edit'
   ) {
     const mentions = toStringList(this.getNodeParameter('mentions', itemIndex, ''));
     if (mentions.length > 0) {
