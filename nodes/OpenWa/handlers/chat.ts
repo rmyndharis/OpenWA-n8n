@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, toQueryParams, toStringList } from './params';
+import { requireJid, toEpochMs, toQueryParams, toStringList } from './params';
 import type { RequestSpec } from './types';
 
 /** Server-side cap on MarkChatReadDto.messageIds. */
@@ -26,6 +26,17 @@ export async function buildChatRequest(
   if (operation === 'list') {
     const options = this.getNodeParameter('chatListOptions', itemIndex, {}) as IDataObject;
     return { endpoint: base, method: 'GET', body: {}, qs: toQueryParams(options) };
+  }
+
+  // Clear Messages is the odd one out: it names its chat in the PATH, while every
+  // other chat route carries it in the body.
+  if (operation === 'clearMessages') {
+    const chatId = requireJid(this, 'chatId', 'Chat ID', itemIndex);
+    return {
+      endpoint: `${base}/${encodeURIComponent(chatId)}/messages`,
+      method: 'DELETE',
+      body: {},
+    };
   }
 
   // Every remaining operation posts the target chat in the body rather than the path.
@@ -54,6 +65,29 @@ export async function buildChatRequest(
     case 'delete':
       // A POST, not a DELETE — the server takes the chat id in the body here.
       return { endpoint: `${base}/delete`, method: 'POST', body: { chatId } };
+    case 'archive':
+      // Always sent: the flag has no server-side default, so omitting it is a 400.
+      return {
+        endpoint: `${base}/archive`,
+        method: 'POST',
+        body: { chatId, archive: this.getNodeParameter('archive', itemIndex, true) as boolean },
+      };
+    case 'pin':
+      return {
+        endpoint: `${base}/pin`,
+        method: 'POST',
+        body: { chatId, pin: this.getNodeParameter('pin', itemIndex, true) as boolean },
+      };
+    case 'mute': {
+      const raw = this.getNodeParameter('muteUntil', itemIndex, '') as string;
+      // The key is always present. Omitting it is a 400, while an explicit null is
+      // how a chat is unmuted, so blank has to become null rather than disappear.
+      const muteUntil =
+        raw === '' || raw === undefined || raw === null
+          ? null
+          : toEpochMs(this, raw, 'Mute Until', itemIndex);
+      return { endpoint: `${base}/mute`, method: 'POST', body: { chatId, muteUntil } };
+    }
     case 'setState': {
       // 'typing'/'recording' show the indicator, 'paused' clears it.
       const state = this.getNodeParameter('chatState', itemIndex, 'typing') as string;

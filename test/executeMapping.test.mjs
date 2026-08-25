@@ -1105,6 +1105,119 @@ const CHAT = '628123456789@c.us';
 const SESS = `${BASE}/api/sessions/abc-123`;
 
 mappingCases.push(
+  // --- chat: new operations ---
+  [
+    'chat/archive',
+    { resource: 'chat', operation: 'archive', ...S, chatId: CHAT, archive: false },
+    'POST',
+    `${SESS}/chats/archive`,
+    { chatId: CHAT, archive: false },
+  ],
+  [
+    'chat/pin',
+    { resource: 'chat', operation: 'pin', ...S, chatId: CHAT },
+    'POST',
+    `${SESS}/chats/pin`,
+    { chatId: CHAT, pin: true },
+  ],
+  [
+    'chat/mute converts the picker value to epoch milliseconds',
+    { resource: 'chat', operation: 'mute', ...S, chatId: CHAT, muteUntil: '2027-01-01T00:00:00Z' },
+    'POST',
+    `${SESS}/chats/mute`,
+    { chatId: CHAT, muteUntil: Date.parse('2027-01-01T00:00:00Z') },
+  ],
+  [
+    'chat/mute sends an explicit null to unmute, never dropping the key',
+    { resource: 'chat', operation: 'mute', ...S, chatId: CHAT, muteUntil: '' },
+    'POST',
+    `${SESS}/chats/mute`,
+    { chatId: CHAT, muteUntil: null },
+  ],
+  [
+    'chat/clearMessages names its chat in the path, unlike its siblings',
+    { resource: 'chat', operation: 'clearMessages', ...S, chatId: CHAT },
+    'DELETE',
+    `${SESS}/chats/${encodeURIComponent(CHAT)}/messages`,
+    undefined,
+  ],
+  // --- contact: new operations ---
+  [
+    'contact/listBlocked',
+    { resource: 'contact', operation: 'listBlocked', ...S },
+    'GET',
+    `${SESS}/contacts/blocked`,
+    undefined,
+  ],
+  [
+    'contact/save',
+    {
+      resource: 'contact',
+      operation: 'save',
+      ...S,
+      contactId: CHAT,
+      contactFirstName: 'Ada',
+      contactLastName: 'Lovelace',
+    },
+    'PUT',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    { firstName: 'Ada', lastName: 'Lovelace' },
+  ],
+  [
+    'contact/save omits a blank last name rather than sending an empty one',
+    { resource: 'contact', operation: 'save', ...S, contactId: CHAT, contactFirstName: 'Ada' },
+    'PUT',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    { firstName: 'Ada' },
+  ],
+  [
+    'contact/delete',
+    { resource: 'contact', operation: 'delete', ...S, contactId: CHAT },
+    'DELETE',
+    `${SESS}/contacts/${encodeURIComponent(CHAT)}`,
+    undefined,
+  ],
+  // --- label: new operations ---
+  [
+    'label/getChats',
+    { resource: 'label', operation: 'getChats', ...S, labelId: 'l1' },
+    'GET',
+    `${SESS}/labels/l1/chats`,
+    undefined,
+  ],
+  [
+    'label/upsert',
+    {
+      resource: 'label',
+      operation: 'upsert',
+      ...S,
+      newLabelId: 'l9',
+      labelFields: { labelName: 'VIP', labelColor: 3 },
+    },
+    'PUT',
+    `${SESS}/labels/l9`,
+    { name: 'VIP', color: 3 },
+  ],
+  [
+    'label/upsert keeps colour zero, which is a real colour',
+    {
+      resource: 'label',
+      operation: 'upsert',
+      ...S,
+      newLabelId: 'l9',
+      labelFields: { labelColor: 0 },
+    },
+    'PUT',
+    `${SESS}/labels/l9`,
+    { color: 0 },
+  ],
+  [
+    'label/delete',
+    { resource: 'label', operation: 'delete', ...S, newLabelId: 'l9' },
+    'DELETE',
+    `${SESS}/labels/l9`,
+    undefined,
+  ],
   // --- message: new operations ---
   [
     'message/pin',
@@ -2921,6 +3034,44 @@ const guardCases = [
       productId: '   ',
     },
     /Product ID/,
+  ],
+  [
+    'label/upsert rejects an empty patch',
+    { resource: 'label', operation: 'upsert', sessionId: 'abc-123', newLabelId: 'l9', labelFields: {} },
+    /At least one of Name or Color/,
+  ],
+  [
+    'label/addToChat rejects a blank label id instead of sending one',
+    {
+      resource: 'label',
+      operation: 'addToChat',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      labelId: '   ',
+    },
+    /Label ID/,
+  ],
+  [
+    'contact/save rejects a blank first name',
+    {
+      resource: 'contact',
+      operation: 'save',
+      sessionId: 'abc-123',
+      contactId: '628123456789@c.us',
+      contactFirstName: '  ',
+    },
+    /First Name/,
+  ],
+  [
+    'chat/mute rejects an unparseable date',
+    {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      muteUntil: 'not a date',
+    },
+    /Mute Until is not a valid date/,
   ],
   [
     'an unknown resource fails with a clear message',

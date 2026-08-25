@@ -18,6 +18,16 @@ async function buildChatRequest(operation, itemIndex) {
         const options = this.getNodeParameter('chatListOptions', itemIndex, {});
         return { endpoint: base, method: 'GET', body: {}, qs: (0, params_1.toQueryParams)(options) };
     }
+    // Clear Messages is the odd one out: it names its chat in the PATH, while every
+    // other chat route carries it in the body.
+    if (operation === 'clearMessages') {
+        const chatId = (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex);
+        return {
+            endpoint: `${base}/${encodeURIComponent(chatId)}/messages`,
+            method: 'DELETE',
+            body: {},
+        };
+    }
     // Every remaining operation posts the target chat in the body rather than the path.
     const chatId = (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex);
     switch (operation) {
@@ -39,6 +49,28 @@ async function buildChatRequest(operation, itemIndex) {
         case 'delete':
             // A POST, not a DELETE — the server takes the chat id in the body here.
             return { endpoint: `${base}/delete`, method: 'POST', body: { chatId } };
+        case 'archive':
+            // Always sent: the flag has no server-side default, so omitting it is a 400.
+            return {
+                endpoint: `${base}/archive`,
+                method: 'POST',
+                body: { chatId, archive: this.getNodeParameter('archive', itemIndex, true) },
+            };
+        case 'pin':
+            return {
+                endpoint: `${base}/pin`,
+                method: 'POST',
+                body: { chatId, pin: this.getNodeParameter('pin', itemIndex, true) },
+            };
+        case 'mute': {
+            const raw = this.getNodeParameter('muteUntil', itemIndex, '');
+            // The key is always present. Omitting it is a 400, while an explicit null is
+            // how a chat is unmuted, so blank has to become null rather than disappear.
+            const muteUntil = raw === '' || raw === undefined || raw === null
+                ? null
+                : (0, params_1.toEpochMs)(this, raw, 'Mute Until', itemIndex);
+            return { endpoint: `${base}/mute`, method: 'POST', body: { chatId, muteUntil } };
+        }
         case 'setState': {
             // 'typing'/'recording' show the indicator, 'paused' clears it.
             const state = this.getNodeParameter('chatState', itemIndex, 'typing');
