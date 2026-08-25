@@ -1078,6 +1078,14 @@ export class OpenWa implements INodeType {
           'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger',
       },
       {
+        displayName:
+          'A 404 here does not only mean the message is missing. The same answer covers a message with no media, media whose download was disabled or exceeded the storage cap, and media sent by URL, whose bytes the gateway never stores. Media sent from a binary field or base64 is retrievable; the same send done from a URL is not. The response is raw bytes, so the server\'s explanation does not reach the workflow.',
+        name: 'messageGetMediaNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['getMedia'] } },
+      },
+      {
         displayName: 'Pin Duration',
         name: 'pinDurationSeconds',
         type: 'options',

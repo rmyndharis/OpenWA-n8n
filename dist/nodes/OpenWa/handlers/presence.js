@@ -19,11 +19,13 @@ async function buildPresenceRequest(operation, itemIndex) {
     switch (operation) {
         case 'subscribe': {
             const chatId = (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex);
-            // SubscribePresenceDto is the one route that regex-checks the chat id, so a
-            // bare phone number 400s here while its siblings accept it. Fail in the node
-            // instead, where the message can name the field.
+            // SubscribePresenceDto requires a domain-qualified id, unlike the sibling
+            // presence routes: Get takes its chat in the path and Set Own Presence takes
+            // none at all. Checking here means the message can name the field, rather than
+            // arriving as a server 400 whose detail is stripped in production. The example
+            // is fixed rather than built from the rejected value, which is not a valid id.
             if (!/^[^\s@]+@[^\s@]+$/.test(chatId)) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Chat ID must be a full WhatsApp ID including its domain (e.g. ${chatId}@c.us), not a bare number`, { itemIndex });
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID must be a full WhatsApp ID including its domain, such as 628123456789@c.us, not a bare number', { itemIndex });
             }
             return { endpoint: `${base}/subscribe`, method: 'POST', body: { chatId } };
         }
