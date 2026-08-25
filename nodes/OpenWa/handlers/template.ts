@@ -1,7 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { optionalNonBlank, requireText } from './params';
+import { optionalNonBlank, requireText, asText } from './params';
 import type { RequestSpec } from './types';
 
 // Server-side DTO limits.
@@ -33,8 +33,8 @@ export async function buildTemplateRequest(
       name: requireText(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
       body: requireText(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
     };
-    const header = (this.getNodeParameter('templateHeader', itemIndex, '') as string).trim();
-    const footer = (this.getNodeParameter('templateFooter', itemIndex, '') as string).trim();
+    const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''));
+    const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''));
     if (header) {
       if (header.length > MAX_HEADER_FOOTER_LENGTH) {
         throw new NodeOperationError(
@@ -90,11 +90,19 @@ export async function buildTemplateRequest(
       const body: Record<string, unknown> = {};
       for (const [key, max] of Object.entries(limits)) {
         const value = fields[key as keyof typeof fields];
-        if (value === undefined) {
+        // null as well as undefined: a collection subfield driven by an expression
+        // can resolve to null, and letting it through reaches `value.length` below.
+        if (value === undefined || value === null) {
           continue;
         }
         if (REJECTS_BLANK.has(key)) {
-          body[key] = optionalNonBlank(this, value, `Template ${key}`, itemIndex, max);
+          // Only assign a real value. Writing the helper's undefined would leave the
+          // key present, so the all-empty guard below would not fire and the request
+          // would go out as {}, reporting success while changing nothing.
+          const parsed = optionalNonBlank(this, value, `Template ${key}`, itemIndex, max);
+          if (parsed !== undefined) {
+            body[key] = parsed;
+          }
           continue;
         }
         if (value.length > max) {

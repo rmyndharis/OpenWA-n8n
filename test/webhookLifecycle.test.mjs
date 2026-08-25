@@ -382,6 +382,49 @@ test('stableStringify is order-insensitive but still distinguishes different val
   assert.equal(stableStringify({ a: 1, b: 2 }), stableStringify({ b: 2, a: 1 }));
   assert.notEqual(stableStringify({ a: 1 }), stableStringify({ a: 2 }));
   assert.equal(stableStringify([1, { z: 1, y: 2 }]), stableStringify([1, { y: 2, z: 1 }]));
+  // Values that must not be conflated, since a collision would hide real drift.
+  assert.notEqual(stableStringify({ a: 1 }), stableStringify({ b: 1 }));
+  assert.notEqual(stableStringify([1, 2]), stableStringify([2, 1]));
+  assert.notEqual(stableStringify({ a: '1' }), stableStringify({ a: 1 }));
+  assert.notEqual(stableStringify(null), stableStringify({}));
+  assert.notEqual(stableStringify([]), stableStringify({}));
+});
+
+test('stableStringify agrees with a JSON round trip, which is what the drift check compares', () => {
+  // One side is what the node holds, the other is what the server parsed and
+  // returned. If those two ever disagree the trigger re-registers on every
+  // activation, so this property is the whole basis of the comparison.
+  for (const value of [
+    { conditions: [{ field: 'fromMe', operator: 'is', value: false }] },
+    { conditions: [] },
+    { a: 1, b: [1, 2, { c: 3, d: null }] },
+    { z: null },
+    [],
+    {},
+    null,
+    { nested: { deep: { deeper: [{ x: 1 }] } } },
+    new Date('2020-01-01T00:00:00.000Z'),
+  ]) {
+    assert.equal(
+      stableStringify(value),
+      stableStringify(JSON.parse(JSON.stringify(value))),
+      `round trip changed the fingerprint of ${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test('stableStringify never throws, even on a cyclic value', () => {
+  // A `json` field driven by an expression can hand us anything. This decides
+  // whether a webhook re-registers, so throwing here would fail activation
+  // outright with a stack error naming nothing.
+  const cyclicObject = {};
+  cyclicObject.self = cyclicObject;
+  const cyclicArray = [];
+  cyclicArray.push(cyclicArray);
+  assert.doesNotThrow(() => stableStringify(cyclicObject));
+  assert.doesNotThrow(() => stableStringify(cyclicArray));
+  // A cycle must not collapse into the same fingerprint as an unrelated shape.
+  assert.notEqual(stableStringify(cyclicObject), stableStringify({ self: {} }));
 });
 
 // --- filters drift on the server side ---

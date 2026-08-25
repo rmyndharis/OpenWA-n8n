@@ -10,13 +10,27 @@ import { NodeOperationError } from 'n8n-workflow';
  * `.`, and because the caller needs a NodeOperationError carrying the item index
  * rather than the bare Error that helper throws.
  */
+/**
+ * A node parameter read as text. An expression can resolve to a number, a boolean
+ * or an object, and calling .trim() on one throws a TypeError that reaches the user
+ * as an opaque API error naming no field. Coercing keeps the value usable where it
+ * makes sense (a numeric id) and lets the emptiness and length checks below give a
+ * pointed message where it does not.
+ */
+export function asText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return typeof value === 'string' ? value.trim() : String(value).trim();
+}
+
 export function requireJid(
   ctx: IExecuteFunctions,
   paramName: string,
   label: string,
   itemIndex: number,
 ): string {
-  const value = (ctx.getNodeParameter(paramName, itemIndex) as string).trim();
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -35,7 +49,7 @@ export function requireText(
   itemIndex: number,
   maxLength?: number,
 ): string {
-  const value = (ctx.getNodeParameter(paramName, itemIndex) as string).trim();
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -106,7 +120,7 @@ export function optionalNonBlank(
   if (value === undefined || value === null) {
     return undefined;
   }
-  const trimmed = value.trim();
+  const trimmed = asText(value);
   if (!trimmed) {
     throw new NodeOperationError(
       ctx.getNode(),

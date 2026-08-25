@@ -15,4 +15,4 @@ export declare function parseJsonParam(raw: unknown): unknown;
  * JSON.stringify comparison would report drift that is not there and re-register
  * the webhook on every activation.
  */
-export declare function stableStringify(value: unknown): string;
+export declare function stableStringify(value: unknown, seen?: Set<object>): string;

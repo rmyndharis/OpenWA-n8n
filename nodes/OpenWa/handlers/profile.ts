@@ -2,7 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireText } from './params';
+import { requireText, asText } from './params';
 import type { RequestSpec } from './types';
 
 const PICTURE_MEDIA: MediaParamNames = {
@@ -42,7 +42,7 @@ export async function buildProfileRequest(
     case 'setStatus': {
       // An empty string is valid here: it clears the about text. Send it as-is
       // rather than dropping the field, which the API would reject as missing.
-      const status = (this.getNodeParameter('profileStatus', itemIndex, '') as string).trim();
+      const status = asText(this.getNodeParameter('profileStatus', itemIndex, ''));
       if (status.length > MAX_STATUS_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),

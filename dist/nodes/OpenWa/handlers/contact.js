@@ -39,8 +39,7 @@ async function buildContactRequest(operation, itemIndex) {
         };
     }
     if (operation === 'checkExists') {
-        const phoneNumber = this.getNodeParameter('phoneNumber', itemIndex)
-            .trim()
+        const phoneNumber = (0, params_1.asText)(this.getNodeParameter('phoneNumber', itemIndex))
             .replace(/[\s+\-()]/g, '');
         if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must contain only digits (no +, spaces, or special characters)', { itemIndex });
@@ -65,7 +64,7 @@ async function buildContactRequest(operation, itemIndex) {
         operation === 'getPhone' ||
         operation === 'save' ||
         operation === 'delete') {
-        const contactId = this.getNodeParameter('contactId', itemIndex).trim();
+        const contactId = (0, params_1.asText)(this.getNodeParameter('contactId', itemIndex));
         if (!contactId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
                 itemIndex,

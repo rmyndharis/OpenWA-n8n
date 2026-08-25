@@ -1205,6 +1205,20 @@ mappingCases.push(
     `${BASE}/api/stats/messages`,
     undefined,
   ],
+  [
+    'webhook/update clears headers with an empty object, which the NOT NULL column takes',
+    // `null` would be written straight into the column and fail its constraint.
+    {
+      resource: 'webhook',
+      operation: 'update',
+      ...S,
+      webhookId: 'w1',
+      updateFields: { headers: 'null' },
+    },
+    'PUT',
+    `${SESS}/webhooks/w1`,
+    { headers: {} },
+  ],
   // --- webhook create additional fields ---
   [
     'webhook/create registers filters, headers and a retry count',
@@ -2490,6 +2504,54 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('template/update refuses an empty patch when its only field resolved to null', async () => {
+  // optionalNonBlank returns undefined for null. Assigning that left the key in the
+  // body, so the all-empty guard never fired and a {} PUT reported success.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'template',
+        operation: 'update',
+        sessionId: 'abc-123',
+        templateId: 't1',
+        templateUpdateFields: { name: null },
+      }),
+    /At least one field must be provided/,
+  );
+});
+
+test('template/update ignores a null field and still sends the ones that were set', async () => {
+  const { ctx } = await run({
+    resource: 'template',
+    operation: 'update',
+    sessionId: 'abc-123',
+    templateId: 't1',
+    templateUpdateFields: { name: null, body: 'new body' },
+  });
+  assert.deepEqual(singleCall(ctx).options.body, { body: 'new body' });
+});
+
+test('a text parameter resolved to a number is coerced, not crashed on', async () => {
+  // An expression can hand a handler a number. Calling .trim() on one threw a
+  // TypeError that reached the user as an opaque API error naming no field.
+  const { ctx } = await run({
+    resource: 'contact',
+    operation: 'checkExists',
+    sessionId: 'abc-123',
+    phoneNumber: 628123456789,
+  });
+  assert.match(singleCall(ctx).options.url, /contacts\/check\/628123456789$/);
+});
+
+test('a path parameter resolved to a number is coerced, not crashed on', async () => {
+  const { ctx } = await run({
+    resource: 'session',
+    operation: 'getStatus',
+    sessionId: 12345,
+  });
+  assert.match(singleCall(ctx).options.url, /\/api\/sessions\/12345$/);
 });
 
 test('system/getStatsMessages sends the period as a query parameter', async () => {

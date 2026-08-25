@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText, toQueryParams, toStringList } from './params';
+import { requireText, toQueryParams, toStringList, asText } from './params';
 import type { RequestSpec } from './types';
 
 // The bulk profile-picture route documents "max 50 used" — beyond that the
@@ -54,8 +54,7 @@ export async function buildContactRequest(
   }
 
   if (operation === 'checkExists') {
-    const phoneNumber = (this.getNodeParameter('phoneNumber', itemIndex) as string)
-      .trim()
+    const phoneNumber = asText(this.getNodeParameter('phoneNumber', itemIndex))
       .replace(/[\s+\-()]/g, '');
     if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
       throw new NodeOperationError(
@@ -88,7 +87,7 @@ export async function buildContactRequest(
     operation === 'save' ||
     operation === 'delete'
   ) {
-    const contactId = (this.getNodeParameter('contactId', itemIndex) as string).trim();
+    const contactId = asText(this.getNodeParameter('contactId', itemIndex));
     if (!contactId) {
       throw new NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
         itemIndex,

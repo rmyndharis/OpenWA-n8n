@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.asText = asText;
 exports.requireJid = requireJid;
 exports.requireText = requireText;
 exports.toQueryParams = toQueryParams;
@@ -16,8 +17,21 @@ const n8n_workflow_1 = require("n8n-workflow");
  * `.`, and because the caller needs a NodeOperationError carrying the item index
  * rather than the bare Error that helper throws.
  */
+/**
+ * A node parameter read as text. An expression can resolve to a number, a boolean
+ * or an object, and calling .trim() on one throws a TypeError that reaches the user
+ * as an opaque API error naming no field. Coercing keeps the value usable where it
+ * makes sense (a numeric id) and lets the emptiness and length checks below give a
+ * pointed message where it does not.
+ */
+function asText(value) {
+    if (value === undefined || value === null) {
+        return '';
+    }
+    return typeof value === 'string' ? value.trim() : String(value).trim();
+}
 function requireJid(ctx, paramName, label, itemIndex) {
-    const value = ctx.getNodeParameter(paramName, itemIndex).trim();
+    const value = asText(ctx.getNodeParameter(paramName, itemIndex));
     if (!value) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
@@ -29,7 +43,7 @@ function requireJid(ctx, paramName, label, itemIndex) {
  * message instead of a generic 400.
  */
 function requireText(ctx, paramName, label, itemIndex, maxLength) {
-    const value = ctx.getNodeParameter(paramName, itemIndex).trim();
+    const value = asText(ctx.getNodeParameter(paramName, itemIndex));
     if (!value) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
@@ -86,7 +100,7 @@ function optionalNonBlank(ctx, value, label, itemIndex, maxLength) {
     if (value === undefined || value === null) {
         return undefined;
     }
-    const trimmed = value.trim();
+    const trimmed = asText(value);
     if (!trimmed) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. Remove it from the fields to leave it unchanged.`, { itemIndex });
     }

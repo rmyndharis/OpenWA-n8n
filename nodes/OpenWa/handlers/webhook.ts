@@ -162,6 +162,13 @@ export async function buildWebhookRequest(
         body.filters = null; // explicit null clears existing filters
         continue;
       }
+      // Headers are NOT NULL server-side and clear with an empty object, so null
+      // would be written straight into the column and fail the constraint. Accept
+      // the same gesture the sibling field documents and send what the column takes.
+      if (key === 'headers' && (raw === null || raw === 'null')) {
+        body.headers = {};
+        continue;
+      }
       if (raw === null || raw === '') continue; // blank value — nothing to send
       body[key] = parseJsonObject(
         this.getNode(),

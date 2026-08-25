@@ -465,7 +465,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'Conversion returns <code>base64</code> and <code>mimetype</code> ready to feed straight into Message > Send Audio (Base64 source, Send as Voice Note on) or Status > Send Voice. Nothing else in the pipeline transcodes, so without this an MP3 sent as a voice note produces a microphone bubble that will not play. Conversion is optional on the server and needs ffmpeg: use Check Availability first, and read a 503 as conversion being disabled or busy rather than as a bad request. No MIME type is sent, because the server reads it from the bytes.',
+          'Conversion returns <code>base64</code> and <code>mimetype</code> ready to feed into a send. Convert to Voice Note produces Ogg/Opus for Message > Send Audio (Base64 source, Send as Voice Note on) or Status > Send Voice; Convert to Video produces an MP4 for Message > Send Video. Nothing else in the pipeline transcodes, so without this an MP3 sent as a voice note produces a microphone bubble that will not play. Conversion is optional on the server and needs ffmpeg: use Check Availability first, and read a 503 as conversion being disabled or busy rather than as a bad request. No MIME type is sent, because the server reads it from the bytes.',
         name: 'mediaConvertNotice',
         type: 'notice',
         default: '',
@@ -1066,7 +1066,7 @@ export class OpenWa implements INodeType {
           },
         ],
       },
-      // Mentions (Send Text / Image / Video / Document / Edit)
+      // Mentions (every send whose DTO carries it, plus Reply and Edit)
       {
         displayName: 'Mentions',
         name: 'mentions',
@@ -1559,7 +1559,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'The addressbook is keyed by phone number, so this needs a plain <code>@c.us</code> contact ID. A privacy ID (<code>@lid</code>), a group, or a channel is refused. The entry is stored on the gateway only and is not written to the phone\'s own contacts.',
+          'The addressbook is keyed by phone number, so this needs a plain <code>@c.us</code> contact ID. A privacy ID (<code>@lid</code>), a group, or a channel is refused. This writes to the WhatsApp account\'s own addressbook and syncs to the linked devices, so it is a real change to the account, not a note kept on the gateway. It is not added to the phone\'s native contacts.',
         name: 'contactSaveNotice',
         type: 'notice',
         default: '',
@@ -2111,7 +2111,7 @@ export class OpenWa implements INodeType {
             name: 'filters',
             type: 'json',
             default: '',
-            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
           },
           {
             displayName: 'Headers',
@@ -2320,7 +2320,7 @@ export class OpenWa implements INodeType {
         default: true,
         displayOptions: { show: { resource: ['chat'], operation: ['pin'] } },
         description:
-          'Whether to pin the chat. Turn off to unpin. WhatsApp allows at most three pinned chats, and a fourth is refused: check the returned success flag rather than assuming the pin stuck.',
+          'Whether to pin the chat. Turn off to unpin. WhatsApp allows at most three pinned chats and refuses a fourth. On whatsapp-web.js that refusal comes back as a false success flag, so check it. On Baileys the flag is always true and the cap is invisible, so a fourth pin reports success and does not stick.',
       },
       {
         displayName: 'Mute Until',
@@ -2885,7 +2885,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to every contact regardless, so do not rely on it to limit the audience there.',
+          'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to that account\'s usual status audience regardless, so do not rely on it to limit who sees it there.',
       },
       {
         displayName: 'Image Source',
@@ -3318,7 +3318,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'Delete destroys the channel for every subscriber and cannot be undone, and only its owner can do it. Unsubscribe merely unfollows it for this account and can be reversed by subscribing again.',
+          'Delete destroys the channel for every subscriber and cannot be undone, and only its owner can do it. Unsubscribe merely unfollows it for this account. Reversing that means subscribing again, which only Baileys can do: whatsapp-web.js unsubscribes but answers 501 on Subscribe, so there it is one-way.',
         name: 'channelDeleteNotice',
         type: 'notice',
         default: '',
@@ -3463,7 +3463,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Match conditions as JSON, in the same shape as webhook filters. Leave the field empty to match every inbound message; an empty object is refused, so use {"conditions":[]} if you want to send a match-all explicitly.',
+              'Match conditions as JSON, in the same shape as webhook filters. Leaving this blank keeps the rule\'s stored conditions unchanged, because an update only sends the fields you fill in. To make the rule answer everything again, send {"conditions":[]}; an empty object on its own is refused.',
           },
           {
             displayName: 'Cooldown (Seconds)',

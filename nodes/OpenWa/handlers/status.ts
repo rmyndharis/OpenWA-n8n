@@ -2,7 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireJid, requireText, toStringList } from './params';
+import { requireJid, requireText, toStringList, asText } from './params';
 import type { RequestSpec } from './types';
 
 const STATUS_IMAGE_MEDIA: MediaParamNames = {
@@ -57,7 +57,7 @@ function getRecipients(ctx: IExecuteFunctions, itemIndex: number): string[] | un
 
 /** Reads the optional caption shared by the image and video send operations. */
 function getCaption(ctx: IExecuteFunctions, itemIndex: number): string | undefined {
-  const caption = (ctx.getNodeParameter('statusCaption', itemIndex, '') as string).trim();
+  const caption = asText(ctx.getNodeParameter('statusCaption', itemIndex, ''));
   if (!caption) {
     return undefined;
   }

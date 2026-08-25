@@ -7,7 +7,7 @@ const params_1 = require("./params");
 async function buildSessionRequest(operation, itemIndex) {
     if (operation === 'create') {
         const body = {};
-        const sessionName = this.getNodeParameter('sessionName', itemIndex).trim();
+        const sessionName = (0, params_1.asText)(this.getNodeParameter('sessionName', itemIndex));
         if (!sessionName) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session name cannot be empty', {
                 itemIndex,
@@ -36,7 +36,7 @@ async function buildSessionRequest(operation, itemIndex) {
         // a 400 while an absent key is the documented "no proxy". The scheme is checked
         // here so a typo fails in the editor rather than as a 504 half a minute into a
         // Start that never produces a QR.
-        const proxyUrl = this.getNodeParameter('proxyUrl', itemIndex, '').trim();
+        const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''));
         if (proxyUrl) {
             if (!/^(https?|socks[45]):\/\//i.test(proxyUrl)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must start with http://, https://, socks4:// or socks5://', { itemIndex });
@@ -102,8 +102,7 @@ async function buildSessionRequest(operation, itemIndex) {
             return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
         }
         case 'requestPairingCode': {
-            const phoneNumber = this.getNodeParameter('pairingPhoneNumber', itemIndex)
-                .trim()
+            const phoneNumber = (0, params_1.asText)(this.getNodeParameter('pairingPhoneNumber', itemIndex))
                 .replace(/[\s+\-()]/g, '');
             if (!/^\d{6,15}$/.test(phoneNumber)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must be 6–15 digits in international format (e.g. 628123456789)', { itemIndex });

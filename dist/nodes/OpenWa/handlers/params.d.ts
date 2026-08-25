@@ -8,6 +8,14 @@ import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
  * `.`, and because the caller needs a NodeOperationError carrying the item index
  * rather than the bare Error that helper throws.
  */
+/**
+ * A node parameter read as text. An expression can resolve to a number, a boolean
+ * or an object, and calling .trim() on one throws a TypeError that reaches the user
+ * as an opaque API error naming no field. Coercing keeps the value usable where it
+ * makes sense (a numeric id) and lets the emptiness and length checks below give a
+ * pointed message where it does not.
+ */
+export declare function asText(value: unknown): string;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
 /**
  * Reads a required free-text parameter, trimmed, optionally length-checked

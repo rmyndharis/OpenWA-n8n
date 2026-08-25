@@ -30,14 +30,14 @@ async function buildMediaRequest(operation, itemIndex) {
     const source = this.getNodeParameter('mediaConvertSource', itemIndex, 'binary');
     let body;
     if (source === 'url') {
-        const url = this.getNodeParameter('mediaConvertUrl', itemIndex, '').trim();
+        const url = String(this.getNodeParameter('mediaConvertUrl', itemIndex, '') ?? '').trim();
         if (!url) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media URL cannot be empty', { itemIndex });
         }
         body = { url };
     }
     else if (source === 'base64') {
-        const base64 = this.getNodeParameter('mediaConvertBase64', itemIndex, '').trim();
+        const base64 = String(this.getNodeParameter('mediaConvertBase64', itemIndex, '') ?? '').trim();
         if (!base64) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base64 data cannot be empty', { itemIndex });
         }
