@@ -23,8 +23,8 @@ async function buildTemplateRequest(operation, itemIndex) {
             name: (0, params_1.requireText)(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
             body: (0, params_1.requireText)(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
         };
-        const header = this.getNodeParameter('templateHeader', itemIndex, '').trim();
-        const footer = this.getNodeParameter('templateFooter', itemIndex, '').trim();
+        const header = (0, params_1.asText)(this.getNodeParameter('templateHeader', itemIndex, ''));
+        const footer = (0, params_1.asText)(this.getNodeParameter('templateFooter', itemIndex, ''));
         if (header) {
             if (header.length > MAX_HEADER_FOOTER_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Header cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`, { itemIndex });
@@ -62,11 +62,19 @@ async function buildTemplateRequest(operation, itemIndex) {
             const body = {};
             for (const [key, max] of Object.entries(limits)) {
                 const value = fields[key];
-                if (value === undefined) {
+                // null as well as undefined: a collection subfield driven by an expression
+                // can resolve to null, and letting it through reaches `value.length` below.
+                if (value === undefined || value === null) {
                     continue;
                 }
                 if (REJECTS_BLANK.has(key)) {
-                    body[key] = (0, params_1.optionalNonBlank)(this, value, `Template ${key}`, itemIndex, max);
+                    // Only assign a real value. Writing the helper's undefined would leave the
+                    // key present, so the all-empty guard below would not fire and the request
+                    // would go out as {}, reporting success while changing nothing.
+                    const parsed = (0, params_1.optionalNonBlank)(this, value, `Template ${key}`, itemIndex, max);
+                    if (parsed !== undefined) {
+                        body[key] = parsed;
+                    }
                     continue;
                 }
                 if (value.length > max) {

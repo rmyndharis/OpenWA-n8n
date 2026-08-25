@@ -50,7 +50,7 @@ function getRecipients(ctx, itemIndex) {
 }
 /** Reads the optional caption shared by the image and video send operations. */
 function getCaption(ctx, itemIndex) {
-    const caption = ctx.getNodeParameter('statusCaption', itemIndex, '').trim();
+    const caption = (0, params_1.asText)(ctx.getNodeParameter('statusCaption', itemIndex, ''));
     if (!caption) {
         return undefined;
     }

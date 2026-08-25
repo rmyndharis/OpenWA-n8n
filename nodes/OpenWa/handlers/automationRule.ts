@@ -1,5 +1,6 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
+import { parseJsonParam } from '../../shared/jsonParam';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { optionalNonBlank, requireText } from './params';
 import type { RequestSpec } from './types';
@@ -8,17 +9,18 @@ import type { RequestSpec } from './types';
 const MAX_RULE_NAME_LENGTH = 100;
 const MAX_REPLY_TEXT_LENGTH = 4096;
 
-/** Parses the optional match conditions, which reuse the webhook filter shape. */
+/**
+ * Parses the optional match conditions, which reuse the webhook filter shape.
+ * Shares the Trigger's reader so the two identically shaped fields agree on
+ * whitespace, on an already-resolved object, and on null.
+ */
 function parseConditions(
   ctx: IExecuteFunctions,
   raw: unknown,
   itemIndex: number,
 ): unknown | undefined {
-  if (raw === undefined || raw === null || raw === '') {
-    return undefined;
-  }
   try {
-    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parseJsonParam(raw);
   } catch {
     throw new NodeOperationError(ctx.getNode(), 'Conditions must be valid JSON', { itemIndex });
   }

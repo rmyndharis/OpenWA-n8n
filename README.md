@@ -255,9 +255,11 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
-> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, Send Document and **Edit** accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+> **Mentions:** an optional list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Send Audio and Send Sticker carry no text, so the tag notifies without anything visible.
 >
-> On **Edit** the list is re-applied rather than preserved, because an edit replaces the message content: name every ID the edited message should still tag, or leave it empty to drop the tags the original carried. The server also accepts mentions on Reply, Send Audio, Send Sticker and Send Template, which this node does not surface yet.
+> The floor differs by operation. **Send Text**, **Send Image**, **Send Video**, **Send Document**, **Send Sticker** and **Send Audio** have accepted it since server **≥ 0.7.14**. **Reply**, **Edit** and **Send Template** need server **≥ 0.23.0**. Leave the list empty on an older server.
+>
+> On **Edit** the list is re-applied rather than preserved, because an edit replaces the message content: name every ID the edited message should still tag, or leave it empty to drop the tags the original carried.
 
 > **Message actions:** Reply, React, and Delete act on an existing message identified by its full serialized ID (e.g. `true_628123456789@c.us_3EB0…`) — the value returned by the send operations and delivered by the Trigger. React with an empty **Emoji** to remove your reaction; Delete defaults to revoking for everyone.
 
@@ -398,8 +400,10 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | ----- | ----- | ----- |
 | **Quoted Message ID** | the nine single-message sends | server **≥ 0.17.0** |
 | **Message IDs** | Chat > Mark Read | server **≥ 0.23.0** |
-| **Mentions** | Message > Edit and Message > Reply | server **≥ 0.23.0** |
+| **Mentions** | Message > Edit, Reply and Send Template | server **≥ 0.23.0** |
 | **Link Preview** | Message > Send Template | server **≥ 0.23.0** |
+
+> Everything else in the table above is available at the badge floor. Where an operation exists on only one engine, the node says so on the field or resource rather than leaving a `501` to explain itself.
 
 The Trigger alone still works against much older servers if you subscribe only to events that existed then; its webhook contract and HMAC verification landed in v0.4.0.
 

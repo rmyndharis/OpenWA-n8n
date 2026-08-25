@@ -32,7 +32,7 @@ async function buildProfileRequest(operation, itemIndex) {
         case 'setStatus': {
             // An empty string is valid here: it clears the about text. Send it as-is
             // rather than dropping the field, which the API would reject as missing.
-            const status = this.getNodeParameter('profileStatus', itemIndex, '').trim();
+            const status = (0, params_1.asText)(this.getNodeParameter('profileStatus', itemIndex, ''));
             if (status.length > MAX_STATUS_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Status cannot exceed ${MAX_STATUS_LENGTH} characters`, { itemIndex });
             }

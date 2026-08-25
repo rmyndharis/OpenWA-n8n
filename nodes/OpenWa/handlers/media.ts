@@ -40,13 +40,13 @@ export async function buildMediaRequest(
   const source = this.getNodeParameter('mediaConvertSource', itemIndex, 'binary') as string;
   let body: Record<string, unknown>;
   if (source === 'url') {
-    const url = (this.getNodeParameter('mediaConvertUrl', itemIndex, '') as string).trim();
+    const url = String(this.getNodeParameter('mediaConvertUrl', itemIndex, '') ?? '').trim();
     if (!url) {
       throw new NodeOperationError(this.getNode(), 'Media URL cannot be empty', { itemIndex });
     }
     body = { url };
   } else if (source === 'base64') {
-    const base64 = (this.getNodeParameter('mediaConvertBase64', itemIndex, '') as string).trim();
+    const base64 = String(this.getNodeParameter('mediaConvertBase64', itemIndex, '') ?? '').trim();
     if (!base64) {
       throw new NodeOperationError(this.getNode(), 'Base64 data cannot be empty', { itemIndex });
     }

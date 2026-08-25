@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { toQueryParams } from './params';
+import { toQueryParams, asText } from './params';
 import type { RequestSpec } from './types';
 
 export async function buildSessionRequest(
@@ -11,7 +11,7 @@ export async function buildSessionRequest(
 ): Promise<RequestSpec | null> {
   if (operation === 'create') {
     const body: Record<string, unknown> = {};
-    const sessionName = (this.getNodeParameter('sessionName', itemIndex) as string).trim();
+    const sessionName = asText(this.getNodeParameter('sessionName', itemIndex));
     if (!sessionName) {
       throw new NodeOperationError(this.getNode(), 'Session name cannot be empty', {
         itemIndex,
@@ -47,7 +47,7 @@ export async function buildSessionRequest(
     // a 400 while an absent key is the documented "no proxy". The scheme is checked
     // here so a typo fails in the editor rather than as a 504 half a minute into a
     // Start that never produces a QR.
-    const proxyUrl = (this.getNodeParameter('proxyUrl', itemIndex, '') as string).trim();
+    const proxyUrl = asText(this.getNodeParameter('proxyUrl', itemIndex, ''));
     if (proxyUrl) {
       if (!/^(https?|socks[45]):\/\//i.test(proxyUrl)) {
         throw new NodeOperationError(
@@ -136,8 +136,7 @@ export async function buildSessionRequest(
       return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
     }
     case 'requestPairingCode': {
-      const phoneNumber = (this.getNodeParameter('pairingPhoneNumber', itemIndex) as string)
-        .trim()
+      const phoneNumber = asText(this.getNodeParameter('pairingPhoneNumber', itemIndex))
         .replace(/[\s+\-()]/g, '');
       if (!/^\d{6,15}$/.test(phoneNumber)) {
         throw new NodeOperationError(

@@ -12,7 +12,7 @@ const media_1 = require("../media");
  * the item index rather than a bare Error.
  */
 function getGroupId(itemIndex) {
-    const groupId = this.getNodeParameter('groupId', itemIndex).trim();
+    const groupId = (0, params_1.asText)(this.getNodeParameter('groupId', itemIndex));
     if (!groupId) {
         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Group ID cannot be empty', { itemIndex });
     }
@@ -64,7 +64,7 @@ async function buildGroupRequest(operation, itemIndex) {
         return { endpoint: base, method: 'GET', body: {}, qs };
     }
     if (operation === 'create') {
-        const name = this.getNodeParameter('groupName', itemIndex).trim();
+        const name = (0, params_1.asText)(this.getNodeParameter('groupName', itemIndex));
         if (!name) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Group name cannot be empty', { itemIndex });
         }
@@ -80,8 +80,7 @@ async function buildGroupRequest(operation, itemIndex) {
     if (operation === 'join') {
         // Accept a full invite link too — the API wants only the code that follows
         // https://chat.whatsapp.com/, and pasting the whole link is the common slip.
-        const inviteCode = this.getNodeParameter('groupInviteCode', itemIndex)
-            .trim()
+        const inviteCode = (0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex))
             .replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
         if (!inviteCode) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
@@ -93,8 +92,7 @@ async function buildGroupRequest(operation, itemIndex) {
     }
     if (operation === 'getJoinInfo') {
         // Same link-tolerance as join: pasting the whole invite URL is the common slip.
-        const inviteCode = this.getNodeParameter('groupInviteCode', itemIndex)
-            .trim()
+        const inviteCode = (0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex))
             .replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
         if (!inviteCode) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
@@ -176,7 +174,7 @@ async function buildGroupRequest(operation, itemIndex) {
                 body: { participants: getParticipants.call(this, itemIndex) },
             };
         case 'updateSubject': {
-            const subject = this.getNodeParameter('groupSubject', itemIndex).trim();
+            const subject = (0, params_1.asText)(this.getNodeParameter('groupSubject', itemIndex));
             if (!subject) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Subject cannot be empty', { itemIndex });
             }

@@ -119,7 +119,7 @@ async function buildMessageRequest(operation, itemIndex) {
     // List name their chats through their own fields, so all of them skip Chat ID.
     let chatId = '';
     if (!CHATLESS_OPERATIONS.has(operation)) {
-        chatId = this.getNodeParameter('chatId', itemIndex).trim();
+        chatId = (0, params_1.asText)(this.getNodeParameter('chatId', itemIndex));
         if (!chatId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
                 itemIndex,
@@ -146,7 +146,7 @@ async function buildMessageRequest(operation, itemIndex) {
         };
     }
     if (operation === 'getReactions') {
-        const messageId = this.getNodeParameter('messageId', itemIndex).trim();
+        const messageId = (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex));
         if (!messageId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
         }
@@ -157,7 +157,7 @@ async function buildMessageRequest(operation, itemIndex) {
         };
     }
     if (operation === 'getMedia') {
-        const messageId = this.getNodeParameter('messageId', itemIndex).trim();
+        const messageId = (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex));
         if (!messageId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
         }
@@ -192,7 +192,7 @@ async function buildMessageRequest(operation, itemIndex) {
     else if (operation === 'sendImage') {
         endpoint = `/api/sessions/${sessionId}/messages/send-image`;
         body = { chatId };
-        const caption = this.getNodeParameter('caption', itemIndex, '').trim();
+        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''));
         if (caption) {
             body.caption = caption;
         }
@@ -206,7 +206,7 @@ async function buildMessageRequest(operation, itemIndex) {
             chatId,
             filename: this.getNodeParameter('filename', itemIndex, 'document.pdf'),
         };
-        const caption = this.getNodeParameter('caption', itemIndex, '').trim();
+        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''));
         if (caption) {
             body.caption = caption;
         }
@@ -219,14 +219,14 @@ async function buildMessageRequest(operation, itemIndex) {
             latitude: this.getNodeParameter('latitude', itemIndex),
             longitude: this.getNodeParameter('longitude', itemIndex),
         };
-        const locationName = this.getNodeParameter('locationName', itemIndex, '').trim();
+        const locationName = (0, params_1.asText)(this.getNodeParameter('locationName', itemIndex, ''));
         if (locationName) {
             // OpenWA's SendLocationDto uses `description` for the location label.
             body.description = locationName;
         }
         // A separate field from the label: WhatsApp renders `description` as the place
         // name and `address` as the line under it.
-        const address = this.getNodeParameter('locationAddress', itemIndex, '').trim();
+        const address = (0, params_1.asText)(this.getNodeParameter('locationAddress', itemIndex, ''));
         if (address) {
             body.address = address;
         }
@@ -246,7 +246,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/reply`;
         body = {
             chatId,
-            quotedMessageId: this.getNodeParameter('quotedMessageId', itemIndex).trim(),
+            quotedMessageId: (0, params_1.asText)(this.getNodeParameter('quotedMessageId', itemIndex)),
             text: this.getNodeParameter('message', itemIndex),
         };
     }
@@ -255,7 +255,7 @@ async function buildMessageRequest(operation, itemIndex) {
         // An empty emoji removes the existing reaction — the field is intentionally sent.
         body = {
             chatId,
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
             emoji: this.getNodeParameter('emoji', itemIndex, ''),
         };
     }
@@ -263,14 +263,14 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/delete`;
         body = {
             chatId,
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
             forEveryone: this.getNodeParameter('forEveryone', itemIndex, true),
         };
     }
     else if (operation === 'sendVideo') {
         endpoint = `/api/sessions/${sessionId}/messages/send-video`;
         body = { chatId };
-        const caption = this.getNodeParameter('caption', itemIndex, '').trim();
+        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''));
         if (caption) {
             body.caption = caption;
         }
@@ -301,7 +301,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/send-template`;
         body = { chatId };
         // The API takes either a template id or a template name, not both.
-        const templateId = this.getNodeParameter('sendTemplateId', itemIndex, '').trim();
+        const templateId = (0, params_1.asText)(this.getNodeParameter('sendTemplateId', itemIndex, ''));
         const templateName = this.getNodeParameter('sendTemplateName', itemIndex, '').trim();
         if (!templateId && !templateName) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Provide either a Template ID or a Template Name', { itemIndex });
@@ -336,7 +336,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/edit`;
         body = {
             chatId,
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
             body: (0, params_1.requireText)(this, 'message', 'Message', itemIndex, MAX_EDIT_BODY_LENGTH),
         };
     }
@@ -345,7 +345,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             fromChatId: (0, params_1.requireJid)(this, 'fromChatId', 'From Chat ID', itemIndex),
             toChatId: (0, params_1.requireJid)(this, 'toChatId', 'To Chat ID', itemIndex),
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
         };
         // send-catalog has no branch because the route no longer exists at all; the
         // server removed it. The catalog reads live on the Catalog resource.
@@ -354,7 +354,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
         body = {
             chatId,
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
         };
         if (operation === 'pin') {
             // UnpinMessageDto does not declare this field, so it must not ride along.
@@ -366,7 +366,7 @@ async function buildMessageRequest(operation, itemIndex) {
         // `star` has no server-side default: omitting it is a 400, so it is always sent.
         body = {
             chatId,
-            messageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
             star: this.getNodeParameter('star', itemIndex, true),
         };
     }
@@ -379,7 +379,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             chatId,
             // The wire name is pollMessageId here, not messageId.
-            pollMessageId: this.getNodeParameter('messageId', itemIndex).trim(),
+            pollMessageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex)),
             // Always sent, including empty: omitting the key is a 400, and an empty
             // array is how a vote is cleared.
             options: selections,
@@ -392,7 +392,7 @@ async function buildMessageRequest(operation, itemIndex) {
             productId: (0, params_1.requireText)(this, 'productId', 'Product ID', itemIndex),
         };
         // The wire field really is called `body`, inside the request body object.
-        const productBody = this.getNodeParameter('productBody', itemIndex, '').trim();
+        const productBody = (0, params_1.asText)(this.getNodeParameter('productBody', itemIndex, ''));
         if (productBody) {
             body.body = productBody;
         }
@@ -401,8 +401,8 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
         body = {
             chatId,
-            contactName: this.getNodeParameter('contactName', itemIndex).trim(),
-            contactNumber: this.getNodeParameter('contactNumber', itemIndex).trim(),
+            contactName: (0, params_1.asText)(this.getNodeParameter('contactName', itemIndex)),
+            contactNumber: (0, params_1.asText)(this.getNodeParameter('contactNumber', itemIndex)),
         };
     }
     else if (operation === 'sendBulk') {
@@ -415,7 +415,7 @@ async function buildMessageRequest(operation, itemIndex) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), e.message, { itemIndex });
         }
         body = { messages };
-        const batchId = this.getNodeParameter('batchId', itemIndex, '').trim();
+        const batchId = (0, params_1.asText)(this.getNodeParameter('batchId', itemIndex, ''));
         if (batchId) {
             body.batchId = batchId;
         }
@@ -448,7 +448,7 @@ async function buildMessageRequest(operation, itemIndex) {
     // and Send Template and Edit can tag but cannot quote. Neither is derived from
     // the other.
     if (QUOTABLE_SENDS.has(operation)) {
-        const quoted = this.getNodeParameter('sendQuotedMessageId', itemIndex, '').trim();
+        const quoted = (0, params_1.asText)(this.getNodeParameter('sendQuotedMessageId', itemIndex, ''));
         if (quoted) {
             body.quotedMessageId = quoted;
         }

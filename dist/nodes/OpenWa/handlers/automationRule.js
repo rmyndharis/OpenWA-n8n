@@ -2,18 +2,20 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildAutomationRuleRequest = buildAutomationRuleRequest;
 const n8n_workflow_1 = require("n8n-workflow");
+const jsonParam_1 = require("../../shared/jsonParam");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const params_1 = require("./params");
 // Server-side DTO limits.
 const MAX_RULE_NAME_LENGTH = 100;
 const MAX_REPLY_TEXT_LENGTH = 4096;
-/** Parses the optional match conditions, which reuse the webhook filter shape. */
+/**
+ * Parses the optional match conditions, which reuse the webhook filter shape.
+ * Shares the Trigger's reader so the two identically shaped fields agree on
+ * whitespace, on an already-resolved object, and on null.
+ */
 function parseConditions(ctx, raw, itemIndex) {
-    if (raw === undefined || raw === null || raw === '') {
-        return undefined;
-    }
     try {
-        return typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return (0, jsonParam_1.parseJsonParam)(raw);
     }
     catch {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), 'Conditions must be valid JSON', { itemIndex });
