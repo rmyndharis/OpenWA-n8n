@@ -27,6 +27,7 @@ function makeCtx({
   configHash,
   secret = '',
   events = ['message.received'],
+  filters,
   throwErr = null,
   createResponse = { id: 'w1' },
   // What GET /webhooks/:id answers. Defaults to a registration that still matches
@@ -39,12 +40,14 @@ function makeCtx({
   if (configHash !== undefined) staticData.configHash = configHash;
   const calls = [];
   const params = { sessionId: 'default', events, webhookSecret: secret };
+  if (filters !== undefined) params.filters = filters;
   const ctx = {
     calls,
     getWorkflowStaticData: () => staticData,
     getCredentials: async () => ({ serverUrl: 'http://localhost:2785' }),
     getNode: () => ({ id: 'node-1', name: 'OpenWA Trigger' }),
-    getNodeParameter: (name) => params[name],
+    // Mirrors n8n: an unset parameter falls back to the supplied default.
+    getNodeParameter: (name, fallback) => (name in params ? params[name] : fallback),
     getNodeWebhookUrl: () => WEBHOOK_URL,
     helpers: {
       httpRequestWithAuthentication: async (_cred, options) => {
@@ -307,4 +310,44 @@ test('the webhook path is scoped to the session id', () => {
   const webhooks = new OpenWaTrigger().description.webhooks;
   assert.equal(webhooks.length, 1);
   assert.equal(webhooks[0].path, '={{ "openwa-" + $parameter["sessionId"] }}');
+});
+
+// --- server-side filters ---
+test('create: registers filters alongside the URL and events', async () => {
+  const { ctx, calls } = makeCtx({ filters: '{"conditions":[{"field":"fromMe","operator":"is","value":false}]}' });
+  assert.equal(await hooks().create.call(ctx), true);
+  const post = calls.find((c) => c.method === 'POST');
+  assert.deepEqual(post.body.filters, {
+    conditions: [{ field: 'fromMe', operator: 'is', value: false }],
+  });
+});
+
+test('create: a webhook with no filters registers none', async () => {
+  const { ctx, calls } = makeCtx();
+  await hooks().create.call(ctx);
+  const post = calls.find((c) => c.method === 'POST');
+  assert.equal('filters' in post.body, false);
+});
+
+test('create: refuses filters that are not valid JSON', async () => {
+  const { ctx } = makeCtx({ filters: '{not json' });
+  await assert.rejects(() => hooks().create.call(ctx), /Filters must be valid JSON/);
+});
+
+test('checkExists: an edited filter re-registers the webhook', async () => {
+  // The registration was made with no filters; the node now asks for one.
+  const { ctx, staticData } = makeCtx({
+    configHash: CURRENT_HASH,
+    filters: '{"conditions":[{"field":"isGroup","operator":"is","value":true}]}',
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('webhookConfigHash separates two different filter sets', () => {
+  const base = { url: 'u', events: ['a.b'], secret: 's', sessionId: 'x' };
+  assert.notEqual(
+    webhookConfigHash({ ...base, filters: '{"conditions":[]}' }),
+    webhookConfigHash(base),
+  );
 });

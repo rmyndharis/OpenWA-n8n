@@ -1,7 +1,7 @@
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
  * registration depends on: the delivery URL n8n advertises, the subscribed
- * events, the signing secret, and the session. When any of these changes, the
+ * events, the signing secret, the session, and any server-side filters. When any of these changes, the
  * stored registration is stale and must be re-created — checkExists compares
  * this hash and re-registers on a mismatch.
  *
@@ -13,4 +13,5 @@ export declare function webhookConfigHash(config: {
     events: string[];
     secret: string;
     sessionId: string;
+    filters?: string;
 }): string;

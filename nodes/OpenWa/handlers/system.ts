@@ -28,8 +28,12 @@ export async function buildSystemRequest(
 
     case 'getStatsOverview':
       return { endpoint: '/api/stats/overview', method: 'GET', body: {} };
-    case 'getStatsMessages':
-      return { endpoint: '/api/stats/messages', method: 'GET', body: {} };
+    case 'getStatsMessages': {
+      // This route binds its query to a DTO, so `period` is the only key it accepts
+      // and anything else is refused rather than ignored.
+      const period = this.getNodeParameter('statsPeriod', itemIndex, '24h') as string;
+      return { endpoint: '/api/stats/messages', method: 'GET', body: {}, qs: { period } };
+    }
     case 'getSessionStats': {
       const sessionId = sanitizePathParam(
         this.getNodeParameter('sessionId', itemIndex) as string,

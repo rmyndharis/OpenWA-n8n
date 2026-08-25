@@ -74,6 +74,13 @@ class OpenWaTrigger {
                     description: 'Optional shared secret, at least 16 characters (the server rejects a shorter one at registration). If set, it is registered with OpenWA at webhook creation and every delivery is verified against its X-OpenWA-Signature (HMAC-SHA256) header; deliveries that fail verification are dropped. Changing or clearing the secret (or changing the events or session) re-registers the webhook automatically on the next activation.',
                 },
                 {
+                    displayName: 'Filters',
+                    name: 'filters',
+                    type: 'json',
+                    default: '',
+                    description: 'Optional server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. The gateway drops non-matching events before delivering, so they never start a workflow execution. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Filters only narrow message events: session, group and call events are delivered regardless. A filtered-out delivery is silent, so an over-strict filter looks exactly like nothing having happened. Changing this re-registers the webhook on the next activation.',
+                },
+                {
                     displayName: 'Deduplicate Deliveries',
                     name: 'deduplicateDeliveries',
                     type: 'boolean',
@@ -143,6 +150,7 @@ class OpenWaTrigger {
                         events,
                         secret: this.getNodeParameter('webhookSecret', ''),
                         sessionId,
+                        filters: this.getNodeParameter('filters', '') ?? '',
                     });
                     if (webhookData.configHash !== currentHash) {
                         return discardRegistration();
@@ -212,6 +220,17 @@ class OpenWaTrigger {
                     if (webhookSecret) {
                         body.secret = webhookSecret;
                     }
+                    // Server-side filters, so a non-matching event is dropped at the gateway
+                    // instead of waking a workflow that would only discard it.
+                    const filters = (this.getNodeParameter('filters', '') ?? '').trim();
+                    if (filters) {
+                        try {
+                            body.filters = JSON.parse(filters);
+                        }
+                        catch {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Filters must be valid JSON');
+                        }
+                    }
                     const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                         method: 'POST',
                         url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
@@ -236,6 +255,7 @@ class OpenWaTrigger {
                         events,
                         secret: webhookSecret,
                         sessionId,
+                        filters: this.getNodeParameter('filters', '') ?? '',
                     });
                     return true;
                 },

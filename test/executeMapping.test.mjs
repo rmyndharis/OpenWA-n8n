@@ -1107,6 +1107,52 @@ const GROUP = '120363021234567890@g.us';
 const CHANNEL = '120363021234567890@newsletter';
 
 mappingCases.push(
+  // --- system: the one operation the mapping suite never covered ---
+  [
+    'system/getStatsMessages defaults to the 24 hour window',
+    { resource: 'system', operation: 'getStatsMessages' },
+    'GET',
+    `${BASE}/api/stats/messages`,
+    undefined,
+  ],
+  // --- webhook create additional fields ---
+  [
+    'webhook/create registers filters, headers and a retry count',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      ...S,
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookCreateFields: {
+        filters: '{"conditions":[{"field":"fromMe","operator":"is","value":false}]}',
+        headers: '{"X-Team":"support"}',
+        retryCount: 5,
+      },
+    },
+    'POST',
+    `${SESS}/webhooks`,
+    {
+      url: 'https://n8n.example/hook',
+      events: ['message.received'],
+      retryCount: 5,
+      headers: { 'X-Team': 'support' },
+      filters: { conditions: [{ field: 'fromMe', operator: 'is', value: false }] },
+    },
+  ],
+  [
+    'webhook/create sends nothing extra when no additional fields are set',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      ...S,
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+    },
+    'POST',
+    `${SESS}/webhooks`,
+    { url: 'https://n8n.example/hook', events: ['message.received'] },
+  ],
   // --- media conversion ---
   [
     'media/checkConversion',
@@ -2356,6 +2402,20 @@ test('operations ask for JSON parsing', async () => {
   assert.equal(singleCall(ctx).options.json, true);
 });
 
+test('system/getStatsMessages sends the period as a query parameter', async () => {
+  const { ctx } = await run({ resource: 'system', operation: 'getStatsMessages' });
+  assert.deepEqual(singleCall(ctx).options.qs, { period: '24h' });
+});
+
+test('system/getStatsMessages honours a longer window', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'getStatsMessages',
+    statsPeriod: '30d',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { period: '30d' });
+});
+
 test('call/createLink defaults a blank start time to now rather than omitting it', async () => {
   const before = Date.now();
   const { ctx } = await run({
@@ -3317,6 +3377,18 @@ const guardCases = [
       muteUntil: 'not a date',
     },
     /Mute Until is not a valid date/,
+  ],
+  [
+    'webhook/create rejects filters that are not valid JSON',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      sessionId: 'abc-123',
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookCreateFields: { filters: '{not json' },
+    },
+    /Filters must be valid JSON/,
   ],
   [
     'an unknown resource fails with a clear message',

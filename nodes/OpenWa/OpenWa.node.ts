@@ -2029,6 +2029,39 @@ export class OpenWa implements INodeType {
         description: 'Events to subscribe to',
       },
       {
+        displayName: 'Additional Fields',
+        name: 'webhookCreateFields',
+        type: 'collection',
+        placeholder: 'Add Field',
+        default: {},
+        displayOptions: { show: { resource: ['webhook'], operation: ['create'] } },
+        options: [
+          {
+            displayName: 'Filters',
+            name: 'filters',
+            type: 'json',
+            default: '',
+            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the id, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters only narrow message events, so a session, group or call event is delivered regardless, and a suppressed delivery is silent: it looks the same from n8n as nothing having happened.',
+          },
+          {
+            displayName: 'Headers',
+            name: 'headers',
+            type: 'json',
+            default: '',
+            description:
+              'Extra headers to send with each delivery, as a JSON object. Reserved headers the gateway sets itself cannot be overridden.',
+          },
+          {
+            displayName: 'Retry Count',
+            name: 'retryCount',
+            type: 'number',
+            typeOptions: { minValue: 0, maxValue: 5 },
+            default: 3,
+            description: 'Maximum delivery attempts (0-5)',
+          },
+        ],
+      },
+      {
         displayName: 'Webhook Secret',
         name: 'webhookSecret',
         type: 'string',
@@ -3401,6 +3434,20 @@ export class OpenWa implements INodeType {
         ],
       },
       {
+        displayName: 'Period',
+        name: 'statsPeriod',
+        type: 'options',
+        options: [
+          { name: 'Last 24 Hours', value: '24h' },
+          { name: 'Last 7 Days', value: '7d' },
+          { name: 'Last 30 Days', value: '30d' },
+        ],
+        default: '24h',
+        displayOptions: { show: { resource: ['system'], operation: ['getStatsMessages'] } },
+        description:
+          'The window to report on. The bucket size follows from it: hourly for 24 hours, daily for the longer windows.',
+      },
+      {
         displayName: 'Filters',
         name: 'auditFilters',
         type: 'collection',
@@ -3413,7 +3460,9 @@ export class OpenWa implements INodeType {
             name: 'action',
             type: 'string',
             default: '',
-            description: 'Only return entries for this action',
+            placeholder: 'session_started',
+            description:
+              'Only return entries for this action, e.g. session_started or message_failed. An action the server does not recognise returns an empty page rather than an error, so a typo looks exactly like no matching activity.',
           },
           {
             displayName: 'API Key Name or ID',
@@ -3430,9 +3479,9 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 200 },
             default: 50,
-            description: 'Max number of results to return',
+            description: 'Max number of results to return (the server returns at most 200)',
           },
           {
             displayName: 'Offset',
@@ -3441,6 +3490,18 @@ export class OpenWa implements INodeType {
             typeOptions: { minValue: 0 },
             default: 0,
             description: 'Number of entries to skip before collecting the result set',
+          },
+          {
+            displayName: 'Severity',
+            name: 'severity',
+            type: 'options',
+            options: [
+              { name: 'Error', value: 'error' },
+              { name: 'Info', value: 'info' },
+              { name: 'Warn', value: 'warn' },
+            ],
+            default: 'info',
+            description: 'Only return entries at this severity',
           },
           {
             displayName: 'Session Name or ID',

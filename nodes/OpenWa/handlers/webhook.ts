@@ -5,6 +5,18 @@ import { webhookSecretProblem } from '../../shared/webhookSecret';
 import { toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
+/**
+ * Parses a JSON object field (headers, filters) supplied as text or already as an
+ * object, so Create and Update read them the same way.
+ */
+function parseJsonObject(node: INode, raw: unknown, label: string, itemIndex: number): unknown {
+  try {
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    throw new NodeOperationError(node, `${label} must be valid JSON`, { itemIndex });
+  }
+}
+
 function assertSecretLength(node: INode, secret: string, itemIndex: number): void {
   const problem = webhookSecretProblem(secret);
   if (problem) {
@@ -73,6 +85,25 @@ export async function buildWebhookRequest(
     if (webhookSecret) {
       body.secret = webhookSecret;
     }
+    // The same three optional fields the Update operation already exposes. Filters
+    // are what let the gateway drop uninteresting events before they ever reach n8n.
+    const createFields = this.getNodeParameter('webhookCreateFields', itemIndex, {}) as Record<
+      string,
+      unknown
+    >;
+    if (createFields.retryCount !== undefined) {
+      body.retryCount = createFields.retryCount;
+    }
+    for (const [key, label] of [
+      ['headers', 'Headers'],
+      ['filters', 'Filters'],
+    ] as const) {
+      const raw = createFields[key];
+      if (raw === undefined || raw === null || raw === '') {
+        continue;
+      }
+      body[key] = parseJsonObject(this.getNode(), raw, label, itemIndex);
+    }
     return { endpoint: `/api/sessions/${sessionId}/webhooks`, method: 'POST', body };
   }
 
@@ -132,15 +163,12 @@ export async function buildWebhookRequest(
         continue;
       }
       if (raw === null || raw === '') continue; // blank value — nothing to send
-      try {
-        body[key] = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      } catch {
-        throw new NodeOperationError(
-          this.getNode(),
-          `${key === 'headers' ? 'Headers' : 'Filters'} must be valid JSON`,
-          { itemIndex },
-        );
-      }
+      body[key] = parseJsonObject(
+        this.getNode(),
+        raw,
+        key === 'headers' ? 'Headers' : 'Filters',
+        itemIndex,
+      );
     }
     return {
       endpoint: `/api/sessions/${sessionId}/webhooks/${webhookId}`,

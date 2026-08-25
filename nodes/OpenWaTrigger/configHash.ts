@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
  * registration depends on: the delivery URL n8n advertises, the subscribed
- * events, the signing secret, and the session. When any of these changes, the
+ * events, the signing secret, the session, and any server-side filters. When any of these changes, the
  * stored registration is stale and must be re-created — checkExists compares
  * this hash and re-registers on a mismatch.
  *
@@ -15,12 +15,16 @@ export function webhookConfigHash(config: {
   events: string[];
   secret: string;
   sessionId: string;
+  filters?: string;
 }): string {
   const canonical = JSON.stringify({
     url: config.url,
     events: [...config.events].sort(),
     secret: config.secret,
     sessionId: config.sessionId,
+    // Compared as the raw text the user typed. Reformatting it re-registers, which
+    // is harmless; the alternative is canonicalising arbitrary JSON to avoid it.
+    filters: config.filters ?? '',
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
