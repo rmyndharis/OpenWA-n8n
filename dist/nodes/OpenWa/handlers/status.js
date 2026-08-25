@@ -26,8 +26,10 @@ const MAX_RECIPIENTS = 256;
  * Reads the optional recipient list shared by all three send operations.
  *
  * WhatsApp Status is never posted to a group, so these are `@c.us`/`@lid` JIDs.
- * The Baileys engine requires an explicit list; whatsapp-web.js posts to the
- * whole contact list when it is omitted.
+ * The Baileys engine requires an explicit list and honors it. whatsapp-web.js
+ * does NOT: it posts to the whole contact list whether a list is given or not,
+ * and the server logs a warning when one is supplied. Treat a recipient list as
+ * an audience restriction on Baileys only.
  */
 function getRecipients(ctx, itemIndex) {
     const recipients = (0, params_1.toStringList)(ctx.getNodeParameter('statusRecipients', itemIndex, ''));

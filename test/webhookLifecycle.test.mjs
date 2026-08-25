@@ -29,6 +29,9 @@ function makeCtx({
   events = ['message.received'],
   throwErr = null,
   createResponse = { id: 'w1' },
+  // What GET /webhooks/:id answers. Defaults to a registration that still matches
+  // the configuration below, which is what checkExists must accept as healthy.
+  getResponse,
 } = {}) {
   const staticData = {};
   if (webhookId !== undefined) staticData.webhookId = webhookId;
@@ -47,6 +50,11 @@ function makeCtx({
       httpRequestWithAuthentication: async (_cred, options) => {
         calls.push(options);
         if (throwErr) throw throwErr;
+        if (options.method === 'GET') {
+          return (
+            getResponse ?? { id: webhookId, active: true, url: WEBHOOK_URL, events, sessionId: 'default' }
+          );
+        }
         return createResponse;
       },
     },
@@ -158,6 +166,61 @@ test('checkExists: an unchanged config probes by id instead of re-registering', 
   assert.equal(await hooks().checkExists.call(ctx), true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'GET');
+});
+
+// --- checkExists validates the registration it fetched, not just its existence ---
+test('checkExists: a deactivated webhook is rebuilt rather than reported healthy', async () => {
+  // The server dispatches only to `active: true`, so an existing-but-inactive
+  // registration delivers nothing while the trigger shows activated.
+  const { ctx, staticData, calls } = makeCtx({
+    configHash: CURRENT_HASH,
+    getResponse: { id: 'w1', active: false, url: WEBHOOK_URL, events: ['message.received'] },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(calls.at(-1).method, 'DELETE');
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('checkExists: a registration repointed at another URL is rebuilt', async () => {
+  const { ctx, staticData } = makeCtx({
+    configHash: CURRENT_HASH,
+    getResponse: {
+      id: 'w1',
+      active: true,
+      url: 'https://somewhere-else.example/webhook',
+      events: ['message.received'],
+    },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('checkExists: a registration whose event list drifted is rebuilt', async () => {
+  const { ctx, staticData } = makeCtx({
+    configHash: CURRENT_HASH,
+    getResponse: { id: 'w1', active: true, url: WEBHOOK_URL, events: ['session.status'] },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('checkExists: event order alone is not drift', async () => {
+  const { ctx } = makeCtx({
+    configHash: webhookConfigHash({
+      url: WEBHOOK_URL,
+      events: ['message.received', 'session.status'],
+      secret: '',
+      sessionId: 'default',
+    }),
+    events: ['message.received', 'session.status'],
+    getResponse: {
+      id: 'w1',
+      active: true,
+      url: WEBHOOK_URL,
+      events: ['session.status', 'message.received'],
+    },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), true);
 });
 
 // --- checkExists hook wiring (changed configuration → re-register) ---

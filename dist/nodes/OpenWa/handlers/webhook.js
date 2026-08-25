@@ -6,8 +6,9 @@ const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
 function assertSecretLength(node, secret, itemIndex) {
-    if ((0, webhookSecret_1.isWebhookSecretTooShort)(secret)) {
-        throw new n8n_workflow_1.NodeOperationError(node, `Webhook secret must be at least ${webhookSecret_1.MIN_WEBHOOK_SECRET_LENGTH} characters`, { itemIndex });
+    const problem = (0, webhookSecret_1.webhookSecretProblem)(secret);
+    if (problem) {
+        throw new n8n_workflow_1.NodeOperationError(node, problem, { itemIndex });
     }
 }
 async function buildWebhookRequest(operation, itemIndex) {

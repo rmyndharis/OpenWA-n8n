@@ -3,8 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildCallRequest = buildCallRequest;
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 /**
- * Incoming calls. Only rejection is exposed by the API — pair this with the
- * Trigger's `call.received` event to auto-decline calls.
+ * Incoming calls. Rejection is the operation offered here; pair it with the
+ * Trigger's `call.received` event to auto-decline calls. The server also
+ * publishes a shareable call link route, which this resource does not yet cover.
  */
 async function buildCallRequest(operation, itemIndex) {
     if (operation !== 'reject') {

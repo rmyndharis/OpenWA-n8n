@@ -1114,6 +1114,19 @@ mappingCases.push(
     { chatId: CHAT },
   ],
   [
+    'chat/markRead with explicit message ids',
+    {
+      resource: 'chat',
+      operation: 'markRead',
+      ...S,
+      chatId: CHAT,
+      readMessageIds: 'm1, m2',
+    },
+    'POST',
+    `${SESS}/chats/read`,
+    { chatId: CHAT, messageIds: ['m1', 'm2'] },
+  ],
+  [
     'chat/markUnread',
     { resource: 'chat', operation: 'markUnread', ...S, chatId: CHAT },
     'POST',
@@ -1216,6 +1229,26 @@ mappingCases.push(
     'POST',
     `${SESS}/messages/edit`,
     { chatId: CHAT, messageId: 'm1', body: 'corrected text' },
+  ],
+  [
+    'message/edit re-applies mentions',
+    {
+      resource: 'message',
+      operation: 'edit',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      message: 'corrected @628123456789',
+      mentions: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/messages/edit`,
+    {
+      chatId: CHAT,
+      messageId: 'm1',
+      body: 'corrected @628123456789',
+      mentions: ['628123456789@c.us'],
+    },
   ],
   [
     'message/forward uses its own from/to chats',
@@ -1470,6 +1503,21 @@ mappingCases.push(
     'PUT',
     `${SESS}/templates/t1`,
     { body: 'Hello {{name}}' },
+  ],
+  [
+    'template/update forwards a blank footer, which clears it server-side',
+    // Only `name` and `body` are IsNotEmpty on the server; a blank header or
+    // footer is a deliberate clear and must still be sent.
+    {
+      resource: 'template',
+      operation: 'update',
+      ...S,
+      templateId: 't1',
+      templateUpdateFields: { footer: '' },
+    },
+    'PUT',
+    `${SESS}/templates/t1`,
+    { footer: '' },
   ],
   [
     'template/delete',
@@ -2488,6 +2536,42 @@ const guardCases = [
       updateFields: { secret: 'short' },
     },
     /at least 16 characters/,
+  ],
+  [
+    'webhook/create rejects a secret longer than 255 characters',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      sessionId: 'abc-123',
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookSecret: 'x'.repeat(256),
+    },
+    /cannot exceed 255 characters/,
+  ],
+  [
+    'chat/markRead rejects more than 100 message ids',
+    {
+      resource: 'chat',
+      operation: 'markRead',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      readMessageIds: Array.from({ length: 101 }, (_, i) => `m${i}`),
+    },
+    /at most 100 message IDs/,
+  ],
+  [
+    'template/update treats a blank name as no patch at all',
+    // `name` and `body` are IsNotEmpty on the server, so a blank one is a
+    // guaranteed 400. Dropping it here surfaces the real problem instead.
+    {
+      resource: 'template',
+      operation: 'update',
+      sessionId: 'abc-123',
+      templateId: 't1',
+      templateUpdateFields: { name: '   ' },
+    },
+    /At least one field must be provided/,
   ],
   [
     'an unknown resource fails with a clear message',

@@ -28,7 +28,7 @@ async function buildSessionRequest(operation, itemIndex) {
             if (typeof parsedConfig !== 'object' ||
                 parsedConfig === null ||
                 Array.isArray(parsedConfig)) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be a JSON object (e.g. {"autoReconnect":true})', { itemIndex });
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be a JSON object (e.g. {"autoRejectCalls":true})', { itemIndex });
             }
             body.config = parsedConfig;
         }

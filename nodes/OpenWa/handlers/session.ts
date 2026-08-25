@@ -37,7 +37,7 @@ export async function buildSessionRequest(
       ) {
         throw new NodeOperationError(
           this.getNode(),
-          'Session config must be a JSON object (e.g. {"autoReconnect":true})',
+          'Session config must be a JSON object (e.g. {"autoRejectCalls":true})',
           { itemIndex },
         );
       }

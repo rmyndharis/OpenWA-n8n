@@ -1,17 +1,14 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { isWebhookSecretTooShort, MIN_WEBHOOK_SECRET_LENGTH } from '../../shared/webhookSecret';
+import { webhookSecretProblem } from '../../shared/webhookSecret';
 import { toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 function assertSecretLength(node: INode, secret: string, itemIndex: number): void {
-  if (isWebhookSecretTooShort(secret)) {
-    throw new NodeOperationError(
-      node,
-      `Webhook secret must be at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`,
-      { itemIndex },
-    );
+  const problem = webhookSecretProblem(secret);
+  if (problem) {
+    throw new NodeOperationError(node, problem, { itemIndex });
   }
 }
 

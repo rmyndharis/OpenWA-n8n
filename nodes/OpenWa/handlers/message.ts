@@ -292,9 +292,11 @@ export async function buildMessageRequest(
       toChatId: requireJid(this, 'toChatId', 'To Chat ID', itemIndex),
       messageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
     };
-    // send-catalog and send-product are deliberately absent: the server
-    // documents both as "not supported by any engine" and answers 501, with no
-    // success response at all. Same for the whole Catalog resource.
+    // send-product and the Catalog reads are absent because they are Baileys-only:
+    // each answers 501 on whatsapp-web.js, and send-product returns `{id, timestamp}`
+    // rather than the `{messageId, timestamp}` every other send returns, so it cannot
+    // share their output shape. send-catalog is absent because the route no longer
+    // exists at all; the server removed it.
   } else if (operation === 'sendContact') {
     endpoint = `/api/sessions/${sessionId}/messages/send-contact`;
     body = {
@@ -343,14 +345,20 @@ export async function buildMessageRequest(
     return null;
   }
 
-  // Optional @mentions — only send-text/image/video/document accept them. Guard by
-  // operation (not just the hidden field) so a mentions value can never ride
-  // along on a sendLocation request, whose DTO rejects unknown fields (400).
+  // Optional @mentions. Guard by operation (not just the hidden field) so a mentions
+  // value can never ride along on a request whose DTO rejects unknown fields (400),
+  // such as sendLocation.
+  //
+  // `edit` is in this list for a different reason than the sends: EditMessageDto
+  // carries `mentions` because an edit REPLACES the message content, so the tags are
+  // re-applied rather than preserved. Omitting the field strips whatever the original
+  // body tagged, which the server reports as a success.
   if (
     operation === 'sendText' ||
     operation === 'sendImage' ||
     operation === 'sendDocument' ||
-    operation === 'sendVideo'
+    operation === 'sendVideo' ||
+    operation === 'edit'
   ) {
     const mentions = toStringList(this.getNodeParameter('mentions', itemIndex, ''));
     if (mentions.length > 0) {

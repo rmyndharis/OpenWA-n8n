@@ -181,21 +181,23 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Webhook** | Get Delivery Failures | Inspect failed webhook deliveries           |
 | **Webhook** | Delete              | Remove a webhook                              |
 
-> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key and the whole **API Key** resource needs an **ADMIN** one — a `403` almost always means the credential's role is too low, not that the request was malformed.
+> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: the whole **API Key** resource, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
 
 > **Observability:** **Check** / **Check Liveness** / **Check Readiness** return the server's health JSON as-is, so a workflow can alert on availability. **Check Readiness** is the one that also probes the database connections. `/api/metrics` is deliberately not offered — it authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here.
 
-> **Not offered, because the server cannot serve them:** catalog reads, Send Catalog and Send Product are documented as "not supported by any engine" (`501`), and settings are environment-derived and read-only at runtime. **Search** needs a search provider configured server-side, otherwise it too answers `501`.
+> **Not offered:** the catalog reads and **Send Product** work on the Baileys engine and answer `501` on whatsapp-web.js; they are not exposed here yet, and Send Product returns `{id, timestamp}` rather than the `{messageId, timestamp}` every other send returns. **Send Catalog** is gone from the server entirely. Settings are environment-derived, and the server publishes no write route for them. **Search** needs a search provider configured server-side, otherwise it answers `501`, and can answer `502` or `503` when a plugin provider misbehaves or does not respond.
 
 > **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page of up to 1000 entries. On an account with more than that, set the field from an expression instead of picking from the list.
 
-> **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list; on whatsapp-web.js an empty list posts to all contacts.
+> **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list and is the only engine that honors it. whatsapp-web.js ignores the list entirely and posts to every contact whether one is supplied or not, so do not rely on it to limit the audience there.
 
 > **Group operations:** reads (List, Get, Get Settings, Get Invite Code) work with a plain API key, but every write — create, join, leave, participant changes, subject/description/settings, and invite-code revoke — needs a key with the **OPERATOR** role, otherwise the server answers `403`. Add/Remove/Promote/Demote report a per-participant outcome in `results[]` and a partial refusal does *not* fail the batch, so check `results[].success` rather than the top-level `success`. **Update Settings** is partial — fields you leave out stay untouched — and `ephemeralSeconds` is Baileys-only (whatsapp-web.js returns `501`).
 
 > **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
-> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, and Send Document accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+> **Mentions** (server **≥ 0.7.14**): Send Text, Send Image, Send Video, Send Document and **Edit** accept an optional **Mentions** list of WhatsApp IDs (e.g. `628123456789@c.us`). For each one to render as an @mention, the message text or caption must also contain the matching `@628123456789` token. Leave the list empty on older servers.
+>
+> On **Edit** the list is re-applied rather than preserved, because an edit replaces the message content: name every ID the edited message should still tag, or leave it empty to drop the tags the original carried. The server also accepts mentions on Reply, Send Audio, Send Sticker and Send Template, which this node does not surface yet.
 
 > **Message actions:** Reply, React, and Delete act on an existing message identified by its full serialized ID (e.g. `true_628123456789@c.us_3EB0…`) — the value returned by the send operations and delivered by the Trigger. React with an empty **Emoji** to remove your reaction; Delete defaults to revoking for everyone.
 
@@ -258,7 +260,7 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 
 The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
 
-> **Secret length:** the secret must be at least **16 characters**. The server enforces this floor at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature). Webhooks registered with a short secret before the floor keep working until re-registered.
+> **Secret length:** the secret must be between **16 and 255 characters**. The server enforces both bounds at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature), and the node checks them before sending so the error names the field instead of surfacing a raw `400`. Webhooks registered with a short secret before the floor keep working until re-registered.
 
 > Changing or clearing the secret — or changing the events or session — re-registers the webhook automatically on the next activation (deactivate/reactivate, or an n8n restart). No manual cleanup on the server is needed.
 
@@ -288,13 +290,15 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 >
 > - Each delivery is an envelope (`event`, `timestamp`, `sessionId`, `idempotencyKey`, `deliveryId`, …); the actual event payload is under `data`. Read message fields from `data` (e.g. `data.body`, `data.chatId`).
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
-> - OpenWA retries failed deliveries with the same `deliveryId` — de-duplicate on it if your downstream actions aren't idempotent.
+> - De-duplicate on `idempotencyKey`, not `deliveryId`. `idempotencyKey` identifies the *event* and is reused across both retries and crash replays; `deliveryId` identifies a single *attempt* and is re-minted on every replay, so keying on it misses exactly the duplicate you are trying to catch.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
 #### ♻️ Duplicate deliveries
 
-OpenWA retries failed deliveries with the same `deliveryId`, so a delivery whose acknowledgement was lost (n8n restart, a slow network) can arrive twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent delivery IDs (kept in workflow static data). Trade-offs: a retry whose first execution *failed* is also dropped, and two deliveries arriving at the exact same moment can both pass — enable it when downstream actions are not idempotent and failed runs are rare.
+OpenWA guarantees at-least-once delivery: it retries a failed POST, and it replays any delivery stranded by a gateway crash. Both carry the same `idempotencyKey`, so the same event can reach n8n twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent idempotency keys (kept in workflow static data), falling back to `deliveryId` on a gateway too old to send one.
+
+It is best-effort: workflow static data is saved per execution, so two deliveries arriving at the exact same moment can both pass. Enable it when downstream actions are not idempotent.
 
 ---
 
@@ -316,7 +320,16 @@ The **routes** the action node calls top out at v0.10.9: the profile writes, `gr
 
 The **event catalog** is what actually sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 — a v0.14.x server knows 22 events, not 23 — so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation, which is why it, and not the routes, is the number in the badge.
 
+A few **optional fields** need a server newer than the badge floor. They are opt-in, so leaving them alone keeps the node working against any server at or above the floor, but filling one in against an older server returns a `400` because the server rejects request bodies carrying fields it does not know:
+
+| Field | Where | Needs |
+| ----- | ----- | ----- |
+| **Message IDs** | Chat > Mark Read | server **≥ 0.23.0** |
+| **Mentions** on Edit | Message > Edit | server **≥ 0.23.0** |
+
 The Trigger alone still works against much older servers if you subscribe only to events that existed then; its webhook contract and HMAC verification landed in v0.4.0.
+
+The Trigger also re-registers its webhook when the registration on the server no longer matches what the node created: deactivated, repointed at another URL, or subscribed to a different event set. `active`, `url` and `events` have been part of the webhook response since v0.4.0, so this needs nothing newer.
 
 > The **Message Reaction** event requires server **≥ 0.7.2**. Selecting it against an older
 > server returns a 400 when the webhook is created.
@@ -330,7 +343,7 @@ npm install      # install dependencies
 npm run build    # compile TypeScript + copy icons
 npm run dev      # watch mode
 npm run lint     # ESLint (.eslintrc.js)
-npm test         # build + signature-verification unit tests
+npm test         # build + unit tests (route mapping, guards, trigger delivery, webhook lifecycle)
 ```
 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only

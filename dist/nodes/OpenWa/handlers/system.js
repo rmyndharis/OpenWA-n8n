@@ -11,8 +11,8 @@ const params_1 = require("./params");
  * does not share a resource with reading its configuration.
  *
  * Settings are read-only here on purpose: the server derives them from its
- * environment and answers `PUT /api/settings` with 501, so there is no Update
- * Settings operation to offer.
+ * environment and publishes no write route at all, so there is no Update Settings
+ * operation to offer.
  *
  * These are not scoped to a session, so this resource has no Session ID field —
  * except Get Session Stats, which names one explicitly.

@@ -78,10 +78,10 @@ class OpenWaTrigger {
                     name: 'deduplicateDeliveries',
                     type: 'boolean',
                     default: false,
-                    description: 'Whether to drop a repeated delivery of the same event. OpenWA retries failed deliveries with the same deliveryId, which can otherwise run this workflow twice. Best-effort: deliveries arriving at the same moment can both pass, and a retry whose first run FAILED is also dropped — enable only when downstream actions are not idempotent and failed runs are rare.',
+                    description: 'Whether to drop a repeated delivery of the same event, keyed on the envelope\'s idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: static data is saved per execution, so two deliveries arriving at the same moment can both pass.',
                 },
                 {
-                    displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>), and use <code>deliveryId</code> to de-duplicate retried deliveries. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
+                    displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
                     name: 'outputShapeNotice',
                     type: 'notice',
                     default: '',
@@ -103,21 +103,12 @@ class OpenWaTrigger {
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
-                    // If the configuration the registration depends on has changed since the
-                    // webhook was created (secret, events, session, or this instance's webhook
-                    // URL), the stored registration is stale: remove it and report absent so
-                    // n8n re-creates it with the current configuration. A missing configHash
-                    // means the registration predates this tracking — re-register it once so
-                    // its configuration becomes known (this also picks up a delivery URL that
-                    // changed across a package upgrade).
-                    const currentHash = (0, configHash_1.webhookConfigHash)({
-                        url: this.getNodeWebhookUrl('default') ?? '',
-                        events: this.getNodeParameter('events'),
-                        secret: this.getNodeParameter('webhookSecret', ''),
-                        sessionId,
-                    });
-                    if (webhookData.configHash !== currentHash) {
-                        // Delete from the STORED session — the current parameter may already
+                    const webhookUrl = this.getNodeWebhookUrl('default') ?? '';
+                    const events = this.getNodeParameter('events');
+                    // Drop the stored registration from the server and forget it locally, so the
+                    // caller can report absent and let n8n create a fresh one.
+                    const discardRegistration = async () => {
+                        // Delete from the STORED session: the current parameter may already
                         // point at a different session than the one the webhook lives on.
                         const staleSessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? sessionId, 'Session ID');
                         try {
@@ -129,7 +120,7 @@ class OpenWaTrigger {
                         }
                         catch (error) {
                             // Already gone remotely is fine. Anything else must fail loud and let
-                            // n8n's activation retry complete the cleanup — silently proceeding
+                            // n8n's activation retry complete the cleanup: silently proceeding
                             // would orphan the old registration, which would keep delivering.
                             if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
                                 throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
@@ -139,18 +130,34 @@ class OpenWaTrigger {
                         delete webhookData.sessionId;
                         delete webhookData.configHash;
                         return false;
+                    };
+                    // If the configuration the registration depends on has changed since the
+                    // webhook was created (secret, events, session, or this instance's webhook
+                    // URL), the stored registration is stale: remove it and report absent so
+                    // n8n re-creates it with the current configuration. A missing configHash
+                    // means the registration predates this tracking, so re-register it once so
+                    // its configuration becomes known (this also picks up a delivery URL that
+                    // changed across a package upgrade).
+                    const currentHash = (0, configHash_1.webhookConfigHash)({
+                        url: webhookUrl,
+                        events,
+                        secret: this.getNodeParameter('webhookSecret', ''),
+                        sessionId,
+                    });
+                    if (webhookData.configHash !== currentHash) {
+                        return discardRegistration();
                     }
+                    let registration;
                     try {
-                        await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                        registration = (await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'GET',
                             url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(webhookData.webhookId)}`,
                             json: true,
-                        });
-                        return true;
+                        }));
                     }
                     catch (error) {
-                        // A 404 means the webhook is genuinely gone → report absent so n8n
-                        // recreates it. Any other error is inconclusive: rethrow so activation
+                        // A 404 means the webhook is genuinely gone, so report absent and let n8n
+                        // recreate it. Any other error is inconclusive: rethrow so activation
                         // fails loudly and n8n's retry restores it, instead of registering a
                         // duplicate webhook (the server does not de-duplicate by URL).
                         if ((0, httpStatus_1.httpStatusFromError)(error) === 404) {
@@ -158,6 +165,28 @@ class OpenWaTrigger {
                         }
                         throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
                     }
+                    // The registration exists, but existing is not the same as delivering. The
+                    // server dispatches only to webhooks matching `active: true`, and both the
+                    // URL and the event list can be edited out from under this node (from the
+                    // dashboard, the API, or the action node's own Webhook Update). Any of those
+                    // leaves the trigger reporting healthy while nothing ever reaches it, so
+                    // treat a drifted registration exactly like a stale one and rebuild it.
+                    // The secret is deliberately not checked: the server never serializes it,
+                    // and the config hash already covers a local change to it.
+                    const sameEvents = (a, b) => {
+                        if (!Array.isArray(a) || a.length !== b.length) {
+                            return false;
+                        }
+                        const left = [...a].sort();
+                        const right = [...b].sort();
+                        return left.every((value, index) => value === right[index]);
+                    };
+                    if (registration.active === false ||
+                        (typeof registration.url === 'string' && registration.url !== webhookUrl) ||
+                        !sameEvents(registration.events, events)) {
+                        return discardRegistration();
+                    }
+                    return true;
                 },
                 async create() {
                     const webhookUrl = this.getNodeWebhookUrl('default');
@@ -171,8 +200,9 @@ class OpenWaTrigger {
                     }
                     // A short secret is rejected by the server's registration floor; failing
                     // here names the field instead of surfacing a raw 400 mid-activation.
-                    if ((0, webhookSecret_1.isWebhookSecretTooShort)(webhookSecret)) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Webhook secret must be at least ${webhookSecret_1.MIN_WEBHOOK_SECRET_LENGTH} characters`);
+                    const secretProblem = (0, webhookSecret_1.webhookSecretProblem)(webhookSecret);
+                    if (secretProblem) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), secretProblem);
                     }
                     const body = {
                         url: webhookUrl,
@@ -281,23 +311,32 @@ class OpenWaTrigger {
                 workflowData: [[]],
             };
         }
-        // Optional de-duplication: OpenWA retries failed deliveries with the same
-        // deliveryId, so a delivery whose receive-ack was lost arrives twice and
-        // would otherwise run the workflow twice. Best-effort: static data is saved
-        // per execution, so two retries arriving at the same moment can both pass.
+        // Optional de-duplication, keyed on `idempotencyKey`: that value identifies the
+        // EVENT and is reused verbatim when the gateway replays a delivery stranded by a
+        // crash. `deliveryId` identifies one attempt and is re-minted on every replay, so
+        // keying on it catches an in-process retry but misses exactly the redelivery this
+        // option exists to absorb. `deliveryId` remains the fallback for older gateways
+        // whose envelope carries no idempotency key.
+        // Best-effort: static data is saved per execution, so two deliveries arriving at
+        // the same moment can both pass.
         if (this.getNodeParameter('deduplicateDeliveries', false)) {
-            const deliveryId = body.deliveryId;
-            if (typeof deliveryId === 'string' && deliveryId) {
+            const envelope = body;
+            const rawKey = typeof envelope.idempotencyKey === 'string' && envelope.idempotencyKey
+                ? envelope.idempotencyKey
+                : envelope.deliveryId;
+            if (typeof rawKey === 'string' && rawKey) {
                 const staticData = this.getWorkflowStaticData('node');
+                // Key name kept from when the ring held delivery ids, so an upgrade does not
+                // strand the previous array in the workflow's stored static data.
                 const seen = staticData.recentDeliveryIds ?? [];
-                if (seen.includes(deliveryId)) {
-                    this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${deliveryId}`);
+                if (seen.includes(rawKey)) {
+                    this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${rawKey}`);
                     return {
                         workflowData: [[]],
                     };
                 }
-                // Bound the memory: keep only the most recent 500 delivery ids.
-                seen.push(deliveryId);
+                // Bound the memory: keep only the most recent 500 keys.
+                seen.push(rawKey);
                 if (seen.length > 500) {
                     seen.splice(0, seen.length - 500);
                 }

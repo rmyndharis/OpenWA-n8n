@@ -163,6 +163,41 @@ test('dedup enabled: a delivery without a deliveryId always passes', async () =>
   assert.deepEqual(result.workflowData[0][0].json, { event: 'session.status' });
 });
 
+test('dedup enabled: the idempotencyKey is what gets recorded, not the deliveryId', async () => {
+  const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd1', data: {} };
+  const { ctx, staticData } = makeCtx({ deduplicate: true, body });
+  await deliver(ctx);
+  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7']);
+});
+
+test('dedup enabled: a crash replay (same idempotencyKey, NEW deliveryId) is dropped', async () => {
+  // The gateway re-mints deliveryId on every replay because it identifies the
+  // attempt; only idempotencyKey identifies the event. Keying on deliveryId let
+  // this exact delivery run the workflow a second time.
+  const staticData = { recentDeliveryIds: ['evt-7'] };
+  const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd-REPLAY', data: {} };
+  const { ctx, responseCalls } = makeCtx({ deduplicate: true, staticData, body });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData, [[]]);
+  assert.deepEqual(responseCalls, []);
+});
+
+test('dedup enabled: a different event with its own idempotencyKey still runs', async () => {
+  const staticData = { recentDeliveryIds: ['evt-7'] };
+  const body = { event: 'message.received', idempotencyKey: 'evt-8', deliveryId: 'd2', data: {} };
+  const { ctx } = makeCtx({ deduplicate: true, staticData, body });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData[0][0].json, body);
+  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7', 'evt-8']);
+});
+
+test('dedup enabled: falls back to deliveryId when the envelope carries no idempotencyKey', async () => {
+  const staticData = { recentDeliveryIds: ['d1'] };
+  const { ctx } = makeCtx({ deduplicate: true, staticData });
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData, [[]]);
+});
+
 test('dedup state is bounded to the 500 most recent ids', async () => {
   const staticData = {
     recentDeliveryIds: Array.from({ length: 500 }, (_, i) => `old-${i}`),

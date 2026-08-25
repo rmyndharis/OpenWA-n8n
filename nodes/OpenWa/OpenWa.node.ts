@@ -177,7 +177,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['session'], operation: ['create'] },
         },
-        description: 'Optional session config as a JSON object, e.g. {"autoReconnect":true}',
+        description:
+          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Phone Number',
@@ -712,7 +713,7 @@ export class OpenWa implements INodeType {
         description:
           'Phone number for the shared contact, including country code (it is not auto-prefixed)',
       },
-      // Mentions (Send Text / Image / Video / Document)
+      // Mentions (Send Text / Image / Video / Document / Edit)
       {
         displayName: 'Mentions',
         name: 'mentions',
@@ -722,11 +723,11 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: {
             resource: ['message'],
-            operation: ['sendText', 'sendImage', 'sendDocument', 'sendVideo'],
+            operation: ['sendText', 'sendImage', 'sendDocument', 'sendVideo', 'edit'],
           },
         },
         description:
-          'WhatsApp IDs to @mention. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render.',
+          'WhatsApp IDs to @mention. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. The message text or caption must also contain a matching @-mention token (e.g. @628123456789) for it to render. On Edit the tags are re-applied rather than preserved, because an edit replaces the message content: list every ID the edited message should still tag, or leave empty to drop the tags the original carried.',
       },
       // Reply / React / Delete target message
       {
@@ -1653,6 +1654,16 @@ export class OpenWa implements INodeType {
           'The chat to act on (e.g. 628123456789@c.us, or ...@g.us for a group). Only the first 1000 are listed; use an expression for anything beyond that. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
       },
       {
+        displayName: 'Message IDs',
+        name: 'readMessageIds',
+        type: 'string',
+        default: '',
+        placeholder: '3EB0C767D26B8A3F1A2B, 3EB0C767D26B8A3F1A2C',
+        displayOptions: { show: { resource: ['chat'], operation: ['markRead'] } },
+        description:
+          'Specific message IDs to acknowledge (max 100). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Baileys acknowledges individual messages, so without this only the newest message the engine still holds in memory gets a receipt: a burst leaves its earlier messages unread, and a restarted session has nothing to acknowledge at all. Ignored by whatsapp-web.js, whose own read receipt is chat-level.',
+      },
+      {
         displayName: 'State',
         name: 'chatState',
         type: 'options',
@@ -1998,7 +2009,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['status'], operation: ['sendText', 'sendImage', 'sendVideo'] },
         },
         description:
-          'Who may see this status (max 256, @c.us or @lid — never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine; leave empty on whatsapp-web.js to post to all contacts.',
+          'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to every contact regardless, so do not rely on it to limit the audience there.',
       },
       {
         displayName: 'Image Source',
@@ -2633,9 +2644,9 @@ export class OpenWa implements INodeType {
             name: 'allowedSessions',
             type: 'string',
             default: '',
-            placeholder: 'session-a, session-b',
+            placeholder: '3f2b1c40-9a7e-4d21-8b55-0c1e2f3a4b5c',
             description:
-              'Restrict the key to these session IDs. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
+              'Restrict the key to these session IDs. These are the session UUIDs, not the session names shown in the picker: a name never matches and silently restricts the key to nothing. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
           },
           {
             displayName: 'Expires At',
