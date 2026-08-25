@@ -1107,6 +1107,96 @@ const GROUP = '120363021234567890@g.us';
 const CHANNEL = '120363021234567890@newsletter';
 
 mappingCases.push(
+  // --- catalog ---
+  [
+    'catalog/get',
+    { resource: 'catalog', operation: 'get', ...S },
+    'GET',
+    `${SESS}/catalog`,
+    undefined,
+  ],
+  [
+    'catalog/listProducts',
+    { resource: 'catalog', operation: 'listProducts', ...S },
+    'GET',
+    `${SESS}/catalog/products`,
+    undefined,
+  ],
+  [
+    'catalog/getProduct',
+    { resource: 'catalog', operation: 'getProduct', ...S, productId: 'p1' },
+    'GET',
+    `${SESS}/catalog/products/p1`,
+    undefined,
+  ],
+  // --- automation rules ---
+  [
+    'automationRule/list',
+    { resource: 'automationRule', operation: 'list', ...S },
+    'GET',
+    `${SESS}/automation-rules`,
+    undefined,
+  ],
+  [
+    'automationRule/create',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      ...S,
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+      ruleConditions: '{"conditions":[{"field":"isGroup","operator":"is","value":false}]}',
+      ruleFields: { cooldownSeconds: 0 },
+    },
+    'POST',
+    `${SESS}/automation-rules`,
+    {
+      name: 'Greet',
+      replyText: 'Thanks',
+      conditions: { conditions: [{ field: 'isGroup', operator: 'is', value: false }] },
+      cooldownSeconds: 0,
+    },
+  ],
+  [
+    'automationRule/create leaves the server defaults alone when nothing is set',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      ...S,
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+    },
+    'POST',
+    `${SESS}/automation-rules`,
+    { name: 'Greet', replyText: 'Thanks' },
+  ],
+  [
+    'automationRule/get',
+    { resource: 'automationRule', operation: 'get', ...S, ruleId: 'r1' },
+    'GET',
+    `${SESS}/automation-rules/r1`,
+    undefined,
+  ],
+  [
+    'automationRule/update sends only what was set',
+    {
+      resource: 'automationRule',
+      operation: 'update',
+      ...S,
+      ruleId: 'r1',
+      ruleUpdateFields: { enabled: false },
+    },
+    'PUT',
+    `${SESS}/automation-rules/r1`,
+    { enabled: false },
+  ],
+  [
+    'automationRule/delete',
+    { resource: 'automationRule', operation: 'delete', ...S, ruleId: 'r1' },
+    'DELETE',
+    `${SESS}/automation-rules/r1`,
+    undefined,
+  ],
   // --- system: the one operation the mapping suite never covered ---
   [
     'system/getStatsMessages defaults to the 24 hour window',
@@ -3389,6 +3479,29 @@ const guardCases = [
       webhookCreateFields: { filters: '{not json' },
     },
     /Filters must be valid JSON/,
+  ],
+  [
+    'automationRule/update rejects an empty patch',
+    {
+      resource: 'automationRule',
+      operation: 'update',
+      sessionId: 'abc-123',
+      ruleId: 'r1',
+      ruleUpdateFields: {},
+    },
+    /At least one field must be provided/,
+  ],
+  [
+    'automationRule/create rejects conditions that are not valid JSON',
+    {
+      resource: 'automationRule',
+      operation: 'create',
+      sessionId: 'abc-123',
+      ruleName: 'Greet',
+      ruleReplyText: 'Thanks',
+      ruleConditions: '{not json',
+    },
+    /Conditions must be valid JSON/,
   ],
   [
     'an unknown resource fails with a clear message',

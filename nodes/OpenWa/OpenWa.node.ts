@@ -10,7 +10,9 @@ import type {
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { buildApiKeyRequest } from './handlers/apiKey';
+import { buildAutomationRuleRequest } from './handlers/automationRule';
 import { buildCallRequest } from './handlers/call';
+import { buildCatalogRequest } from './handlers/catalog';
 import { buildChannelRequest } from './handlers/channel';
 import { buildChatRequest } from './handlers/chat';
 import { buildContactRequest } from './handlers/contact';
@@ -40,7 +42,9 @@ const RESOURCE_BUILDERS: Record<
   (this: IExecuteFunctions, operation: string, itemIndex: number) => Promise<RequestSpec | null>
 > = {
   apiKey: buildApiKeyRequest,
+  automationRule: buildAutomationRuleRequest,
   call: buildCallRequest,
+  catalog: buildCatalogRequest,
   channel: buildChannelRequest,
   chat: buildChatRequest,
   contact: buildContactRequest,
@@ -87,7 +91,9 @@ export class OpenWa implements INodeType {
         noDataExpression: true,
         options: [
           { name: 'API Key', value: 'apiKey' },
+          { name: 'Automation Rule', value: 'automationRule' },
           { name: 'Call', value: 'call' },
+          { name: 'Catalog', value: 'catalog' },
           { name: 'Channel', value: 'channel' },
           { name: 'Chat', value: 'chat' },
           { name: 'Contact', value: 'contact' },
@@ -3054,6 +3060,77 @@ export class OpenWa implements INodeType {
         ],
       },
 
+      // ============== CATALOG OPERATIONS ==============
+      {
+        displayName: 'Operation',
+        name: 'operation',
+        type: 'options',
+        noDataExpression: true,
+        displayOptions: { show: { resource: ['catalog'] } },
+        options: [
+          { name: 'Get', value: 'get', action: 'Get the business catalog' },
+          { name: 'Get Product', value: 'getProduct', action: 'Get one catalog product' },
+          { name: 'List Products', value: 'listProducts', action: 'List catalog products' },
+        ],
+        default: 'listProducts',
+      },
+      {
+        displayName: 'Session Name or ID',
+        name: 'sessionId',
+        type: 'options',
+        typeOptions: {
+          loadOptionsMethod: 'getSessions',
+        },
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['catalog'] } },
+        description:
+          'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+      },
+      {
+        displayName: 'Product ID',
+        name: 'productId',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['catalog'], operation: ['getProduct'] } },
+        description: 'The ID of the product, as returned by List Products',
+      },
+      {
+        displayName: 'Options',
+        name: 'catalogListOptions',
+        type: 'collection',
+        placeholder: 'Add Option',
+        default: {},
+        displayOptions: { show: { resource: ['catalog'], operation: ['listProducts'] } },
+        options: [
+          {
+            displayName: 'Limit',
+            name: 'limit',
+            type: 'number',
+            typeOptions: { minValue: 1 },
+            default: 50,
+            description: 'Max number of results to return',
+          },
+          {
+            displayName: 'Page',
+            name: 'page',
+            type: 'number',
+            typeOptions: { minValue: 1 },
+            default: 1,
+            description: 'Which page of products to return',
+          },
+        ],
+      },
+      {
+        displayName:
+          'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs.',
+        name: 'catalogEngineNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['catalog'] } },
+      },
+
       // ============== CHANNEL OPERATIONS ==============
       {
         displayName: 'Operation',
@@ -3210,6 +3287,159 @@ export class OpenWa implements INodeType {
             description: 'Max number of results to return (the server returns at most 100)',
           },
         ],
+      },
+
+      // ============== AUTOMATION RULE OPERATIONS ==============
+      {
+        displayName: 'Operation',
+        name: 'operation',
+        type: 'options',
+        noDataExpression: true,
+        displayOptions: { show: { resource: ['automationRule'] } },
+        options: [
+          { name: 'Create', value: 'create', action: 'Create an autoreply rule' },
+          { name: 'Delete', value: 'delete', action: 'Delete an autoreply rule' },
+          { name: 'Get', value: 'get', action: 'Get an autoreply rule' },
+          { name: 'List', value: 'list', action: 'List the autoreply rules of a session' },
+          { name: 'Update', value: 'update', action: 'Update an autoreply rule' },
+        ],
+        default: 'list',
+      },
+      {
+        displayName: 'Session Name or ID',
+        name: 'sessionId',
+        type: 'options',
+        typeOptions: {
+          loadOptionsMethod: 'getSessions',
+        },
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['automationRule'] } },
+        description:
+          'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+      },
+      {
+        displayName: 'Rule ID',
+        name: 'ruleId',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: {
+          show: { resource: ['automationRule'], operation: ['get', 'update', 'delete'] },
+        },
+        description: 'The ID of the rule, as returned by Create or List',
+      },
+      {
+        displayName: 'Name',
+        name: 'ruleName',
+        type: 'string',
+        default: '',
+        required: true,
+        placeholder: 'Greet new enquiries',
+        displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+        description: 'Display name for the rule, up to 100 characters',
+      },
+      {
+        displayName: 'Reply Text',
+        name: 'ruleReplyText',
+        type: 'string',
+        typeOptions: { rows: 3 },
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+        description: 'What the gateway sends back when the rule matches, up to 4096 characters',
+      },
+      {
+        displayName: 'Conditions',
+        name: 'ruleConditions',
+        type: 'json',
+        default: '',
+        displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+        description:
+          'Which messages the rule answers, as JSON in the same shape as webhook filters: <code>{"conditions":[{"field":"isGroup","operator":"is","value":false}]}</code>. All conditions must match. Leave empty and the rule answers every inbound message.',
+      },
+      {
+        displayName: 'Additional Fields',
+        name: 'ruleFields',
+        type: 'collection',
+        placeholder: 'Add Field',
+        default: {},
+        displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
+        options: [
+          {
+            displayName: 'Cooldown (Seconds)',
+            name: 'cooldownSeconds',
+            type: 'number',
+            typeOptions: { minValue: 0, maxValue: 86400 },
+            default: 60,
+            description:
+              'How long the rule stays quiet in a chat after replying there. This is what stops two auto-repliers answering each other forever, so set 0 only deliberately.',
+          },
+          {
+            displayName: 'Enabled',
+            name: 'enabled',
+            type: 'boolean',
+            default: true,
+            description: 'Whether the rule is active',
+          },
+        ],
+      },
+      {
+        displayName: 'Update Fields',
+        name: 'ruleUpdateFields',
+        type: 'collection',
+        placeholder: 'Add Field',
+        default: {},
+        displayOptions: { show: { resource: ['automationRule'], operation: ['update'] } },
+        description: 'Only the fields you add are sent. Anything left out keeps its stored value.',
+        options: [
+          {
+            displayName: 'Conditions',
+            name: 'conditions',
+            type: 'json',
+            default: '',
+            description:
+              'Match conditions as JSON, in the same shape as webhook filters. An empty object matches every inbound message.',
+          },
+          {
+            displayName: 'Cooldown (Seconds)',
+            name: 'cooldownSeconds',
+            type: 'number',
+            typeOptions: { minValue: 0, maxValue: 86400 },
+            default: 60,
+            description: 'How long the rule stays quiet in a chat after replying there',
+          },
+          {
+            displayName: 'Enabled',
+            name: 'enabled',
+            type: 'boolean',
+            default: true,
+            description: 'Whether the rule is active',
+          },
+          {
+            displayName: 'Name',
+            name: 'name',
+            type: 'string',
+            default: '',
+            description: 'Display name for the rule, up to 100 characters',
+          },
+          {
+            displayName: 'Reply Text',
+            name: 'replyText',
+            type: 'string',
+            typeOptions: { rows: 3 },
+            default: '',
+            description: 'What the gateway sends back when the rule matches',
+          },
+        ],
+      },
+      {
+        displayName:
+          'These rules run on the gateway, not in n8n: a matching message is answered even when this workflow is not running. That makes them the right tool for an out-of-hours acknowledgement, and the wrong one for anything needing workflow logic. Conditions use the same field set as webhook filters and therefore only see message events.',
+        name: 'automationRuleNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['automationRule'] } },
       },
 
       // ============== CALL OPERATIONS ==============
