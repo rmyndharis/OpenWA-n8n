@@ -1105,6 +1105,195 @@ const CHAT = '628123456789@c.us';
 const SESS = `${BASE}/api/sessions/abc-123`;
 
 mappingCases.push(
+  // --- message: new operations ---
+  [
+    'message/pin',
+    { resource: 'message', operation: 'pin', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/pin`,
+    { chatId: CHAT, messageId: 'm1', durationSeconds: 86400 },
+  ],
+  [
+    'message/pin honours a longer window',
+    {
+      resource: 'message',
+      operation: 'pin',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      pinDurationSeconds: 604800,
+    },
+    'POST',
+    `${SESS}/messages/pin`,
+    { chatId: CHAT, messageId: 'm1', durationSeconds: 604800 },
+  ],
+  [
+    'message/unpin never carries a duration',
+    { resource: 'message', operation: 'unpin', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/unpin`,
+    { chatId: CHAT, messageId: 'm1' },
+  ],
+  [
+    'message/star',
+    { resource: 'message', operation: 'star', ...S, chatId: CHAT, messageId: 'm1', star: false },
+    'POST',
+    `${SESS}/messages/star`,
+    { chatId: CHAT, messageId: 'm1', star: false },
+  ],
+  [
+    'message/votePoll uses the pollMessageId wire name',
+    {
+      resource: 'message',
+      operation: 'votePoll',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      pollVoteOptions: 'Pizza, Sushi',
+    },
+    'POST',
+    `${SESS}/messages/vote-poll`,
+    { chatId: CHAT, pollMessageId: 'm1', options: ['Pizza', 'Sushi'] },
+  ],
+  [
+    'message/votePoll sends an empty selection, which clears the vote',
+    { resource: 'message', operation: 'votePoll', ...S, chatId: CHAT, messageId: 'm1' },
+    'POST',
+    `${SESS}/messages/vote-poll`,
+    { chatId: CHAT, pollMessageId: 'm1', options: [] },
+  ],
+  [
+    'message/sendProduct',
+    {
+      resource: 'message',
+      operation: 'sendProduct',
+      ...S,
+      chatId: CHAT,
+      productId: 'p1',
+      productBody: 'Have a look',
+    },
+    'POST',
+    `${SESS}/messages/send-product`,
+    { chatId: CHAT, productId: 'p1', body: 'Have a look' },
+  ],
+  // --- message: new shared fields ---
+  [
+    'message/sendImage can quote a message',
+    {
+      resource: 'message',
+      operation: 'sendImage',
+      ...S,
+      chatId: CHAT,
+      imageSource: 'url',
+      imageUrl: 'https://example.com/i.png',
+      sendQuotedMessageId: 'm1',
+    },
+    'POST',
+    `${SESS}/messages/send-image`,
+    { chatId: CHAT, url: 'https://example.com/i.png', quotedMessageId: 'm1' },
+  ],
+  [
+    'message/sendTemplate does not accept a quote, so it never rides along',
+    {
+      resource: 'message',
+      operation: 'sendTemplate',
+      ...S,
+      chatId: CHAT,
+      sendTemplateName: 'welcome',
+      sendQuotedMessageId: 'm1',
+    },
+    'POST',
+    `${SESS}/messages/send-template`,
+    { chatId: CHAT, templateName: 'welcome' },
+  ],
+  [
+    'message/reply can now tag participants',
+    {
+      resource: 'message',
+      operation: 'reply',
+      ...S,
+      chatId: CHAT,
+      quotedMessageId: 'm1',
+      message: 'hi @628123456789',
+      mentions: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/messages/reply`,
+    {
+      chatId: CHAT,
+      quotedMessageId: 'm1',
+      text: 'hi @628123456789',
+      mentions: ['628123456789@c.us'],
+    },
+  ],
+  [
+    'message/sendText suppresses a link preview on request',
+    { resource: 'message', operation: 'sendText', ...S, chatId: CHAT, message: 'x', linkPreview: 'no' },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x', linkPreview: false },
+  ],
+  [
+    'message/sendText leaves the preview to the engine by default',
+    { resource: 'message', operation: 'sendText', ...S, chatId: CHAT, message: 'x' },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x' },
+  ],
+  [
+    'message/sendText attaches a complete custom preview',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      ...S,
+      chatId: CHAT,
+      message: 'see https://example.com',
+      customLinkPreview: { previewUrl: 'https://example.com', previewTitle: 'Example' },
+    },
+    'POST',
+    `${SESS}/messages/send-text`,
+    {
+      chatId: CHAT,
+      text: 'see https://example.com',
+      customLinkPreview: { url: 'https://example.com', title: 'Example' },
+    },
+  ],
+  [
+    'message/sendText drops a half-filled custom preview rather than sending an object the server refuses',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      ...S,
+      chatId: CHAT,
+      message: 'x',
+      customLinkPreview: { previewUrl: 'https://example.com' },
+    },
+    'POST',
+    `${SESS}/messages/send-text`,
+    { chatId: CHAT, text: 'x' },
+  ],
+  [
+    'message/sendLocation carries an address alongside the label',
+    {
+      resource: 'message',
+      operation: 'sendLocation',
+      ...S,
+      chatId: CHAT,
+      latitude: 1,
+      longitude: 2,
+      locationName: 'Office',
+      locationAddress: 'Jl. Sudirman No. 1',
+    },
+    'POST',
+    `${SESS}/messages/send-location`,
+    {
+      chatId: CHAT,
+      latitude: 1,
+      longitude: 2,
+      description: 'Office',
+      address: 'Jl. Sudirman No. 1',
+    },
+  ],
   // --- presence ---
   [
     'presence/subscribe',
@@ -1844,6 +2033,30 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('message/getMedia downloads the bytes from the message media route', async () => {
+  const { ctx, output } = await run(
+    {
+      resource: 'message',
+      operation: 'getMedia',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'true_628123456789@c.us_3EB0',
+    },
+    { response: Buffer.from('MEDIABYTES') },
+  );
+  const { options } = singleCall(ctx);
+  assert.equal(options.method, 'GET');
+  assert.equal(
+    options.url,
+    `${BASE}/api/sessions/abc-123/messages/${encodeURIComponent('628123456789@c.us')}/${encodeURIComponent('true_628123456789@c.us_3EB0')}/media`,
+  );
+  assert.equal(options.json, false);
+  assert.equal(options.encoding, 'arraybuffer');
+  const item = output[0][0];
+  assert.deepEqual(item.json, {});
+  assert.equal(item.binary.data.data, Buffer.from('MEDIABYTES').toString('base64'));
 });
 
 test('status/getMedia asks for raw bytes instead of JSON', async () => {
@@ -2672,6 +2885,42 @@ const guardCases = [
     'presence/subscribe rejects a bare phone number',
     { resource: 'presence', operation: 'subscribe', sessionId: 'abc-123', chatId: '628123456789' },
     /full WhatsApp ID including its domain/,
+  ],
+  [
+    'message/votePoll rejects more than twelve selections',
+    {
+      resource: 'message',
+      operation: 'votePoll',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'm1',
+      pollVoteOptions: Array.from({ length: 13 }, (_, i) => `o${i}`),
+    },
+    /at most 12 options/,
+  ],
+  [
+    'message/sendText refuses a custom preview paired with No Preview',
+    {
+      resource: 'message',
+      operation: 'sendText',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      message: 'x',
+      linkPreview: 'no',
+      customLinkPreview: { previewUrl: 'https://example.com', previewTitle: 'Example' },
+    },
+    /cannot be combined with Link Preview set to No Preview/,
+  ],
+  [
+    'message/sendProduct rejects a blank product id',
+    {
+      resource: 'message',
+      operation: 'sendProduct',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      productId: '   ',
+    },
+    /Product ID/,
   ],
   [
     'an unknown resource fails with a clear message',

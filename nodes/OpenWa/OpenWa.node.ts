@@ -315,12 +315,14 @@ export class OpenWa implements INodeType {
           { name: 'Forward', value: 'forward', action: 'Forward a message to another chat' },
           { name: 'Get Batch Status', value: 'getBatchStatus', action: 'Get bulk batch status' },
           { name: 'Get History', value: 'getHistory', action: 'Get the message history of a chat' },
+          { name: 'Get Media', value: 'getMedia', action: 'Download a message\'s stored media' },
           {
             name: 'Get Reactions',
             value: 'getReactions',
             action: 'Get the reactions on a message',
           },
           { name: 'List', value: 'list', action: 'List stored messages' },
+          { name: 'Pin', value: 'pin', action: 'Pin a message in its chat' },
           { name: 'React', value: 'react', action: 'React to a message' },
           { name: 'Reply', value: 'reply', action: 'Reply to a message' },
           { name: 'Send Audio', value: 'sendAudio', action: 'Send an audio or voice message' },
@@ -330,10 +332,18 @@ export class OpenWa implements INodeType {
           { name: 'Send Image', value: 'sendImage', action: 'Send an image' },
           { name: 'Send Location', value: 'sendLocation', action: 'Send a location' },
           { name: 'Send Poll', value: 'sendPoll', action: 'Send a poll' },
+          {
+            name: 'Send Product',
+            value: 'sendProduct',
+            action: 'Send a product card from the catalog',
+          },
           { name: 'Send Sticker', value: 'sendSticker', action: 'Send a sticker' },
           { name: 'Send Template', value: 'sendTemplate', action: 'Send a rendered template' },
           { name: 'Send Text', value: 'sendText', action: 'Send a text message' },
           { name: 'Send Video', value: 'sendVideo', action: 'Send a video' },
+          { name: 'Star', value: 'star', action: 'Star or unstar a message' },
+          { name: 'Unpin', value: 'unpin', action: 'Remove a message\'s pin' },
+          { name: 'Vote Poll', value: 'votePoll', action: 'Cast a vote on a poll' },
         ],
         default: 'sendText',
       },
@@ -383,6 +393,12 @@ export class OpenWa implements INodeType {
               'edit',
               'getHistory',
               'getReactions',
+              'getMedia',
+              'pin',
+              'unpin',
+              'star',
+              'votePoll',
+              'sendProduct',
             ],
           },
         },
@@ -651,6 +667,16 @@ export class OpenWa implements INodeType {
         },
         description: 'Name of the location',
       },
+      {
+        displayName: 'Address',
+        name: 'locationAddress',
+        type: 'string',
+        default: '',
+        placeholder: 'Jl. Sudirman No. 1, Jakarta',
+        displayOptions: { show: { resource: ['message'], operation: ['sendLocation'] } },
+        description:
+          'Optional street address, rendered on the line under the location name. Both engines carry it.',
+      },
       // Send Video fields
       {
         displayName: 'Video Source',
@@ -790,6 +816,81 @@ export class OpenWa implements INodeType {
         description:
           'Phone number for the shared contact, including country code (it is not auto-prefixed)',
       },
+      {
+        displayName: 'Quoted Message ID',
+        name: 'sendQuotedMessageId',
+        type: 'string',
+        default: '',
+        placeholder: 'true_628123456789@c.us_3EB0...',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: [
+              'sendText',
+              'sendImage',
+              'sendVideo',
+              'sendAudio',
+              'sendDocument',
+              'sendSticker',
+              'sendLocation',
+              'sendContact',
+              'sendPoll',
+            ],
+          },
+        },
+        description:
+          'Optionally quote an earlier message, so a reply can carry media, a location, a contact or a poll rather than only text. Leave empty to send without a quote. An ID the engine cannot resolve fails the send outright rather than delivering it unquoted, and Baileys can only quote a message it has already stored.',
+      },
+      {
+        displayName: 'Link Preview',
+        name: 'linkPreview',
+        type: 'options',
+        options: [
+          { name: 'Engine Default', value: 'default' },
+          { name: 'Generate a Preview', value: 'yes' },
+          { name: 'No Preview', value: 'no' },
+        ],
+        default: 'default',
+        displayOptions: {
+          show: { resource: ['message'], operation: ['sendText', 'sendTemplate'] },
+        },
+        description:
+          'Whether a URL in the message renders a preview card. The engines differ on what the default means: whatsapp-web.js builds one unless told not to, while on Baileys previews are opt-in. Choosing Generate a Preview on Baileys makes the server fetch every URL in the message before sending, which stalls the send on a slow or dead link.',
+      },
+      {
+        displayName: 'Custom Link Preview',
+        name: 'customLinkPreview',
+        type: 'collection',
+        placeholder: 'Add Field',
+        default: {},
+        displayOptions: { show: { resource: ['message'], operation: ['sendText'] } },
+        description:
+          'Attach a preview card of your own instead of letting the engine build one. Baileys only: whatsapp-web.js answers 501 rather than dropping it silently. Both URL and Title must be set or nothing is sent, and the URL must also appear in the message text or WhatsApp renders no card at all.',
+        options: [
+          {
+            displayName: 'URL',
+            name: 'previewUrl',
+            type: 'string',
+            default: '',
+            description:
+              'The URL the card points at. It must also appear literally in the message text.',
+          },
+          {
+            displayName: 'Title',
+            name: 'previewTitle',
+            type: 'string',
+            default: '',
+            description: 'Card title. WhatsApp renders no preview without one.',
+          },
+          {
+            displayName: 'Description',
+            name: 'previewDescription',
+            type: 'string',
+            default: '',
+            description: 'Optional line under the title',
+          },
+        ],
+      },
       // Mentions (Send Text / Image / Video / Document / Edit)
       {
         displayName: 'Mentions',
@@ -800,7 +901,17 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: {
             resource: ['message'],
-            operation: ['sendText', 'sendImage', 'sendDocument', 'sendVideo', 'edit'],
+            operation: [
+              'sendText',
+              'sendImage',
+              'sendDocument',
+              'sendVideo',
+              'sendAudio',
+              'sendSticker',
+              'sendTemplate',
+              'reply',
+              'edit',
+            ],
           },
         },
         description:
@@ -830,11 +941,74 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: {
             resource: ['message'],
-            operation: ['react', 'delete', 'edit', 'forward', 'getReactions'],
+            operation: [
+              'react',
+              'delete',
+              'edit',
+              'forward',
+              'getReactions',
+              'getMedia',
+              'pin',
+              'unpin',
+              'star',
+              'votePoll',
+            ],
           },
         },
         description:
           'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger',
+      },
+      {
+        displayName: 'Pin Duration',
+        name: 'pinDurationSeconds',
+        type: 'options',
+        options: [
+          { name: '24 Hours', value: 86400 },
+          { name: '7 Days', value: 604800 },
+          { name: '30 Days', value: 2592000 },
+        ],
+        default: 86400,
+        displayOptions: { show: { resource: ['message'], operation: ['pin'] } },
+        description:
+          'How long the pin lasts. WhatsApp accepts only these three windows. There is no way to read a pin back, so a workflow cannot check or refresh one.',
+      },
+      {
+        displayName: 'Star',
+        name: 'star',
+        type: 'boolean',
+        default: true,
+        displayOptions: { show: { resource: ['message'], operation: ['star'] } },
+        description:
+          'Whether to star the message. Turn off to remove the star. A star is private to this account and is never visible to the other party.',
+      },
+      {
+        displayName: 'Selected Options',
+        name: 'pollVoteOptions',
+        type: 'string',
+        default: '',
+        placeholder: 'Pizza, Sushi',
+        displayOptions: { show: { resource: ['message'], operation: ['votePoll'] } },
+        description:
+          'The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll\'s own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. The vote replaces any previous selection, and an empty list clears it.',
+      },
+      {
+        displayName: 'Product ID',
+        name: 'productId',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['message'], operation: ['sendProduct'] } },
+        description:
+          'The ID of the product in this account\'s catalog. A product with no image cannot be sent as a card, which the server reports as a 400.',
+      },
+      {
+        displayName: 'Message',
+        name: 'productBody',
+        type: 'string',
+        typeOptions: { rows: 2 },
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['sendProduct'] } },
+        description: 'Optional text to send alongside the product card',
       },
       {
         displayName: 'Emoji',
@@ -2100,7 +2274,7 @@ export class OpenWa implements INodeType {
         type: 'string',
         default: 'data',
         required: true,
-        displayOptions: { show: { resource: ['status'], operation: ['getMedia'] } },
+        displayOptions: { show: { resource: ['message', 'status'], operation: ['getMedia'] } },
         description: 'The name of the output binary field to put the media in',
       },
       {
