@@ -13,5 +13,5 @@ export declare function webhookConfigHash(config: {
     events: string[];
     secret: string;
     sessionId: string;
-    filters?: string;
+    filters?: unknown;
 }): string;

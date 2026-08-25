@@ -14,6 +14,7 @@ import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
 import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
+import { parseJsonParam, stableStringify } from '../shared/jsonParam';
 import { webhookSecretProblem } from '../shared/webhookSecret';
 import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
 import { getSessions } from '../OpenWa/loadOptions';
@@ -89,7 +90,7 @@ export class OpenWaTrigger implements INodeType {
         type: 'json',
         default: '',
         description:
-          'Optional server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. The gateway drops non-matching events before delivering, so they never start a workflow execution. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Filters only narrow message events: session, group and call events are delivered regardless. A filtered-out delivery is silent, so an over-strict filter looks exactly like nothing having happened. Changing this re-registers the webhook on the next activation.',
+          'Optional server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. The gateway drops non-matching events before delivering, so they never start a workflow execution. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Filters narrow only message events: session, group and call events arrive regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright, so a <code>sender</code> filter combined with a Message Ack subscription drops every ack. Filter narrowly, or use a second Trigger. A filtered-out delivery is silent, so an over-strict filter looks exactly like nothing having happened. Changing this re-registers the webhook on the next activation.',
       },
       {
         displayName: 'Deduplicate Deliveries',
@@ -177,7 +178,7 @@ export class OpenWaTrigger implements INodeType {
           events,
           secret: this.getNodeParameter('webhookSecret', '') as string,
           sessionId,
-          filters: (this.getNodeParameter('filters', '') as string) ?? '',
+          filters: this.getNodeParameter('filters', ''),
         });
         if ((webhookData.configHash as string | undefined) !== currentHash) {
           return discardRegistration();
@@ -211,8 +212,13 @@ export class OpenWaTrigger implements INodeType {
         // dashboard, the API, or the action node's own Webhook Update). Any of those
         // leaves the trigger reporting healthy while nothing ever reaches it, so
         // treat a drifted registration exactly like a stale one and rebuild it.
-        // The secret is deliberately not checked: the server never serializes it,
-        // and the config hash already covers a local change to it.
+        // The secret is the one registered field deliberately not compared: the
+        // server never serializes it back, so there is nothing to compare against,
+        // and the config hash already catches a local change to it. `filters` IS
+        // serialized, and a filter attached out of band suppresses deliveries with
+        // no other trace, so it is compared here. The comparison ignores key order,
+        // because the server round-trips filters through a JSON column and a
+        // reordered but identical filter must not force a re-registration.
         const sameEvents = (a: unknown, b: string[]): boolean => {
           if (!Array.isArray(a) || a.length !== b.length) {
             return false;
@@ -221,10 +227,22 @@ export class OpenWaTrigger implements INodeType {
           const right = [...b].sort();
           return left.every((value, index) => value === right[index]);
         };
+        let wantedFilters: unknown;
+        try {
+          wantedFilters = parseJsonParam(this.getNodeParameter('filters', ''));
+        } catch {
+          // Malformed text is create()'s problem to report; treat it as "no filter"
+          // here so a typo cannot silently delete a working registration.
+          wantedFilters = undefined;
+        }
+        const sameFilters =
+          stableStringify(registration.filters ?? null) === stableStringify(wantedFilters ?? null);
+
         if (
           registration.active === false ||
           (typeof registration.url === 'string' && registration.url !== webhookUrl) ||
-          !sameEvents(registration.events, events)
+          !sameEvents(registration.events, events) ||
+          !sameFilters
         ) {
           return discardRegistration();
         }
@@ -262,14 +280,17 @@ export class OpenWaTrigger implements INodeType {
           body.secret = webhookSecret;
         }
         // Server-side filters, so a non-matching event is dropped at the gateway
-        // instead of waking a workflow that would only discard it.
-        const filters = ((this.getNodeParameter('filters', '') as string) ?? '').trim();
-        if (filters) {
-          try {
-            body.filters = JSON.parse(filters);
-          } catch {
-            throw new NodeOperationError(this.getNode(), 'Filters must be valid JSON');
-          }
+        // instead of waking a workflow that would only discard it. The field is
+        // `type: 'json'`, so an expression-driven value arrives already resolved as
+        // an object rather than as text; both shapes are accepted.
+        let parsedFilters: unknown;
+        try {
+          parsedFilters = parseJsonParam(this.getNodeParameter('filters', ''));
+        } catch {
+          throw new NodeOperationError(this.getNode(), 'Filters must be valid JSON');
+        }
+        if (parsedFilters !== undefined) {
+          body.filters = parsedFilters;
         }
 
         const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
@@ -298,7 +319,7 @@ export class OpenWaTrigger implements INodeType {
           events,
           secret: webhookSecret,
           sessionId,
-          filters: (this.getNodeParameter('filters', '') as string) ?? '',
+          filters: this.getNodeParameter('filters', ''),
         });
         return true;
       },
@@ -396,6 +417,13 @@ export class OpenWaTrigger implements INodeType {
     // the same moment can both pass.
     if (this.getNodeParameter('deduplicateDeliveries', false) as boolean) {
       const envelope = body as Record<string, unknown>;
+      // A Webhook > Test delivery is exempt. Its idempotency key is derived from the
+      // webhook id alone, so every test of the same webhook carries an identical
+      // key; de-duplicating it would silently drop every test after the first, and a
+      // manual probe is precisely the thing that must always run.
+      if (envelope.event === 'test') {
+        return { workflowData: [this.helpers.returnJsonArray(body)] };
+      }
       const rawKey =
         typeof envelope.idempotencyKey === 'string' && envelope.idempotencyKey
           ? envelope.idempotencyKey

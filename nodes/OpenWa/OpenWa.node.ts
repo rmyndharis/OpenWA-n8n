@@ -1108,7 +1108,7 @@ export class OpenWa implements INodeType {
         placeholder: 'Pizza, Sushi',
         displayOptions: { show: { resource: ['message'], operation: ['votePoll'] } },
         description:
-          'The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll\'s own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. The vote replaces any previous selection, and an empty list clears it.',
+          'The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll\'s own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.',
       },
       {
         displayName: 'Product ID',
@@ -2047,7 +2047,7 @@ export class OpenWa implements INodeType {
             name: 'filters',
             type: 'json',
             default: '',
-            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters only narrow message events, so a session, group or call event is delivered regardless, and a suppressed delivery is silent: it looks the same from n8n as nothing having happened.',
+            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
           },
           {
             displayName: 'Headers',
@@ -2584,7 +2584,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['label'], operation: ['upsert', 'delete'] } },
         description:
-          'The ID of the label to write. Unlike every other label operation this is plain text, because the ID is chosen by the caller rather than the server and a picker could never offer one that does not exist yet. Reusing an existing ID rewrites that label instead of failing.',
+          'The ID of the label. This is plain text rather than a picker, because the ID is chosen by the caller and the label listing these operations would need is unavailable on the engine that serves them. On Create or Update, reusing an existing ID rewrites that label instead of failing.',
       },
       {
         displayName: 'Fields',
@@ -3399,7 +3399,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Match conditions as JSON, in the same shape as webhook filters. An empty object matches every inbound message.',
+              'Match conditions as JSON, in the same shape as webhook filters. Leave the field empty to match every inbound message; an empty object is refused, so use {"conditions":[]} if you want to send a match-all explicitly.',
           },
           {
             displayName: 'Cooldown (Seconds)',

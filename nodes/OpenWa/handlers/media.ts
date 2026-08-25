@@ -57,6 +57,9 @@ export async function buildMediaRequest(
       itemIndex,
       'data',
     ) as string;
+    // Assert first, as the shared media resolver does: without it a wrong field name
+    // surfaces as an opaque API error instead of naming the missing property.
+    this.helpers.assertBinaryData(itemIndex, binaryPropertyName);
     const buffer = await this.helpers.getBinaryDataBuffer(itemIndex, binaryPropertyName);
     body = { base64: buffer.toString('base64') };
   }

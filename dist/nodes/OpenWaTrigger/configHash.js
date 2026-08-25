@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.webhookConfigHash = webhookConfigHash;
 const node_crypto_1 = require("node:crypto");
+const jsonParam_1 = require("../shared/jsonParam");
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
  * registration depends on: the delivery URL n8n advertises, the subscribed
@@ -18,10 +19,32 @@ function webhookConfigHash(config) {
         events: [...config.events].sort(),
         secret: config.secret,
         sessionId: config.sessionId,
-        // Compared as the raw text the user typed. Reformatting it re-registers, which
-        // is harmless; the alternative is canonicalising arbitrary JSON to avoid it.
-        filters: config.filters ?? '',
+        // Normalised here rather than at the call sites, so checkExists and create
+        // cannot disagree. A `json` parameter arrives as text or as a resolved object
+        // depending on whether an expression drives it, and reformatting or reordering
+        // the same filter must not read as a change.
+        filters: filtersFingerprint(config.filters),
     });
     return (0, node_crypto_1.createHash)('sha256').update(canonical).digest('hex');
+}
+function filtersFingerprint(filters) {
+    if (filters === undefined || filters === null || filters === '') {
+        return '';
+    }
+    if (typeof filters === 'string') {
+        const trimmed = filters.trim();
+        if (!trimmed) {
+            return '';
+        }
+        try {
+            return (0, jsonParam_1.stableStringify)(JSON.parse(trimmed));
+        }
+        catch {
+            // Not valid JSON: fingerprint the text so a later correction still registers
+            // as a change. create() is where the user gets told it is malformed.
+            return trimmed;
+        }
+    }
+    return (0, jsonParam_1.stableStringify)(filters);
 }
 //# sourceMappingURL=configHash.js.map

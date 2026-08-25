@@ -3504,6 +3504,18 @@ const guardCases = [
     /Conditions must be valid JSON/,
   ],
   [
+    'session/updateConfig refuses a non-numeric reconnect cap instead of clearing it',
+    // NaN < 0 is false, so an unguarded sentinel would send `null` and silently
+    // reset the cap to unlimited rather than failing.
+    {
+      resource: 'session',
+      operation: 'updateConfig',
+      sessionId: 'abc-123',
+      sessionConfigFields: { maxReconnectAttempts: Number.NaN },
+    },
+    /Max Reconnect Attempts must be a number/,
+  ],
+  [
     'an unknown resource fails with a clear message',
     { resource: 'bogus', operation: 'x' },
     /Unsupported resource\/operation: bogus\/x/,

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 // Imports compiled output, so run `npm run build` before this test.
 import { httpStatusFromError } from '../dist/nodes/OpenWaTrigger/httpStatus.js';
 import { webhookConfigHash } from '../dist/nodes/OpenWaTrigger/configHash.js';
+import { stableStringify } from '../dist/nodes/shared/jsonParam.js';
 import * as triggerModule from '../dist/nodes/OpenWaTrigger/OpenWaTrigger.node.js';
 
 const { OpenWaTrigger } = triggerModule;
@@ -350,4 +351,84 @@ test('webhookConfigHash separates two different filter sets', () => {
     webhookConfigHash({ ...base, filters: '{"conditions":[]}' }),
     webhookConfigHash(base),
   );
+});
+
+// --- filters supplied as an object (an expression-driven `json` field) ---
+test('create: accepts filters resolved to an object, not only typed text', async () => {
+  // An n8n `json` field driven by a single expression hands the handler an object.
+  // Calling .trim() on it used to throw a raw TypeError mid-activation, after
+  // checkExists had already deleted the working registration.
+  const filters = { conditions: [{ field: 'fromMe', operator: 'is', value: false }] };
+  const { ctx, calls } = makeCtx({ filters });
+  assert.equal(await hooks().create.call(ctx), true);
+  assert.deepEqual(calls.find((c) => c.method === 'POST').body.filters, filters);
+});
+
+test('webhookConfigHash treats typed text and the equivalent object as the same config', () => {
+  const base = { url: 'u', events: ['a.b'], secret: 's', sessionId: 'x' };
+  const asText = webhookConfigHash({ ...base, filters: '{"conditions":[]}' });
+  const asObject = webhookConfigHash({ ...base, filters: { conditions: [] } });
+  assert.equal(asText, asObject);
+});
+
+test('webhookConfigHash ignores key order, so a reformatted filter is not a change', () => {
+  const base = { url: 'u', events: ['a.b'], secret: 's', sessionId: 'x' };
+  const a = webhookConfigHash({ ...base, filters: '{"conditions":[{"field":"fromMe","operator":"is","value":false}]}' });
+  const b = webhookConfigHash({ ...base, filters: '{"conditions":[{"value":false,"operator":"is","field":"fromMe"}]}' });
+  assert.equal(a, b);
+});
+
+test('stableStringify is order-insensitive but still distinguishes different values', () => {
+  assert.equal(stableStringify({ a: 1, b: 2 }), stableStringify({ b: 2, a: 1 }));
+  assert.notEqual(stableStringify({ a: 1 }), stableStringify({ a: 2 }));
+  assert.equal(stableStringify([1, { z: 1, y: 2 }]), stableStringify([1, { y: 2, z: 1 }]));
+});
+
+// --- filters drift on the server side ---
+test('checkExists: a filter attached out of band rebuilds the registration', async () => {
+  // The action node (or the dashboard) can attach a filter to the trigger's own
+  // webhook, which then suppresses deliveries with no other trace.
+  const { ctx, staticData } = makeCtx({
+    configHash: CURRENT_HASH,
+    getResponse: {
+      id: 'w1',
+      active: true,
+      url: WEBHOOK_URL,
+      events: ['message.received'],
+      filters: { conditions: [{ field: 'fromMe', operator: 'is', value: true }] },
+    },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(staticData.webhookId, undefined);
+});
+
+test('checkExists: a filter matching what the node registered is not drift', async () => {
+  const filters = '{"conditions":[{"field":"fromMe","operator":"is","value":false}]}';
+  const { ctx } = makeCtx({
+    configHash: webhookConfigHash({
+      url: WEBHOOK_URL,
+      events: ['message.received'],
+      secret: '',
+      sessionId: 'default',
+      filters,
+    }),
+    filters,
+    getResponse: {
+      id: 'w1',
+      active: true,
+      url: WEBHOOK_URL,
+      events: ['message.received'],
+      // Key order deliberately differs from what was registered.
+      filters: { conditions: [{ value: false, operator: 'is', field: 'fromMe' }] },
+    },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), true);
+});
+
+test('checkExists: an unfiltered registration matching an unfiltered node is not drift', async () => {
+  const { ctx } = makeCtx({
+    configHash: CURRENT_HASH,
+    getResponse: { id: 'w1', active: true, url: WEBHOOK_URL, events: ['message.received'], filters: null },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), true);
 });

@@ -85,8 +85,13 @@ async function buildSessionRequest(operation, itemIndex) {
             if (fields.maxReconnectAttempts !== undefined) {
                 // -1 is the node's "back to unlimited" sentinel; the server spells that null,
                 // and no in-range number expresses it. 0 is a real value meaning never reconnect.
-                body.maxReconnectAttempts =
-                    fields.maxReconnectAttempts < 0 ? null : fields.maxReconnectAttempts;
+                // Guard on Number.isFinite so a NaN from an expression cannot serialize to
+                // null and silently clear the cap instead of failing.
+                const cap = fields.maxReconnectAttempts;
+                if (!Number.isFinite(cap)) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Max Reconnect Attempts must be a number between -1 and 20', { itemIndex });
+                }
+                body.maxReconnectAttempts = cap < 0 ? null : cap;
             }
             if (fields.reconnectBaseDelay !== undefined) {
                 body.reconnectBaseDelay = fields.reconnectBaseDelay;

@@ -397,8 +397,8 @@ export async function buildMessageRequest(
       toChatId: requireJid(this, 'toChatId', 'To Chat ID', itemIndex),
       messageId: (this.getNodeParameter('messageId', itemIndex) as string).trim(),
     };
-    // The Catalog reads are absent because they are Baileys-only. send-catalog is
-    // absent because the route no longer exists at all; the server removed it.
+    // send-catalog has no branch because the route no longer exists at all; the
+    // server removed it. The catalog reads live on the Catalog resource.
   } else if (operation === 'pin' || operation === 'unpin') {
     endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
     body = {
