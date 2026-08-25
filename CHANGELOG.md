@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.3...v0.10.0) (2026-08-25)
+
+
+### Features
+
+* synchronize the node with OpenWA 0.23.3 ([#45](https://github.com/rmyndharis/OpenWA-n8n/issues/45)) ([7286851](https://github.com/rmyndharis/OpenWA-n8n/commit/72868512365fb8eff964fc5752c31c25c31b885c))
+
+
+### Bug Fixes
+
+* coerce text parameters, and correct copy that misstated server behaviour ([#48](https://github.com/rmyndharis/OpenWA-n8n/issues/48)) ([48814e5](https://github.com/rmyndharis/OpenWA-n8n/commit/48814e545965ab2ef655e03d9f01d56dbd219ac8))
+* stop dropping blank update fields, and recover errors from binary requests ([#47](https://github.com/rmyndharis/OpenWA-n8n/issues/47)) ([ca0a641](https://github.com/rmyndharis/OpenWA-n8n/commit/ca0a6417c9dc46d2931a81a7f08acacb9a40b904))
+
 ## [0.9.3](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.2...v0.9.3) (2026-08-16)
 
 
