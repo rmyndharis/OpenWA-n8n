@@ -1103,8 +1103,141 @@ mappingCases.push(
 const S = { sessionId: 'abc-123' };
 const CHAT = '628123456789@c.us';
 const SESS = `${BASE}/api/sessions/abc-123`;
+const GROUP = '120363021234567890@g.us';
+const CHANNEL = '120363021234567890@newsletter';
 
 mappingCases.push(
+  // --- group: new operations ---
+  [
+    'group/getJoinInfo',
+    { resource: 'group', operation: 'getJoinInfo', ...S, groupInviteCode: 'XyZ987' },
+    'GET',
+    `${SESS}/groups/join-info`,
+    undefined,
+  ],
+  [
+    'group/getMembershipRequests',
+    { resource: 'group', operation: 'getMembershipRequests', ...S, groupId: GROUP },
+    'GET',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests`,
+    undefined,
+  ],
+  [
+    'group/approveMembershipRequests names the requesters',
+    {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      ...S,
+      groupId: GROUP,
+      groupRequestParticipants: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests/approve`,
+    { participants: ['628123456789@c.us'] },
+  ],
+  [
+    'group/rejectMembershipRequests with no list means every pending request',
+    { resource: 'group', operation: 'rejectMembershipRequests', ...S, groupId: GROUP },
+    'POST',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/membership-requests/reject`,
+    undefined,
+  ],
+  [
+    'group/getPicture',
+    { resource: 'group', operation: 'getPicture', ...S, groupId: GROUP },
+    'GET',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    undefined,
+  ],
+  [
+    'group/setPicture',
+    {
+      resource: 'group',
+      operation: 'setPicture',
+      ...S,
+      groupId: GROUP,
+      groupPictureSource: 'url',
+      groupPictureUrl: 'https://example.com/g.png',
+    },
+    'PUT',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    { url: 'https://example.com/g.png' },
+  ],
+  [
+    'group/deletePicture',
+    { resource: 'group', operation: 'deletePicture', ...S, groupId: GROUP },
+    'DELETE',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/picture`,
+    undefined,
+  ],
+  [
+    'group/updateSettings carries memberAddMode',
+    {
+      resource: 'group',
+      operation: 'updateSettings',
+      ...S,
+      groupId: GROUP,
+      groupSettings: { memberAddMode: 'admins' },
+    },
+    'PUT',
+    `${SESS}/groups/${encodeURIComponent(GROUP)}/settings`,
+    { memberAddMode: 'admins' },
+  ],
+  // --- channel: new operations ---
+  [
+    'channel/create',
+    { resource: 'channel', operation: 'create', ...S, channelName: 'Updates' },
+    'POST',
+    `${SESS}/channels`,
+    { name: 'Updates' },
+  ],
+  [
+    'channel/delete is a POST on its own path, not the unsubscribe DELETE',
+    { resource: 'channel', operation: 'delete', ...S, channelId: CHANNEL },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/delete`,
+    undefined,
+  ],
+  [
+    'channel/unsubscribe stays a DELETE on the channel itself',
+    { resource: 'channel', operation: 'unsubscribe', ...S, channelId: CHANNEL },
+    'DELETE',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}`,
+    undefined,
+  ],
+  [
+    'channel/mute',
+    { resource: 'channel', operation: 'mute', ...S, channelId: CHANNEL, channelMute: false },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/mute`,
+    { mute: false },
+  ],
+  [
+    'channel/demoteAdmin',
+    {
+      resource: 'channel',
+      operation: 'demoteAdmin',
+      ...S,
+      channelId: CHANNEL,
+      channelUserId: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/admins/demote`,
+    { userId: '628123456789@c.us' },
+  ],
+  [
+    'channel/transferOwnership',
+    {
+      resource: 'channel',
+      operation: 'transferOwnership',
+      ...S,
+      channelId: CHANNEL,
+      channelNewOwnerId: '628123456789@c.us',
+    },
+    'POST',
+    `${SESS}/channels/${encodeURIComponent(CHANNEL)}/owner/transfer`,
+    { newOwnerId: '628123456789@c.us' },
+  ],
   // --- chat: new operations ---
   [
     'chat/archive',
@@ -2146,6 +2279,26 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
 test('operations ask for JSON parsing', async () => {
   const { ctx } = await run({ resource: 'observability', operation: 'check' });
   assert.equal(singleCall(ctx).options.json, true);
+});
+
+test('group/getJoinInfo sends the invite code as a query parameter', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'XyZ987',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'XyZ987' });
+});
+
+test('group/getJoinInfo reduces a full invite link to its code', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'https://chat.whatsapp.com/XyZ987',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'XyZ987' });
 });
 
 test('message/getMedia downloads the bytes from the message media route', async () => {
