@@ -1,7 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText } from './params';
+import { optionalNonBlank, requireText } from './params';
 import type { RequestSpec } from './types';
 
 // Server-side DTO limits.
@@ -83,8 +83,8 @@ export async function buildAutomationRuleRequest(
       return { endpoint: `${base}/${ruleId}`, method: 'DELETE', body: {} };
     case 'update': {
       // A partial update: anything left out keeps its stored value. `name` and
-      // `replyText` are rejected when blank, so a blank one is treated as unset
-      // rather than forwarded as a guaranteed 400.
+      // `replyText` are non-empty on the server, so a blank one is refused by name
+      // rather than dropped, which would report success while leaving it untouched.
       const fields = this.getNodeParameter('ruleUpdateFields', itemIndex, {}) as {
         name?: string;
         replyText?: string;
@@ -93,26 +93,18 @@ export async function buildAutomationRuleRequest(
         enabled?: boolean;
       };
       const body: Record<string, unknown> = {};
-      const name = (fields.name ?? '').trim();
-      if (name) {
-        if (name.length > MAX_RULE_NAME_LENGTH) {
-          throw new NodeOperationError(
-            this.getNode(),
-            `Name cannot exceed ${MAX_RULE_NAME_LENGTH} characters`,
-            { itemIndex },
-          );
-        }
+      const name = optionalNonBlank(this, fields.name, 'Name', itemIndex, MAX_RULE_NAME_LENGTH);
+      if (name !== undefined) {
         body.name = name;
       }
-      const replyText = (fields.replyText ?? '').trim();
-      if (replyText) {
-        if (replyText.length > MAX_REPLY_TEXT_LENGTH) {
-          throw new NodeOperationError(
-            this.getNode(),
-            `Reply text cannot exceed ${MAX_REPLY_TEXT_LENGTH} characters`,
-            { itemIndex },
-          );
-        }
+      const replyText = optionalNonBlank(
+        this,
+        fields.replyText,
+        'Reply text',
+        itemIndex,
+        MAX_REPLY_TEXT_LENGTH,
+      );
+      if (replyText !== undefined) {
         body.replyText = replyText;
       }
       const conditions = parseConditions(this, fields.conditions, itemIndex);

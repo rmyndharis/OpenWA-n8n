@@ -62,6 +62,62 @@ const RESOURCE_BUILDERS: Record<
   webhook: buildWebhookRequest,
 };
 
+/**
+ * Recovers the server's explanation from a failed binary request.
+ *
+ * A binary operation asks for an arraybuffer, so when the server answers with an
+ * error its JSON body arrives as raw bytes and the message never reaches the user.
+ * Get Media is the case that matters: its 404 covers five different situations, and
+ * without this the workflow sees only the status code. The decoded body is written
+ * back onto the error so the thrown NodeApiError carries it.
+ *
+ * Decorating an error must never itself throw, so every step is guarded.
+ */
+function decodeBinaryErrorBody(error: unknown): unknown {
+  const toText = (value: unknown): unknown => {
+    let buffer: Buffer | undefined;
+    if (Buffer.isBuffer(value)) {
+      buffer = value;
+    } else if (value instanceof ArrayBuffer) {
+      buffer = Buffer.from(value);
+    } else if (ArrayBuffer.isView(value)) {
+      buffer = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    }
+    if (!buffer || buffer.length === 0) {
+      return undefined;
+    }
+    const text = buffer.toString('utf8');
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  };
+
+  try {
+    const holder = error as {
+      response?: { body?: unknown; data?: unknown };
+      error?: unknown;
+    };
+    if (holder && typeof holder === 'object') {
+      if (holder.response && typeof holder.response === 'object') {
+        const decoded = toText(holder.response.body) ?? toText(holder.response.data);
+        if (decoded !== undefined) {
+          holder.response.body = decoded;
+          holder.response.data = decoded;
+        }
+      }
+      const topLevel = toText(holder.error);
+      if (topLevel !== undefined) {
+        holder.error = topLevel;
+      }
+    }
+  } catch {
+    // Leave the error exactly as it arrived rather than losing it.
+  }
+  return error;
+}
+
 export class OpenWa implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'OpenWA',
@@ -3915,11 +3971,16 @@ export class OpenWa implements INodeType {
           options.qs = spec.qs;
         }
 
-        const response = await this.helpers.httpRequestWithAuthentication.call(
-          this,
-          'openWaApi',
-          options,
-        );
+        let response: unknown;
+        try {
+          response = await this.helpers.httpRequestWithAuthentication.call(
+            this,
+            'openWaApi',
+            options,
+          );
+        } catch (requestError) {
+          throw isBinary ? decodeBinaryErrorBody(requestError) : requestError;
+        }
 
         if (isBinary) {
           // Raw bytes belong on the item's binary property; putting them on

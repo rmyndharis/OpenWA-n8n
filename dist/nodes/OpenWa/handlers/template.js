@@ -54,10 +54,10 @@ async function buildTemplateRequest(operation, itemIndex) {
                 header: MAX_HEADER_FOOTER_LENGTH,
                 footer: MAX_HEADER_FOOTER_LENGTH,
             };
-            // `name` and `body` are @IsNotEmpty() on the server, so forwarding a blank one
-            // is a guaranteed 400. Treat it as "not supplied" and let the all-empty check
-            // below name the real problem. `header` and `footer` carry no such validator:
-            // a blank value there is a deliberate clear and must still be sent.
+            // `name` and `body` are @IsNotEmpty() on the server, so a blank one can never
+            // mean anything: it is refused by name rather than dropped, which would report
+            // success while leaving the field untouched. `header` and `footer` carry no
+            // such validator, so a blank value there is a deliberate clear and is sent.
             const REJECTS_BLANK = new Set(['name', 'body']);
             const body = {};
             for (const [key, max] of Object.entries(limits)) {
@@ -65,7 +65,8 @@ async function buildTemplateRequest(operation, itemIndex) {
                 if (value === undefined) {
                     continue;
                 }
-                if (REJECTS_BLANK.has(key) && value.trim() === '') {
+                if (REJECTS_BLANK.has(key)) {
+                    body[key] = (0, params_1.optionalNonBlank)(this, value, `Template ${key}`, itemIndex, max);
                     continue;
                 }
                 if (value.length > max) {

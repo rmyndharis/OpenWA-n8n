@@ -4,6 +4,7 @@ exports.requireJid = requireJid;
 exports.requireText = requireText;
 exports.toQueryParams = toQueryParams;
 exports.toEpochMs = toEpochMs;
+exports.optionalNonBlank = optionalNonBlank;
 exports.toStringList = toStringList;
 const n8n_workflow_1 = require("n8n-workflow");
 /**
@@ -69,6 +70,30 @@ function toEpochMs(ctx, raw, label, itemIndex) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
     }
     return ms;
+}
+/**
+ * Reads an optional text field from an update collection, for the fields the server
+ * marks non-empty.
+ *
+ * Three states have to stay distinct. Absent means "leave the stored value alone",
+ * so it returns undefined and the caller omits the key. A real value is trimmed and
+ * returned. A value that is present but blank is neither: the server refuses it, so
+ * there is no reading under which it means anything. Dropping it silently would
+ * report success while leaving the field untouched, so it is refused here with a
+ * message that names the field and says how to leave it unchanged.
+ */
+function optionalNonBlank(ctx, value, label, itemIndex, maxLength) {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. Remove it from the fields to leave it unchanged.`, { itemIndex });
+    }
+    if (maxLength !== undefined && trimmed.length > maxLength) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot exceed ${maxLength} characters`, { itemIndex });
+    }
+    return trimmed;
 }
 /**
  * Normalises a list parameter into a trimmed, blank-free array of strings.

@@ -2543,6 +2543,45 @@ test('group/getJoinInfo reduces a full invite link to its code', async () => {
   assert.deepEqual(singleCall(ctx).options.qs, { code: 'XyZ987' });
 });
 
+test('message/getMedia surfaces the server explanation behind a 404, not just the status', async () => {
+  // A binary request asks for an arraybuffer, so the error body arrives as raw
+  // bytes. Without decoding, the workflow sees a bare 404 and none of the five
+  // situations that answer covers.
+  const explanation = { message: 'Message has no downloadable media', statusCode: 404 };
+  const err = {
+    statusCode: 404,
+    response: { status: 404, body: Buffer.from(JSON.stringify(explanation)) },
+  };
+  await assert.rejects(
+    () =>
+      run(
+        {
+          resource: 'message',
+          operation: 'getMedia',
+          sessionId: 'abc-123',
+          chatId: '628123456789@c.us',
+          messageId: 'm1',
+        },
+        { throwErr: err },
+      ),
+    (thrown) => {
+      // The decode happens in place, so the original error now carries readable JSON.
+      assert.deepEqual(err.response.body, explanation, 'error body should be decoded JSON');
+      assert.ok(/no downloadable media/.test(JSON.stringify(thrown.message ?? thrown)) ||
+        /no downloadable media/.test(JSON.stringify(err.response.body)));
+      return true;
+    },
+  );
+});
+
+test('a non-binary failure is passed through untouched', async () => {
+  const err = { statusCode: 400, response: { status: 400, body: { message: 'bad chat id' } } };
+  await assert.rejects(() =>
+    run({ resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: 'x@c.us', message: 'hi' }, { throwErr: err }),
+  );
+  assert.deepEqual(err.response.body, { message: 'bad chat id' }, 'untouched');
+});
+
 test('message/getMedia downloads the bytes from the message media route', async () => {
   const { ctx, output } = await run(
     {
@@ -3367,9 +3406,9 @@ const guardCases = [
     /at most 100 message IDs/,
   ],
   [
-    'template/update treats a blank name as no patch at all',
-    // `name` and `body` are IsNotEmpty on the server, so a blank one is a
-    // guaranteed 400. Dropping it here surfaces the real problem instead.
+    'template/update refuses a blank name instead of silently dropping it',
+    // `name` and `body` are IsNotEmpty on the server, so a blank one cannot mean
+    // anything. Dropping it would report success while the name stayed as it was.
     {
       resource: 'template',
       operation: 'update',
@@ -3377,7 +3416,41 @@ const guardCases = [
       templateId: 't1',
       templateUpdateFields: { name: '   ' },
     },
-    /At least one field must be provided/,
+    /Template name cannot be blank/,
+  ],
+  [
+    'template/update refuses a blank name even when another field is set',
+    // This is the case that used to succeed while quietly ignoring the name.
+    {
+      resource: 'template',
+      operation: 'update',
+      sessionId: 'abc-123',
+      templateId: 't1',
+      templateUpdateFields: { name: '', body: 'new body' },
+    },
+    /Template name cannot be blank/,
+  ],
+  [
+    'label/upsert refuses a blank name even when a colour is set',
+    {
+      resource: 'label',
+      operation: 'upsert',
+      sessionId: 'abc-123',
+      newLabelId: 'l9',
+      labelFields: { labelName: '  ', labelColor: 3 },
+    },
+    /Label name cannot be blank/,
+  ],
+  [
+    'automationRule/update refuses a blank reply text even when Enabled is set',
+    {
+      resource: 'automationRule',
+      operation: 'update',
+      sessionId: 'abc-123',
+      ruleId: 'r1',
+      ruleUpdateFields: { replyText: '', enabled: true },
+    },
+    /Reply text cannot be blank/,
   ],
   [
     'session/create rejects a proxy URL with no scheme',

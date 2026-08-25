@@ -1,7 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, requireText } from './params';
+import { optionalNonBlank, requireJid, requireText } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -51,8 +51,11 @@ export async function buildLabelRequest(
       labelColor?: number;
     };
     const body: Record<string, unknown> = {};
-    const name = (fields.labelName ?? '').trim();
-    if (name) {
+    // Refused rather than dropped when blank: the server marks it non-empty, so a
+    // blank cannot mean "clear the name" and dropping it would report success
+    // while leaving the label's name untouched.
+    const name = optionalNonBlank(this, fields.labelName, 'Label name', itemIndex, 100);
+    if (name !== undefined) {
       body.name = name;
     }
     // 0 is a real colour, so this tests for presence rather than truthiness. The
