@@ -54,12 +54,14 @@ export async function buildContactRequest(
   }
 
   if (operation === 'checkExists') {
-    const phoneNumber = asText(this.getNodeParameter('phoneNumber', itemIndex))
-      .replace(/[\s+\-()]/g, '');
+    const phoneNumber = asText(this.getNodeParameter('phoneNumber', itemIndex)).replace(
+      /[\s+\-()]/g,
+      '',
+    );
     if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
       throw new NodeOperationError(
         this.getNode(),
-        'Phone number must contain only digits (no +, spaces, or special characters)',
+        'Phone number must be digits in international format. Spaces, +, hyphens and parentheses are stripped first; any other character is rejected.',
         { itemIndex },
       );
     }
@@ -126,9 +128,7 @@ export async function buildContactRequest(
         const body: Record<string, unknown> = {
           firstName: requireText(this, 'contactFirstName', 'First Name', itemIndex, 100),
         };
-        const lastName = (
-          this.getNodeParameter('contactLastName', itemIndex, '') as string
-        ).trim();
+        const lastName = asText(this.getNodeParameter('contactLastName', itemIndex, ''));
         if (lastName) {
           body.lastName = lastName;
         }

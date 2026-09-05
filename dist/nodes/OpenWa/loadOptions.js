@@ -145,4 +145,3 @@ async function getChannels() {
 async function getApiKeys() {
     return toOptions(await fetchPage(this, '/api/auth/api-keys'), ['name']);
 }
-//# sourceMappingURL=loadOptions.js.map

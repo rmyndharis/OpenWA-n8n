@@ -105,14 +105,19 @@ export async function buildTemplateRequest(
           }
           continue;
         }
-        if (value.length > max) {
+        // Coerced for the same reason the blank-rejecting branch routes through
+        // optionalNonBlank: an expression can resolve to a number, whose `.length`
+        // is undefined, so the cap would pass and the server would answer a 400
+        // naming no field. A blank stays blank here, which clears the field.
+        const text = asText(value);
+        if (text.length > max) {
           throw new NodeOperationError(
             this.getNode(),
             `Template ${key} cannot exceed ${max} characters`,
             { itemIndex },
           );
         }
-        body[key] = value;
+        body[key] = text;
       }
       if (Object.keys(body).length === 0) {
         throw new NodeOperationError(

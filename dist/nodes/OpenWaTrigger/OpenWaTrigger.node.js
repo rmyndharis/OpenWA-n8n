@@ -36,10 +36,12 @@ class OpenWaTrigger {
                     name: 'default',
                     httpMethod: 'POST',
                     responseMode: 'onReceived',
-                    // Scoped to the session so several active workflows can each run an OpenWA
-                    // Trigger without colliding on one shared path. A change here changes the
-                    // delivery URL; checkExists detects that via the config hash and
-                    // re-registers the webhook automatically on the next activation.
+                    // n8n already makes the delivery URL unique per node instance: it prefixes
+                    // this path with the node's webhookId, or with workflow ID + node name when
+                    // the instance has none (NodeHelpers.getNodeWebhookUrl). The session is in
+                    // the path only so a registration is recognisable in the gateway's webhook
+                    // list. A change here changes the delivery URL; checkExists detects that via
+                    // the config hash and re-registers the webhook on the next activation.
                     path: '={{ "openwa-" + $parameter["sessionId"] }}',
                 },
             ],
@@ -79,14 +81,14 @@ class OpenWaTrigger {
                     name: 'filters',
                     type: 'json',
                     default: '',
-                    description: 'Optional server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. The gateway drops non-matching events before delivering, so they never start a workflow execution. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Filters narrow only message events: session, group and call events arrive regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright, so a <code>sender</code> filter combined with a Message Ack subscription drops every ack. Filter narrowly rather than adding a second Trigger for the same session: the delivery path is derived from the session, so two Triggers on one session collide on the same URL. A filtered-out delivery is silent, so an over-strict filter looks exactly like nothing having happened. Changing this re-registers the webhook on the next activation.',
+                    description: 'Optional server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. The gateway drops non-matching events before delivering, so they never start a workflow execution. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Filters narrow only message events: session, group and call events arrive regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright, so a <code>sender</code> filter combined with a Message Ack subscription drops every ack. Prefer one Trigger with a narrow filter over several Triggers on the same session: each Trigger registers its own webhook, every matching event is delivered to all of them, and the gateway caps registrations per session (16 by default). A filtered-out delivery is silent, so an over-strict filter looks exactly like nothing having happened. Changing this re-registers the webhook on the next activation.',
                 },
                 {
                     displayName: 'Deduplicate Deliveries',
                     name: 'deduplicateDeliveries',
                     type: 'boolean',
                     default: false,
-                    description: 'Whether to drop a repeated delivery of the same event, keyed on the envelope\'s idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: static data is saved per execution, so two deliveries arriving at the same moment can both pass.',
+                    description: "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: static data is saved per execution, so two deliveries arriving at the same moment can both pass.",
                 },
                 {
                     displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
@@ -117,8 +119,10 @@ class OpenWaTrigger {
                     // caller can report absent and let n8n create a fresh one.
                     const discardRegistration = async () => {
                         // Delete from the STORED session: the current parameter may already
-                        // point at a different session than the one the webhook lives on.
-                        const staleSessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? sessionId, 'Session ID');
+                        // point at a different session than the one the webhook lives on. That
+                        // value was sanitized before it was stored, so encoding it a second time
+                        // would corrupt any ID percent-encoding actually touches.
+                        const staleSessionId = webhookData.sessionId || sessionId;
                         try {
                             await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                                 method: 'DELETE',
@@ -200,8 +204,9 @@ class OpenWaTrigger {
                         wantedFilters = (0, jsonParam_1.parseJsonParam)(this.getNodeParameter('filters', ''));
                     }
                     catch {
-                        // Malformed text is create()'s problem to report; treat it as "no filter"
-                        // here so a typo cannot silently delete a working registration.
+                        // Unreachable today: the config hash above fingerprints malformed filter
+                        // text verbatim, so a typo never matches the stored hash and is discarded
+                        // before this point. Kept as a guard; create() is what reports the typo.
                         wantedFilters = undefined;
                     }
                     const sameFilters = (0, jsonParam_1.stableStringify)(registration.filters ?? null) === (0, jsonParam_1.stableStringify)(wantedFilters ?? null);
@@ -286,10 +291,12 @@ class OpenWaTrigger {
                     }
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = credentials.serverUrl.replace(/\/$/, '');
-                    // Delete from the session the webhook was registered on — the parameter may
-                    // have been edited without re-activating since then. Fall back to the
-                    // parameter for registrations that predate session tracking.
-                    const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(webhookData.sessionId ?? this.getNodeParameter('sessionId'), 'Session ID');
+                    // Delete from the session the webhook was registered on: the parameter may
+                    // have been edited without re-activating since then. The stored value is
+                    // already sanitized; only the fallback, for registrations that predate
+                    // session tracking, still needs sanitizing.
+                    const sessionId = webhookData.sessionId ||
+                        (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     try {
                         await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                             method: 'DELETE',
@@ -327,10 +334,10 @@ class OpenWaTrigger {
             if (!req.rawBody) {
                 this.logger.warn('OpenWA Trigger cannot verify the delivery signature: the raw request body is unavailable on this n8n version. Upgrade n8n, or clear the Webhook Secret to receive unsigned deliveries.');
                 this.getResponseObject().status(401).send('Unauthorized');
-                return {
-                    noWebhookResponse: true,
-                    workflowData: [[]],
-                };
+                // No `workflowData` at all: n8n skips the run only when the field is absent.
+                // An empty `[[]]` is still a run, so every refused delivery would create an
+                // execution record, and anyone who learned the delivery URL could mint them.
+                return { noWebhookResponse: true };
             }
             const signatureHeader = req.headers['x-openwa-signature'];
             const signature = typeof signatureHeader === 'string' ? signatureHeader : undefined;
@@ -338,18 +345,13 @@ class OpenWaTrigger {
                 // Reject with 401 so OpenWA sees the delivery was refused. IWebhookResponseData
                 // has no status field, so set it on the response and suppress n8n's own response.
                 this.getResponseObject().status(401).send('Unauthorized');
-                return {
-                    noWebhookResponse: true,
-                    workflowData: [[]],
-                };
+                return { noWebhookResponse: true };
             }
         }
         const body = req.body;
         // Validate payload is an object
         if (!body || typeof body !== 'object') {
-            return {
-                workflowData: [[]],
-            };
+            return {};
         }
         // Optional de-duplication, keyed on `idempotencyKey`: that value identifies the
         // EVENT and is reused verbatim when the gateway replays a delivery stranded by a
@@ -378,9 +380,9 @@ class OpenWaTrigger {
                 const seen = staticData.recentDeliveryIds ?? [];
                 if (seen.includes(rawKey)) {
                     this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${rawKey}`);
-                    return {
-                        workflowData: [[]],
-                    };
+                    // Dropping means not running. Returning an empty item set instead would
+                    // still register an execution for every replay this option exists to absorb.
+                    return {};
                 }
                 // Bound the memory: keep only the most recent 500 keys.
                 seen.push(rawKey);
@@ -396,4 +398,3 @@ class OpenWaTrigger {
     }
 }
 exports.OpenWaTrigger = OpenWaTrigger;
-//# sourceMappingURL=OpenWaTrigger.node.js.map

@@ -49,4 +49,3 @@ class OpenWaApi {
     }
 }
 exports.OpenWaApi = OpenWaApi;
-//# sourceMappingURL=OpenWaApi.credentials.js.map

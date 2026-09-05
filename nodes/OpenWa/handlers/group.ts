@@ -106,8 +106,10 @@ export async function buildGroupRequest(
   if (operation === 'join') {
     // Accept a full invite link too — the API wants only the code that follows
     // https://chat.whatsapp.com/, and pasting the whole link is the common slip.
-    const inviteCode = asText(this.getNodeParameter('groupInviteCode', itemIndex))
-      .replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+    const inviteCode = asText(this.getNodeParameter('groupInviteCode', itemIndex)).replace(
+      /^https?:\/\/chat\.whatsapp\.com\//i,
+      '',
+    );
     if (!inviteCode) {
       throw new NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
     }
@@ -123,8 +125,10 @@ export async function buildGroupRequest(
 
   if (operation === 'getJoinInfo') {
     // Same link-tolerance as join: pasting the whole invite URL is the common slip.
-    const inviteCode = asText(this.getNodeParameter('groupInviteCode', itemIndex))
-      .replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+    const inviteCode = asText(this.getNodeParameter('groupInviteCode', itemIndex)).replace(
+      /^https?:\/\/chat\.whatsapp\.com\//i,
+      '',
+    );
     if (!inviteCode) {
       throw new NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
     }
@@ -234,7 +238,10 @@ export async function buildGroupRequest(
     case 'updateDescription': {
       // An empty string is valid here: it clears the description. Send it as-is
       // rather than dropping the field, which the API would reject as missing.
-      const description = this.getNodeParameter('groupDescription', itemIndex, '') as string;
+      // Coerced rather than cast: an expression can resolve to a number or null, and
+      // `.length` on one is undefined, so the cap below would pass and a non-string
+      // would reach the server's @IsString as a 400 that names no field.
+      const description = asText(this.getNodeParameter('groupDescription', itemIndex, ''));
       if (description.length > MAX_DESCRIPTION_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),

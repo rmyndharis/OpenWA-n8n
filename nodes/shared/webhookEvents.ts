@@ -14,7 +14,7 @@
  * a user on the other engine is better served by knowing why nothing arrives than by not finding the
  * option at all.
  */
-import type {INodeProperties} from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
 export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
   {
@@ -69,7 +69,7 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
   {
     name: 'Message Edited',
     value: 'message.edited',
-    description: "Triggers when a message's text or media is edited",
+    description: "Triggers when a message's text or media caption is edited",
   },
   {
     name: 'Message Failed',
@@ -141,4 +141,6 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
 ];
 
 /** The event values only, for tests and for configHash seed parity. */
-export const WEBHOOK_EVENT_VALUES: string[] = WEBHOOK_EVENT_OPTIONS.map((o) => (o as {value: string}).value);
+export const WEBHOOK_EVENT_VALUES: string[] = WEBHOOK_EVENT_OPTIONS.map(
+  (o) => (o as { value: string }).value,
+);

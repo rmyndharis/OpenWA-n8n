@@ -16,7 +16,7 @@ const { OpenWaTrigger } = triggerModule;
 // mirror: nothing here can detect that core has moved.
 //
 //   source: src/modules/webhook/dto/webhook.dto.ts in rmyndharis/OpenWA
-//   taken at: v0.19.0, 2026-08-15 — the release tag itself.
+//   taken at: v0.19.0 (2026-08-15); re-verified unchanged at v0.23.4 (2026-09-05).
 //   count: 23
 //
 // The previous copy claimed to "mirror" core and had drifted to 17 while asserting the node matched

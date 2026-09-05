@@ -106,11 +106,15 @@ async function buildWebhookRequest(operation, itemIndex) {
                 body[key] = updateFields[key];
             }
         }
-        // A secret is only forwarded when set to a non-empty value. An empty string would
-        // CLEAR the signing secret server-side, so we never leak the field's empty default
-        // when it is merely added to the collection. To disable signing, recreate the
-        // webhook without a secret.
-        if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
+        // The server reads an empty secret as "stop signing" (`@ValidateIf(o => o.secret
+        // !== '')` skips the 16-character floor for exactly that value). A blank field
+        // cannot carry that instruction, because an n8n collection yields the empty
+        // default as soon as the field is added, so a blank is dropped and the clear is
+        // spelled with its own toggle instead.
+        if (updateFields.clearSecret === true) {
+            body.secret = '';
+        }
+        else if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
             assertSecretLength(this.getNode(), updateFields.secret, itemIndex);
             body.secret = updateFields.secret;
         }
@@ -140,6 +144,12 @@ async function buildWebhookRequest(operation, itemIndex) {
                 continue; // blank value — nothing to send
             body[key] = parseJsonObject(this.getNode(), raw, key === 'headers' ? 'Headers' : 'Filters', itemIndex);
         }
+        // Every field on this route is optional server-side, so an empty body is a 200
+        // that changed nothing. Refuse it here, the way every other update operation in
+        // this node does, rather than reporting success for a request that did nothing.
+        if (Object.keys(body).length === 0) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });
+        }
         return {
             endpoint: `/api/sessions/${sessionId}/webhooks/${webhookId}`,
             method: 'PUT',
@@ -156,4 +166,3 @@ async function buildWebhookRequest(operation, itemIndex) {
     }
     return null;
 }
-//# sourceMappingURL=webhook.js.map

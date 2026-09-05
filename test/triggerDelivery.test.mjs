@@ -90,7 +90,9 @@ test('a failed signature rejects with 401 and does not run the workflow', async 
   const result = await deliver(ctx);
   assert.deepEqual(responseCalls, [['status', 401], ['send', 'Unauthorized']]);
   assert.equal(result.noWebhookResponse, true);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
 });
 
 test('a raw body populated by readRawBody() verifies normally', async () => {
@@ -114,7 +116,9 @@ test('a signed config without any raw body rejects loudly (no silent re-serializ
   const result = await deliver(ctx);
   assert.deepEqual(responseCalls, [['status', 401], ['send', 'Unauthorized']]);
   assert.equal(result.noWebhookResponse, true);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
   assert.equal(logs.length, 1);
   assert.equal(logs[0][0], 'warn');
   assert.match(logs[0][1], /raw request body/i);
@@ -129,7 +133,9 @@ test('a readRawBody that populates nothing still rejects loudly', async () => {
   });
   const result = await deliver(ctx);
   assert.deepEqual(responseCalls, [['status', 401], ['send', 'Unauthorized']]);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
 });
 
 // --- de-duplication ---
@@ -151,7 +157,9 @@ test('dedup enabled: a repeated deliveryId is dropped without running or 401', a
   const staticData = { recentDeliveryIds: ['d1'] };
   const { ctx, responseCalls } = makeCtx({ deduplicate: true, staticData });
   const result = await deliver(ctx);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
   assert.deepEqual(responseCalls, []);
   assert.deepEqual(staticData.recentDeliveryIds, ['d1']);
 });
@@ -178,7 +186,9 @@ test('dedup enabled: a crash replay (same idempotencyKey, NEW deliveryId) is dro
   const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd-REPLAY', data: {} };
   const { ctx, responseCalls } = makeCtx({ deduplicate: true, staticData, body });
   const result = await deliver(ctx);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
   assert.deepEqual(responseCalls, []);
 });
 
@@ -195,7 +205,9 @@ test('dedup enabled: falls back to deliveryId when the envelope carries no idemp
   const staticData = { recentDeliveryIds: ['d1'] };
   const { ctx } = makeCtx({ deduplicate: true, staticData });
   const result = await deliver(ctx);
-  assert.deepEqual(result.workflowData, [[]]);
+  // Absent, not empty: n8n skips the run only when workflowData is undefined, so
+  // an empty item set would still register an execution for a refused delivery.
+  assert.equal(result.workflowData, undefined);
 });
 
 test('dedup enabled: a Webhook Test is never de-duplicated', async () => {

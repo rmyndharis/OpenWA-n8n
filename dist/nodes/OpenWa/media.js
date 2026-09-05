@@ -26,4 +26,3 @@ async function resolveMediaSource(itemIndex, params, binaryFallbackMime) {
         mimetype: this.getNodeParameter(params.mimeType, itemIndex),
     };
 }
-//# sourceMappingURL=media.js.map

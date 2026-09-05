@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 // Imports the compiled output, so run `npm run build` before this test.
+import { createRequire } from 'node:module';
 import * as nodeModule from '../dist/nodes/OpenWa/OpenWa.node.js';
+
+// n8n-workflow ships a broken ESM build (extensionless internal imports), so the
+// CJS entry is the only one that loads here. The node itself is compiled to CJS
+// and resolves it the same way.
+const { NodeApiError } = createRequire(import.meta.url)('n8n-workflow');
 
 const { OpenWa } = nodeModule;
 
@@ -20,8 +26,10 @@ function makeCtx({
   binary = null,
 } = {}) {
   const calls = [];
+  const prepared = [];
   const ctx = {
     calls,
+    prepared,
     getInputData: () => [{ json: {} }],
     getNodeParameter: (name, _i, fallback) => (name in params ? params[name] : fallback),
     getCredentials: async () => ({ serverUrl: BASE }),
@@ -43,11 +51,14 @@ function makeCtx({
       assertBinaryData: () => binary ?? { mimeType: 'image/png' },
       getBinaryDataBuffer: async () => Buffer.from('IMGDATA'),
       // Stands in for n8n's binary-data pipeline: records what it was handed so
-      // a test can assert the bytes survived the round trip.
-      prepareBinaryData: async (buffer) => ({
-        data: buffer.toString('base64'),
-        mimeType: 'application/octet-stream',
-      }),
+      // a test can assert the bytes and the served MIME type survived the round trip.
+      prepareBinaryData: async (buffer, _filePath, mimeType) => {
+        prepared.push({ buffer: buffer.toString('utf8'), mimeType });
+        return {
+          data: buffer.toString('base64'),
+          mimeType: mimeType ?? 'application/octet-stream',
+        };
+      },
     },
   };
   return ctx;
@@ -817,17 +828,47 @@ mappingCases.push(
     { retryCount: 5, active: false },
   ],
   [
+    // A collection yields the field's blank default as soon as it is added, so a
+    // blank cannot be read as "clear it" without disabling signing by accident.
     'webhook/update never sends an empty secret',
     {
       resource: 'webhook',
       operation: 'update',
       sessionId: 'abc-123',
       webhookId: 'w1',
-      updateFields: { secret: '' },
+      updateFields: { secret: '', active: true },
     },
     'PUT',
     `${BASE}/api/sessions/abc-123/webhooks/w1`,
-    undefined,
+    { active: true },
+  ],
+  [
+    // The server reads an empty secret as "stop signing", which only an explicit
+    // gesture should ask for.
+    'webhook/update clears the secret when asked explicitly',
+    {
+      resource: 'webhook',
+      operation: 'update',
+      sessionId: 'abc-123',
+      webhookId: 'w1',
+      updateFields: { clearSecret: true },
+    },
+    'PUT',
+    `${BASE}/api/sessions/abc-123/webhooks/w1`,
+    { secret: '' },
+  ],
+  [
+    'webhook/update prefers Clear Secret over a supplied secret',
+    {
+      resource: 'webhook',
+      operation: 'update',
+      sessionId: 'abc-123',
+      webhookId: 'w1',
+      updateFields: { clearSecret: true, secret: 'sixteen-char-secret' },
+    },
+    'PUT',
+    `${BASE}/api/sessions/abc-123/webhooks/w1`,
+    { secret: '' },
   ],
   [
     'webhook/update sends a non-empty secret',
@@ -1839,6 +1880,34 @@ mappingCases.push(
     { maxReconnectAttempts: 0 },
   ],
   [
+    'session/getProxy',
+    { resource: 'session', operation: 'getProxy', ...S },
+    'GET',
+    `${SESS}/proxy`,
+    undefined,
+  ],
+  [
+    'session/updateProxy sets a proxy',
+    { resource: 'session', operation: 'updateProxy', ...S, proxyUrl: 'socks5://127.0.0.1:1080' },
+    'PATCH',
+    `${SESS}/proxy`,
+    { proxyUrl: 'socks5://127.0.0.1:1080' },
+  ],
+  [
+    // Only an explicit null clears it server-side; an omitted key is a no-op read.
+    'session/updateProxy clears a proxy with an explicit null',
+    {
+      resource: 'session',
+      operation: 'updateProxy',
+      ...S,
+      proxyClear: true,
+      proxyUrl: 'socks5://127.0.0.1:1080',
+    },
+    'PATCH',
+    `${SESS}/proxy`,
+    { proxyUrl: null },
+  ],
+  [
     'session/create forwards a proxy URL',
     {
       resource: 'session',
@@ -2494,6 +2563,56 @@ test('a DELETE with an empty (204) response yields { success: true }', async () 
   assert.deepEqual(output[0][0].pairedItem, { item: 0 });
 });
 
+// --- List responses ----------------------------------------------------------
+// 19 routes answer a bare JSON array. Left whole it would land on one item's
+// `json`, where `$json.<field>` is undefined and Split Out has no field to
+// point at, so each row becomes its own item.
+
+test('a list route emits one item per row, each traced back to its input item', async () => {
+  const { output } = await run(
+    { resource: 'chat', operation: 'list', sessionId: 'abc-123' },
+    { response: [{ id: 'a@c.us' }, { id: 'b@c.us' }] },
+  );
+  assert.deepEqual(
+    output[0].map((item) => item.json),
+    [{ id: 'a@c.us' }, { id: 'b@c.us' }],
+  );
+  assert.deepEqual(
+    output[0].map((item) => item.pairedItem),
+    [{ item: 0 }, { item: 0 }],
+  );
+});
+
+test('contact/listBlocked wraps its bare ids, which are not valid item json', async () => {
+  const { output } = await run(
+    { resource: 'contact', operation: 'listBlocked', sessionId: 'abc-123' },
+    { response: ['628123456789@c.us', '628999999999@c.us'] },
+  );
+  assert.deepEqual(
+    output[0].map((item) => item.json),
+    [{ data: '628123456789@c.us' }, { data: '628999999999@c.us' }],
+  );
+});
+
+test('an empty list emits no items rather than one empty array', async () => {
+  const { output } = await run(
+    { resource: 'chat', operation: 'list', sessionId: 'abc-123' },
+    { response: [] },
+  );
+  assert.deepEqual(output[0], []);
+});
+
+test('an envelope is left whole, so its pagination survives', async () => {
+  // catalog/listProducts answers { products, pagination }. Spreading the rows out
+  // of it would drop the cursor the next page needs.
+  const { output } = await run(
+    { resource: 'catalog', operation: 'listProducts', sessionId: 'abc-123' },
+    { response: { products: [{ id: 'p1' }], pagination: { cursor: 'c1' } } },
+  );
+  assert.equal(output[0].length, 1);
+  assert.deepEqual(output[0][0].json, { products: [{ id: 'p1' }], pagination: { cursor: 'c1' } });
+});
+
 // --- Response parsing --------------------------------------------------------
 // RequestSpec carries an optional `responseFormat` for routes that do not answer
 // with JSON. 'binary' is used by status/getMedia, which streams the stored media
@@ -2862,6 +2981,32 @@ test('message/list forwards its filters', async () => {
   assert.deepEqual(singleCall(ctx).options.qs, { chatId: '1@c.us', limit: 10 });
 });
 
+test('message/list forwards the v0.23.4 cursor and the inline-media opt-out', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'list',
+    sessionId: 'abc-123',
+    messageListOptions: { after: 'msg-9', inlineMedia: false, limit: 100 },
+  });
+  // `false` has to survive: the server reads the opt-out as the literal string
+  // 'false', so dropping the key would silently keep inlining every payload.
+  assert.deepEqual(singleCall(ctx).options.qs, {
+    after: 'msg-9',
+    inlineMedia: false,
+    limit: 100,
+  });
+});
+
+test('message/list keeps inlineMedia true when the user leaves the default alone', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'list',
+    sessionId: 'abc-123',
+    messageListOptions: { inlineMedia: true },
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { inlineMedia: true });
+});
+
 test('message/getHistory forwards a false boolean instead of dropping it', async () => {
   const { ctx } = await run({
     resource: 'message',
@@ -2991,6 +3136,360 @@ test('continueOnFail pushes the error message and keeps the item lineage', async
   assert.deepEqual(output[0][0].pairedItem, { item: 0 });
 });
 
+// --- Expression-typed input: a text field can receive a number, null or an object.
+// Every one of these crashed with an opaque "x.trim is not a function" before the
+// fields were routed through asText().
+const coercionCases = [
+  [
+    'message/sendTemplate coerces a numeric Template Name',
+    { resource: 'message', operation: 'sendTemplate', sessionId: 'abc-123', chatId: '1@c.us', sendTemplateName: 42 },
+    (body) => assert.equal(body.templateName, '42'),
+  ],
+  [
+    'contact/save drops a null Last Name instead of throwing',
+    {
+      resource: 'contact',
+      operation: 'save',
+      sessionId: 'abc-123',
+      contactId: '1@c.us',
+      contactFirstName: 'Ada',
+      contactLastName: null,
+    },
+    (body) => assert.deepEqual(body, { firstName: 'Ada' }),
+  ],
+  [
+    'status/sendText coerces a numeric Background Color',
+    { resource: 'status', operation: 'sendText', sessionId: 'abc-123', statusText: 'hi', statusBackgroundColor: 123456 },
+    (body) => assert.equal(body.backgroundColor, '123456'),
+  ],
+  [
+    'group/updateDescription coerces a numeric description',
+    { resource: 'group', operation: 'updateDescription', sessionId: 'abc-123', groupId: 'g@g.us', groupDescription: 2026 },
+    (body) => assert.deepEqual(body, { description: '2026' }),
+  ],
+  [
+    'channel/create coerces a numeric description',
+    { resource: 'channel', operation: 'create', sessionId: 'abc-123', channelName: 'c', channelDescription: 7 },
+    (body) => assert.equal(body.description, '7'),
+  ],
+];
+
+for (const [label, params, check] of coercionCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    check(singleCall(ctx).options.body ?? {});
+  });
+}
+
+test('message/sendText refuses an object body instead of sending [object Object]', async () => {
+  // The gateway validates with enableImplicitConversion, which rewrites the value
+  // before @IsString() sees it, so an object arrives at WhatsApp as literal text.
+  // A sent message cannot be recalled, so the refusal has to happen here.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'sendText',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        message: { payload: 'hi' },
+      }),
+    /Message must be text/,
+  );
+});
+
+test('message/reply refuses an array body for the same reason', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'reply',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        quotedMessageId: 'm1',
+        message: ['a', 'b'],
+      }),
+    /Message must be text/,
+  );
+});
+
+test('a pasted JSON array of objects is refused, not chopped on its commas', async () => {
+  // The guard used to sit inside the JSON.parse try, so it was swallowed and the
+  // raw text fell through to the comma splitter, sending JSON fragments as JIDs.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'group',
+        operation: 'addParticipants',
+        sessionId: 'abc-123',
+        groupId: 'g@g.us',
+        groupParticipants: '[{"id":"628111@c.us"},{"id":"628222@c.us"}]',
+      }),
+    /List entries must be text/,
+  );
+});
+
+test('a pasted JSON array of strings still works', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'addParticipants',
+    sessionId: 'abc-123',
+    groupId: 'g@g.us',
+    groupParticipants: '["628111@c.us","628222@c.us"]',
+  });
+  assert.deepEqual(singleCall(ctx).options.body, {
+    participants: ['628111@c.us', '628222@c.us'],
+  });
+});
+
+test('apiKey/create refuses an expiry that is already past', async () => {
+  // Seconds-scale epoch input resolves to 1970 and would create a key that is dead
+  // on arrival while the request answers 200.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'apiKey',
+        operation: 'create',
+        keyName: 'ops',
+        keyFields: { expiresAt: 1798761600 },
+      }),
+    /Expiry date must be in the future/,
+  );
+});
+
+test('apiKey/create refuses an epoch too large for a Date', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'apiKey',
+        operation: 'create',
+        keyName: 'ops',
+        keyFields: { expiresAt: '1830297599000000000' },
+      }),
+    /Expiry date is not a valid date/,
+  );
+});
+
+test('apiKey/create normalises a real future expiry to an ISO string', async () => {
+  const future = Date.now() + 86400000;
+  const { ctx } = await run({
+    resource: 'apiKey',
+    operation: 'create',
+    keyName: 'ops',
+    keyFields: { expiresAt: future },
+  });
+  assert.deepEqual(singleCall(ctx).options.body, {
+    name: 'ops',
+    expiresAt: new Date(future).toISOString(),
+  });
+});
+
+test('message/sendText coerces a numeric message body without trimming it', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 2026,
+  });
+  assert.equal(singleCall(ctx).options.body.text, '2026');
+});
+
+test('message/sendText keeps whitespace a user put in the message body', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'Invoice attached\n\n  Regards, Ada  ',
+  });
+  // Trimming here would eat the blank line before a signature, which is content.
+  assert.equal(singleCall(ctx).options.body.text, 'Invoice attached\n\n  Regards, Ada  ');
+});
+
+test('message/sendText coerces a numeric custom link preview title', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'hi',
+    customLinkPreview: { previewUrl: 'https://e.com', previewTitle: 2026 },
+  });
+  assert.deepEqual(singleCall(ctx).options.body.customLinkPreview, {
+    url: 'https://e.com',
+    title: '2026',
+  });
+});
+
+test('chat/mute reads an epoch-ms string as the instant it is, not as a year', async () => {
+  const { ctx } = await run({
+    resource: 'chat',
+    operation: 'mute',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    muteUntil: '1798761600000',
+  });
+  // Date.parse answers NaN for a 13-digit string, so this used to be refused as
+  // "not a valid date" even though it is exactly the number the route wants.
+  assert.deepEqual(singleCall(ctx).options.body, {
+    chatId: '1@c.us',
+    muteUntil: 1798761600000,
+  });
+});
+
+test('chat/mute refuses a seconds-scale timestamp instead of muting until 1970', async () => {
+  // Ten digits is epoch-SECONDS. Read as milliseconds it lands in January 1970, so the
+  // gateway answers 200 for a mute that expired decades ago and the chat stays unmuted.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'chat',
+        operation: 'mute',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        muteUntil: '1798761600',
+      }),
+    /Mute Until is not a valid date/,
+  );
+});
+
+test('chat/mute still accepts an ISO instant from the date picker', async () => {
+  const { ctx } = await run({
+    resource: 'chat',
+    operation: 'mute',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    muteUntil: '2026-09-05T10:00:00.000Z',
+  });
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-09-05T10:00:00.000Z'));
+});
+
+test('a binary route asks for raw bytes and leaves the MIME type to n8n', async () => {
+  const { ctx, output } = await run(
+    { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+    { response: Buffer.from('PDFBYTES') },
+  );
+  assert.equal(singleCall(ctx).options.encoding, 'arraybuffer');
+  // No mimeType argument: the gateway serves every document as application/octet-stream
+  // (its inertMimetype allowlist), and passing that on would suppress the byte sniffing
+  // that recovers application/pdf and the .pdf extension.
+  assert.deepEqual(ctx.prepared, [{ buffer: 'PDFBYTES', mimeType: undefined }]);
+  assert.equal(output[0][0].binary.data.data, Buffer.from('PDFBYTES').toString('base64'));
+});
+
+test('continueOnFail keeps the explanation the server sent, not just the status line', async () => {
+  const axiosLike = Object.assign(new Error('Request failed with status code 404'), {
+    response: { data: { message: 'Message has no downloadable media' } },
+  });
+  const { output } = await run(
+    { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+    { throwErr: axiosLike, continueOnFail: true },
+  );
+  assert.equal(output[0].length, 1);
+  assert.match(output[0][0].json.description, /Message has no downloadable media/);
+});
+
+test('a binary 404 body is decoded out of the bytes it arrived as', async () => {
+  const axiosLike = Object.assign(new Error('Request failed with status code 404'), {
+    response: { data: Buffer.from(JSON.stringify({ message: 'Message has no downloadable media' })) },
+  });
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+        { throwErr: axiosLike },
+      ),
+    (err) => {
+      assert.match(err.description, /Message has no downloadable media/);
+      return true;
+    },
+  );
+});
+
+test('a binary 404 is still decoded when n8n hands over an already-wrapped error', async () => {
+  // What the running helper actually throws: the raw request failure is parked on
+  // `cause` and the undecoded bytes on `context.data`, and the message has already
+  // been computed from bytes nothing could read.
+  const node = { id: 'node-1', name: 'OpenWA', type: 'n8n-nodes-openwa.openWa', typeVersion: 1, position: [0, 0], parameters: {} };
+  const axiosLike = Object.assign(new Error('Request failed with status code 404'), {
+    response: {
+      status: 404,
+      data: Buffer.from(JSON.stringify({ message: 'Message has no downloadable media' })),
+    },
+  });
+  const wrapped = new NodeApiError(node, axiosLike);
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+        { throwErr: wrapped },
+      ),
+    (err) => {
+      assert.match(err.description, /Message has no downloadable media/);
+      return true;
+    },
+  );
+});
+
+test('continueOnFail keeps a class-validator 400, whose message is an array', async () => {
+  // NestJS sends a validation rejection as message: string[]. A string-only guard
+  // drops it and the user is left with the bare status line.
+  const axiosLike = Object.assign(new Error('Request failed with status code 400'), {
+    response: {
+      status: 400,
+      data: {
+        message: ['Session name can only contain letters, numbers, and hyphens'],
+        error: 'Bad Request',
+        statusCode: 400,
+      },
+    },
+  });
+  const { output } = await run(
+    { resource: 'session', operation: 'create', sessionName: 'my bot' },
+    { throwErr: axiosLike, continueOnFail: true },
+  );
+  assert.match(output[0][0].json.description, /letters, numbers, and hyphens/);
+});
+
+test('a proxy HTML error page is not copied into the error description', async () => {
+  const page = `<html><head><title>502 Bad Gateway</title></head><body>${'x'.repeat(4000)}</body></html>`;
+  const axiosLike = Object.assign(new Error('Request failed with status code 502'), {
+    response: { status: 502, data: Buffer.from(page) },
+  });
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+        { throwErr: axiosLike },
+      ),
+    (err) => {
+      assert.ok(
+        typeof err.description !== 'string' || !err.description.includes('<html'),
+        'an HTML page must not become the description',
+      );
+      return true;
+    },
+  );
+});
+
+test('a short plain-text body from an intermediary is still worth surfacing', async () => {
+  const axiosLike = Object.assign(new Error('Request failed with status code 502'), {
+    response: { status: 502, data: Buffer.from('Bad Gateway') },
+  });
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+        { throwErr: axiosLike },
+      ),
+    (err) => {
+      assert.equal(err.description, 'Bad Gateway');
+      return true;
+    },
+  );
+});
+
 test('an HTTP failure is wrapped in a NodeApiError', async () => {
   await assert.rejects(
     () =>
@@ -3088,7 +3587,7 @@ const guardCases = [
       sessionId: 'abc-123',
       phoneNumber: '62-ABC',
     },
-    /must contain only digits/,
+    /Phone number must be digits in international format/,
   ],
   [
     'contact/getInfo rejects an empty contact id',
@@ -3654,6 +4153,41 @@ const guardCases = [
     'an unknown resource fails with a clear message',
     { resource: 'bogus', operation: 'x' },
     /Unsupported resource\/operation: bogus\/x/,
+  ],
+  [
+    'session/updateProxy rejects a blank URL rather than sending a no-op PATCH',
+    { resource: 'session', operation: 'updateProxy', sessionId: 'abc-123', proxyUrl: '  ' },
+    /Proxy URL cannot be empty/,
+  ],
+  [
+    'session/updateProxy rejects an unsupported scheme',
+    {
+      resource: 'session',
+      operation: 'updateProxy',
+      sessionId: 'abc-123',
+      proxyUrl: 'ftp://proxy.example.com:8080',
+    },
+    /Proxy URL must start with/,
+  ],
+  [
+    'session/create rejects a scheme with no host behind it',
+    { resource: 'session', operation: 'create', sessionName: 's1', proxyUrl: 'socks5://' },
+    /Proxy URL must include a host/,
+  ],
+  [
+    'session/create rejects a proxy URL past the column width',
+    {
+      resource: 'session',
+      operation: 'create',
+      sessionName: 's1',
+      proxyUrl: `http://${'a'.repeat(260)}.example.com`,
+    },
+    /Proxy URL cannot exceed 255 characters/,
+  ],
+  [
+    'webhook/update refuses a body that would change nothing',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1' },
+    /At least one field must be provided to update/,
   ],
 ];
 

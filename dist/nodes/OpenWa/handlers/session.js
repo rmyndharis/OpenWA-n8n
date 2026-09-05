@@ -3,7 +3,33 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSessionRequest = buildSessionRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const jsonParam_1 = require("../../shared/jsonParam");
 const params_1 = require("./params");
+/** Ceiling both proxy DTOs place on the URL (`@MaxLength(255)` on create and on PATCH). */
+const MAX_PROXY_URL_LENGTH = 255;
+/**
+ * Refuses a proxy URL the server's `@IsUrl` would reject, so a typo fails in the
+ * editor rather than as a 504 half a minute into a Start that never produces a QR.
+ * Deliberately looser than the server on the host itself: `require_tld: false` and
+ * `allow_underscores: true` there admit single-label container names and IP
+ * literals, so only the scheme, the presence of a host, and the length are checked.
+ */
+function assertProxyUrl(proxyUrl, itemIndex) {
+    const scheme = /^(https?|socks[45]):\/\/(.*)$/i.exec(proxyUrl);
+    if (!scheme) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must start with http://, https://, socks4:// or socks5://', { itemIndex });
+    }
+    // `socks5://` on its own clears the scheme test but is not a URL; so is a
+    // credentials-only form. Take the authority and strip any `user:pass@`.
+    const authority = scheme[2].split(/[/?#]/)[0];
+    const host = authority.slice(authority.lastIndexOf('@') + 1);
+    if (!host) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must include a host', { itemIndex });
+    }
+    if (proxyUrl.length > MAX_PROXY_URL_LENGTH) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Proxy URL cannot exceed ${MAX_PROXY_URL_LENGTH} characters`, { itemIndex });
+    }
+}
 async function buildSessionRequest(operation, itemIndex) {
     if (operation === 'create') {
         const body = {};
@@ -14,17 +40,16 @@ async function buildSessionRequest(operation, itemIndex) {
             });
         }
         body.name = sessionName;
-        const rawConfig = this.getNodeParameter('sessionConfig', itemIndex, '');
-        if (rawConfig !== '' && rawConfig !== undefined && rawConfig !== null) {
-            let parsedConfig;
-            try {
-                parsedConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
-            }
-            catch {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be valid JSON', {
-                    itemIndex,
-                });
-            }
+        let parsedConfig;
+        try {
+            parsedConfig = (0, jsonParam_1.parseJsonParam)(this.getNodeParameter('sessionConfig', itemIndex, ''));
+        }
+        catch {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session config must be valid JSON', {
+                itemIndex,
+            });
+        }
+        if (parsedConfig !== undefined) {
             if (typeof parsedConfig !== 'object' ||
                 parsedConfig === null ||
                 Array.isArray(parsedConfig)) {
@@ -33,14 +58,10 @@ async function buildSessionRequest(operation, itemIndex) {
             body.config = parsedConfig;
         }
         // Omit rather than send '': the DTO validates it as a URL, so a blank value is
-        // a 400 while an absent key is the documented "no proxy". The scheme is checked
-        // here so a typo fails in the editor rather than as a 504 half a minute into a
-        // Start that never produces a QR.
+        // a 400 while an absent key is the documented "no proxy".
         const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''));
         if (proxyUrl) {
-            if (!/^(https?|socks[45]):\/\//i.test(proxyUrl)) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must start with http://, https://, socks4:// or socks5://', { itemIndex });
-            }
+            assertProxyUrl.call(this, proxyUrl, itemIndex);
             body.proxyUrl = proxyUrl;
         }
         return { endpoint: '/api/sessions', method: 'POST', body };
@@ -73,6 +94,38 @@ async function buildSessionRequest(operation, itemIndex) {
             return { endpoint: `/api/sessions/${sessionId}/logout`, method: 'POST', body: {} };
         case 'getConfig':
             return { endpoint: `/api/sessions/${sessionId}/config`, method: 'GET', body: {} };
+        case 'getProxy':
+            // Credentials are never returned: the response reports the scheme, the
+            // host:port and whether a username/password is embedded, nothing more.
+            return { endpoint: `/api/sessions/${sessionId}/proxy`, method: 'GET', body: {} };
+        case 'updateProxy': {
+            // Three states on the wire, and only one of them is a string. An absent key
+            // re-reads the stored proxy unchanged, an explicit null clears it, and a URL
+            // sets it. A text field cannot express null, so clearing gets its own toggle.
+            // Compared against true rather than read for truthiness: this one toggle
+            // DELETES stored configuration, and an expression resolving to the string
+            // 'false' is truthy, which would wipe a working proxy on a value that reads
+            // as a refusal.
+            if (this.getNodeParameter('proxyClear', itemIndex, false) === true) {
+                return {
+                    endpoint: `/api/sessions/${sessionId}/proxy`,
+                    method: 'PATCH',
+                    body: { proxyUrl: null },
+                };
+            }
+            const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''));
+            if (!proxyUrl) {
+                // An empty body would be dropped before the request is sent, turning the
+                // PATCH into a no-op read that reports the old proxy as if it were written.
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL cannot be empty. Turn on Clear Proxy to remove the stored proxy instead.', { itemIndex });
+            }
+            assertProxyUrl.call(this, proxyUrl, itemIndex);
+            return {
+                endpoint: `/api/sessions/${sessionId}/proxy`,
+                method: 'PATCH',
+                body: { proxyUrl },
+            };
+        }
         case 'updateConfig': {
             const fields = this.getNodeParameter('sessionConfigFields', itemIndex, {});
             const body = {};
@@ -85,9 +138,11 @@ async function buildSessionRequest(operation, itemIndex) {
             if (fields.maxReconnectAttempts !== undefined) {
                 // -1 is the node's "back to unlimited" sentinel; the server spells that null,
                 // and no in-range number expresses it. 0 is a real value meaning never reconnect.
-                // Guard on Number.isFinite so a NaN from an expression cannot serialize to
-                // null and silently clear the cap instead of failing.
-                const cap = fields.maxReconnectAttempts;
+                // Coerced first because the server's own DTO takes a numeric string, and
+                // because comparing a raw string against 0 below would read Number('') and
+                // Number(null) as the real value 0 rather than as missing input.
+                const text = (0, params_1.asText)(fields.maxReconnectAttempts);
+                const cap = text === '' ? Number.NaN : Number(text);
                 if (!Number.isFinite(cap)) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Max Reconnect Attempts must be a number between -1 and 20', { itemIndex });
                 }
@@ -102,8 +157,7 @@ async function buildSessionRequest(operation, itemIndex) {
             return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
         }
         case 'requestPairingCode': {
-            const phoneNumber = (0, params_1.asText)(this.getNodeParameter('pairingPhoneNumber', itemIndex))
-                .replace(/[\s+\-()]/g, '');
+            const phoneNumber = (0, params_1.asText)(this.getNodeParameter('pairingPhoneNumber', itemIndex)).replace(/[\s+\-()]/g, '');
             if (!/^\d{6,15}$/.test(phoneNumber)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must be 6–15 digits in international format (e.g. 628123456789)', { itemIndex });
             }
@@ -117,4 +171,3 @@ async function buildSessionRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=session.js.map

@@ -123,9 +123,7 @@ export async function buildStatusRequest(
       const body: Record<string, unknown> = {
         text: requireText(this, 'statusText', 'Status text', itemIndex, MAX_TEXT_LENGTH),
       };
-      const backgroundColor = (
-        this.getNodeParameter('statusBackgroundColor', itemIndex, '') as string
-      ).trim();
+      const backgroundColor = asText(this.getNodeParameter('statusBackgroundColor', itemIndex, ''));
       if (backgroundColor) {
         body.backgroundColor = backgroundColor;
       }
@@ -152,9 +150,7 @@ export async function buildStatusRequest(
           'audio/ogg; codecs=opus',
         ),
       };
-      const backgroundColor = (
-        this.getNodeParameter('statusBackgroundColor', itemIndex, '') as string
-      ).trim();
+      const backgroundColor = asText(this.getNodeParameter('statusBackgroundColor', itemIndex, ''));
       if (backgroundColor) {
         body.backgroundColor = backgroundColor;
       }

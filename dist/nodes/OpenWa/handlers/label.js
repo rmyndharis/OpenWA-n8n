@@ -41,7 +41,10 @@ async function buildLabelRequest(operation, itemIndex) {
         }
         // 0 is a real colour, so this tests for presence rather than truthiness. The
         // field lives in a collection precisely so "not set" stays distinguishable.
-        if (fields.labelColor !== undefined) {
+        // null is excluded with it: an expression resolving to one satisfied the guard
+        // below and then reached a server that reads null as "not set", replacing this
+        // message with a bare 400.
+        if (fields.labelColor !== undefined && fields.labelColor !== null) {
             body.color = fields.labelColor;
         }
         if (Object.keys(body).length === 0) {
@@ -66,4 +69,3 @@ async function buildLabelRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=label.js.map

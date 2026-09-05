@@ -46,4 +46,3 @@ async function buildPresenceRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=presence.js.map

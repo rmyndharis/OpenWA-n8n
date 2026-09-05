@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildMessageRequest = buildMessageRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const jsonParam_1 = require("../../shared/jsonParam");
 const bulkMessages_1 = require("../bulkMessages");
 const media_1 = require("../media");
 const params_1 = require("./params");
@@ -101,17 +102,39 @@ function applyLinkPreview(body, itemIndex) {
  */
 function readCustomLinkPreview(itemIndex) {
     const fields = this.getNodeParameter('customLinkPreview', itemIndex, {});
-    const url = (fields.previewUrl ?? '').trim();
-    const title = (fields.previewTitle ?? '').trim();
+    const url = (0, params_1.asText)(fields.previewUrl);
+    const title = (0, params_1.asText)(fields.previewTitle);
     if (!url || !title) {
         return undefined;
     }
     const preview = { url, title };
-    const description = (fields.previewDescription ?? '').trim();
+    const description = (0, params_1.asText)(fields.previewDescription);
     if (description) {
         preview.description = description;
     }
     return preview;
+}
+/**
+ * A message body, coerced but deliberately NOT trimmed.
+ *
+ * Coerced because an expression can resolve to a number, which reads as text.
+ * Not trimmed because a message body's leading and trailing whitespace is content
+ * the user chose: `asText` would silently eat the blank line before a signature.
+ *
+ * An object is refused rather than stringified. The gateway validates with
+ * `enableImplicitConversion`, which rewrites a value before `@IsString()` sees it,
+ * so an object reaches WhatsApp as the literal text "[object Object]" instead of
+ * being rejected. A sent message cannot be recalled once the delete window closes,
+ * which makes a refusal here the only place that failure is still recoverable.
+ */
+function messageBody(ctx, raw, itemIndex) {
+    if (raw === null || raw === undefined) {
+        return '';
+    }
+    if (typeof raw === 'object') {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), 'Message must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.', { itemIndex });
+    }
+    return typeof raw === 'string' ? raw : String(raw);
 }
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
@@ -176,7 +199,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/send-text`;
         body = {
             chatId,
-            text: this.getNodeParameter('message', itemIndex),
+            text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
         };
         applyLinkPreview.call(this, body, itemIndex);
         const preview = readCustomLinkPreview.call(this, itemIndex);
@@ -247,7 +270,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             chatId,
             quotedMessageId: (0, params_1.asText)(this.getNodeParameter('quotedMessageId', itemIndex)),
-            text: this.getNodeParameter('message', itemIndex),
+            text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
         };
     }
     else if (operation === 'react') {
@@ -302,7 +325,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = { chatId };
         // The API takes either a template id or a template name, not both.
         const templateId = (0, params_1.asText)(this.getNodeParameter('sendTemplateId', itemIndex, ''));
-        const templateName = this.getNodeParameter('sendTemplateName', itemIndex, '').trim();
+        const templateName = (0, params_1.asText)(this.getNodeParameter('sendTemplateName', itemIndex, ''));
         if (!templateId && !templateName) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Provide either a Template ID or a Template Name', { itemIndex });
         }
@@ -312,17 +335,16 @@ async function buildMessageRequest(operation, itemIndex) {
         else {
             body.templateName = templateName;
         }
-        const rawVars = this.getNodeParameter('templateVars', itemIndex, '');
-        if (rawVars !== '' && rawVars !== undefined && rawVars !== null) {
-            let parsedVars;
-            try {
-                parsedVars = typeof rawVars === 'string' ? JSON.parse(rawVars) : rawVars;
-            }
-            catch {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Template variables must be valid JSON', {
-                    itemIndex,
-                });
-            }
+        let parsedVars;
+        try {
+            parsedVars = (0, jsonParam_1.parseJsonParam)(this.getNodeParameter('templateVars', itemIndex, ''));
+        }
+        catch {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Template variables must be valid JSON', {
+                itemIndex,
+            });
+        }
+        if (parsedVars !== undefined) {
             if (typeof parsedVars !== 'object' || parsedVars === null || Array.isArray(parsedVars)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Template variables must be a JSON object (e.g. {"name":"Alice"})', { itemIndex });
             }
@@ -477,4 +499,3 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     return { endpoint, method: 'POST', body };
 }
-//# sourceMappingURL=message.js.map

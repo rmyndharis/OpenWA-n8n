@@ -1,6 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
+import { parseJsonParam } from '../../shared/jsonParam';
 import { parseBulkMessages } from '../bulkMessages';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import { requireJid, requireText, toQueryParams, toStringList, asText } from './params';
@@ -116,17 +117,44 @@ function readCustomLinkPreview(
     previewTitle?: string;
     previewDescription?: string;
   };
-  const url = (fields.previewUrl ?? '').trim();
-  const title = (fields.previewTitle ?? '').trim();
+  const url = asText(fields.previewUrl);
+  const title = asText(fields.previewTitle);
   if (!url || !title) {
     return undefined;
   }
   const preview: Record<string, string> = { url, title };
-  const description = (fields.previewDescription ?? '').trim();
+  const description = asText(fields.previewDescription);
   if (description) {
     preview.description = description;
   }
   return preview;
+}
+
+/**
+ * A message body, coerced but deliberately NOT trimmed.
+ *
+ * Coerced because an expression can resolve to a number, which reads as text.
+ * Not trimmed because a message body's leading and trailing whitespace is content
+ * the user chose: `asText` would silently eat the blank line before a signature.
+ *
+ * An object is refused rather than stringified. The gateway validates with
+ * `enableImplicitConversion`, which rewrites a value before `@IsString()` sees it,
+ * so an object reaches WhatsApp as the literal text "[object Object]" instead of
+ * being rejected. A sent message cannot be recalled once the delete window closes,
+ * which makes a refusal here the only place that failure is still recoverable.
+ */
+function messageBody(ctx: IExecuteFunctions, raw: unknown, itemIndex: number): string {
+  if (raw === null || raw === undefined) {
+    return '';
+  }
+  if (typeof raw === 'object') {
+    throw new NodeOperationError(
+      ctx.getNode(),
+      'Message must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.',
+      { itemIndex },
+    );
+  }
+  return typeof raw === 'string' ? raw : String(raw);
 }
 
 export async function buildMessageRequest(
@@ -206,7 +234,7 @@ export async function buildMessageRequest(
     endpoint = `/api/sessions/${sessionId}/messages/send-text`;
     body = {
       chatId,
-      text: this.getNodeParameter('message', itemIndex) as string,
+      text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
     };
     applyLinkPreview.call(this, body, itemIndex);
     const preview = readCustomLinkPreview.call(this, itemIndex);
@@ -285,7 +313,7 @@ export async function buildMessageRequest(
     body = {
       chatId,
       quotedMessageId: asText(this.getNodeParameter('quotedMessageId', itemIndex)),
-      text: this.getNodeParameter('message', itemIndex) as string,
+      text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
     };
   } else if (operation === 'react') {
     endpoint = `/api/sessions/${sessionId}/messages/react`;
@@ -344,9 +372,7 @@ export async function buildMessageRequest(
     body = { chatId };
     // The API takes either a template id or a template name, not both.
     const templateId = asText(this.getNodeParameter('sendTemplateId', itemIndex, ''));
-    const templateName = (
-      this.getNodeParameter('sendTemplateName', itemIndex, '') as string
-    ).trim();
+    const templateName = asText(this.getNodeParameter('sendTemplateName', itemIndex, ''));
     if (!templateId && !templateName) {
       throw new NodeOperationError(
         this.getNode(),
@@ -359,18 +385,15 @@ export async function buildMessageRequest(
     } else {
       body.templateName = templateName;
     }
-    const rawVars = this.getNodeParameter('templateVars', itemIndex, '') as
-      | string
-      | Record<string, unknown>;
-    if (rawVars !== '' && rawVars !== undefined && rawVars !== null) {
-      let parsedVars: unknown;
-      try {
-        parsedVars = typeof rawVars === 'string' ? JSON.parse(rawVars) : rawVars;
-      } catch {
-        throw new NodeOperationError(this.getNode(), 'Template variables must be valid JSON', {
-          itemIndex,
-        });
-      }
+    let parsedVars: unknown;
+    try {
+      parsedVars = parseJsonParam(this.getNodeParameter('templateVars', itemIndex, ''));
+    } catch {
+      throw new NodeOperationError(this.getNode(), 'Template variables must be valid JSON', {
+        itemIndex,
+      });
+    }
+    if (parsedVars !== undefined) {
       if (typeof parsedVars !== 'object' || parsedVars === null || Array.isArray(parsedVars)) {
         throw new NodeOperationError(
           this.getNode(),

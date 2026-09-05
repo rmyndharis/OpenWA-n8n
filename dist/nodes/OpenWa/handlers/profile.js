@@ -51,4 +51,3 @@ async function buildProfileRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=profile.js.map

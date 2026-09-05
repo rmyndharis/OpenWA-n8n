@@ -22,4 +22,3 @@ function parseBulkMessages(raw) {
     }
     return parsed;
 }
-//# sourceMappingURL=bulkMessages.js.map

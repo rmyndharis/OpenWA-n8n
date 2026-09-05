@@ -50,7 +50,7 @@ exports.WEBHOOK_EVENT_OPTIONS = [
     {
         name: 'Message Edited',
         value: 'message.edited',
-        description: "Triggers when a message's text or media is edited",
+        description: "Triggers when a message's text or media caption is edited",
     },
     {
         name: 'Message Failed',
@@ -120,4 +120,3 @@ exports.WEBHOOK_EVENT_OPTIONS = [
 ];
 /** The event values only, for tests and for configHash seed parity. */
 exports.WEBHOOK_EVENT_VALUES = exports.WEBHOOK_EVENT_OPTIONS.map((o) => o.value);
-//# sourceMappingURL=webhookEvents.js.map
