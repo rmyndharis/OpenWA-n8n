@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.10.0...v1.0.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* list operations now emit one item per row instead of a single item whose `json` is the whole array. Affected: Session > List All; Chat > List; Contact > List and List Blocked; Group > List and Get Membership Requests; Message > Get History and Get Reactions; Label > List, Get Chats and Get For Chat; Template > List; Channel > List and Get Messages; Webhook > List, List All and Get Delivery Failures; Automation Rule > List; API Key > List. A workflow reading `$json[0]`, or mapping the array in a Code node, must read the item directly instead. An empty list now yields zero items rather than one holding `[]`, so a downstream node does not run; enable Always Output Data where that matters. Routes answering an envelope, such as Message > List and System > Search, keep their shape.
+
+### Features
+
+* synchronize the node with OpenWA 0.23.4 ([#50](https://github.com/rmyndharis/OpenWA-n8n/issues/50)) ([0364f35](https://github.com/rmyndharis/OpenWA-n8n/commit/0364f357048eaba2966e2bf7dc9b5bc2f5b29d96))
+
 ## [0.10.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.9.3...v0.10.0) (2026-08-25)
 
 
