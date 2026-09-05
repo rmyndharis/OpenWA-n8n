@@ -42,7 +42,7 @@ export async function buildProfileRequest(
     case 'setStatus': {
       // An empty string is valid here: it clears the about text. Send it as-is
       // rather than dropping the field, which the API would reject as missing.
-      const status = asText(this.getNodeParameter('profileStatus', itemIndex, ''));
+      const status = asText(this.getNodeParameter('profileStatus', itemIndex, ''), 'Status');
       if (status.length > MAX_STATUS_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),

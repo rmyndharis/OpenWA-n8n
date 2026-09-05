@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText, toStringList } from './params';
+import { asText, requireText, toEpochMs, toStringList } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -36,6 +36,7 @@ export async function buildApiKeyRequest(
       collectApiKeyFields.call(
         this,
         this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject,
+        itemIndex,
       ),
     );
     return { endpoint: base, method: 'POST', body };
@@ -57,6 +58,7 @@ export async function buildApiKeyRequest(
       const body = collectApiKeyFields.call(
         this,
         this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject,
+        itemIndex,
       );
       if (Object.keys(body).length === 0) {
         throw new NodeOperationError(
@@ -77,16 +79,47 @@ export async function buildApiKeyRequest(
  * arrive as n8n `multipleValues` strings and are normalised here; an empty list
  * is dropped rather than sent, so it never silently clears a whitelist.
  */
-function collectApiKeyFields(this: IExecuteFunctions, fields: IDataObject): IDataObject {
+function collectApiKeyFields(
+  this: IExecuteFunctions,
+  fields: IDataObject,
+  itemIndex: number,
+): IDataObject {
   const body: IDataObject = {};
-  if (typeof fields.name === 'string' && fields.name.trim()) {
-    body.name = fields.name.trim();
+  const name = asText(fields.name);
+  if (name) {
+    body.name = name;
   }
-  if (typeof fields.role === 'string' && fields.role) {
-    body.role = fields.role;
+  const role = asText(fields.role);
+  if (role) {
+    body.role = role;
   }
-  if (typeof fields.expiresAt === 'string' && fields.expiresAt) {
-    body.expiresAt = fields.expiresAt;
+  // The DTO takes an ISO-8601 string, but a dateTime field driven by an expression
+  // resolves to whatever that expression returned, which is routinely a Date or
+  // epoch-ms. Requiring a string dropped both without a word, creating a key that
+  // never expires when one with an expiry was asked for.
+  if (fields.expiresAt !== undefined && fields.expiresAt !== null && fields.expiresAt !== '') {
+    const expiresAt = toEpochMs(this, fields.expiresAt, 'Expiry date', itemIndex);
+    // A century is the ceiling because it is the smallest bound that still catches
+    // the mistake this guard exists for. An epoch in MICROseconds is only ~1.79e15,
+    // inside the +/-8.64e15 that Date itself accepts, so bounding on Date alone let
+    // it through to a year-58648 expiry and an opaque gateway rejection.
+    if (!(expiresAt < Date.now() + 100 * 365 * 24 * 60 * 60 * 1000)) {
+      throw new NodeOperationError(this.getNode(), 'Expiry date is not a valid date', {
+        itemIndex,
+      });
+    }
+    // An instant already past would create a key that is dead on arrival while the
+    // request answers 200: the server takes any ISO date here and does not check.
+    // Seconds-scale input is the way to arrive here by accident, since it resolves
+    // to 1970. Revoke is the operation for retiring a key that already exists.
+    if (expiresAt <= Date.now()) {
+      throw new NodeOperationError(
+        this.getNode(),
+        'Expiry date must be in the future. Epoch values are milliseconds, not seconds.',
+        { itemIndex },
+      );
+    }
+    body.expiresAt = new Date(expiresAt).toISOString();
   }
   const allowedIps = toStringList(fields.allowedIps);
   if (allowedIps.length > 0) {

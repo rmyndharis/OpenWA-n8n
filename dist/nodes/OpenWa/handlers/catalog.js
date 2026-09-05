@@ -32,4 +32,3 @@ async function buildCatalogRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=catalog.js.map

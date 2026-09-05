@@ -7,6 +7,7 @@ import type {
   INodeTypeDescription,
   IHttpRequestOptions,
   JsonObject,
+  JsonValue,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { buildApiKeyRequest } from './handlers/apiKey';
@@ -63,6 +64,20 @@ const RESOURCE_BUILDERS: Record<
 };
 
 /**
+ * A server explanation as a single string.
+ *
+ * NestJS sends a class-validator rejection as `message: string[]` ("chatId must be a
+ * string"), and every string-only guard silently drops that shape, leaving the user
+ * with the generic status line and none of the field names that explain it.
+ */
+function explanationText(value: unknown): string | undefined {
+  const text = Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string').join('; ')
+    : value;
+  return typeof text === 'string' && text.trim() ? text.trim() : undefined;
+}
+
+/**
  * Recovers the server's explanation from a failed binary request.
  *
  * A binary operation asks for an arraybuffer, so when the server answers with an
@@ -94,22 +109,65 @@ function decodeBinaryErrorBody(error: unknown): unknown {
     }
   };
 
+  /** The server's own sentence out of a decoded JSON error body, or plain text. */
+  const explain = (decoded: unknown): string | undefined => {
+    if (typeof decoded === 'string') {
+      const text = decoded.trim();
+      // An intermediary answering 502 sends an HTML page, not a sentence. Copying
+      // one whole would put kilobytes of markup on the error and, under Continue On
+      // Fail, into stored execution data. A short plain body (Traefik's "Bad
+      // Gateway") is still worth keeping.
+      return text && text.length <= 300 && !text.startsWith('<') ? text : undefined;
+    }
+    if (decoded && typeof decoded === 'object') {
+      return explanationText((decoded as { message?: unknown }).message);
+    }
+    return undefined;
+  };
+
   try {
     const holder = error as {
       response?: { body?: unknown; data?: unknown };
       error?: unknown;
+      // n8n wraps the request failure in a NodeApiError before it reaches this
+      // catch. That parks the original request error on `cause` and the undecoded
+      // response body on `context.data`, and it has already computed `message` and
+      // `description` from bytes it could not read. Both shapes are handled so the
+      // recovery works whichever one the running n8n version hands over.
+      cause?: { response?: { body?: unknown; data?: unknown } };
+      context?: { data?: unknown };
+      description?: unknown;
     };
     if (holder && typeof holder === 'object') {
-      if (holder.response && typeof holder.response === 'object') {
-        const decoded = toText(holder.response.body) ?? toText(holder.response.data);
-        if (decoded !== undefined) {
-          holder.response.body = decoded;
-          holder.response.data = decoded;
+      let explanation: string | undefined;
+      for (const carrier of [holder.response, holder.cause?.response]) {
+        if (carrier && typeof carrier === 'object') {
+          const decoded = toText(carrier.body) ?? toText(carrier.data);
+          if (decoded !== undefined) {
+            carrier.body = decoded;
+            carrier.data = decoded;
+            explanation = explanation ?? explain(decoded);
+          }
         }
       }
       const topLevel = toText(holder.error);
       if (topLevel !== undefined) {
         holder.error = topLevel;
+        explanation = explanation ?? explain(topLevel);
+      }
+      if (holder.context && typeof holder.context === 'object') {
+        const decoded = toText(holder.context.data);
+        if (decoded !== undefined) {
+          holder.context.data = decoded;
+          explanation = explanation ?? explain(decoded);
+        }
+      }
+      // Put the recovered sentence where the user actually reads it. On an already
+      // wrapped error the message is fixed, so the description is the only channel
+      // left; on a raw request error NodeApiError adopts this description when it
+      // wraps, so the same assignment serves both.
+      if (explanation !== undefined) {
+        holder.description = explanation;
       }
     }
   } catch {
@@ -187,6 +245,11 @@ export class OpenWa implements INodeType {
             value: 'getConfig',
             action: 'Get the tunable configuration for a session',
           },
+          {
+            name: 'Get Proxy',
+            value: 'getProxy',
+            action: 'Get the egress proxy for a session',
+          },
           { name: 'Get QR', value: 'getQr', action: 'Get the QR code for authentication' },
           {
             name: 'Get Stats Overview',
@@ -207,6 +270,11 @@ export class OpenWa implements INodeType {
             name: 'Update Config',
             value: 'updateConfig',
             action: 'Update the tunable configuration for a session',
+          },
+          {
+            name: 'Update Proxy',
+            value: 'updateProxy',
+            action: 'Update the egress proxy for a session',
           },
         ],
         default: 'getStatus',
@@ -234,6 +302,8 @@ export class OpenWa implements INodeType {
               'logout',
               'getConfig',
               'updateConfig',
+              'getProxy',
+              'updateProxy',
             ],
           },
         },
@@ -269,10 +339,21 @@ export class OpenWa implements INodeType {
         default: '',
         placeholder: 'socks5://127.0.0.1:1080',
         displayOptions: {
-          show: { resource: ['session'], operation: ['create'] },
+          show: { resource: ['session'], operation: ['create', 'updateProxy'] },
         },
         description:
-          'Optional egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5). Credentials in the URL work on Baileys; whatsapp-web.js cannot authenticate a SOCKS proxy. The value is fixed at creation, write-only and never returned by any read, so changing it means recreating the session. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys; whatsapp-web.js cannot authenticate a SOCKS proxy. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+      },
+      {
+        displayName: 'Clear Proxy',
+        name: 'proxyClear',
+        type: 'boolean',
+        default: false,
+        displayOptions: {
+          show: { resource: ['session'], operation: ['updateProxy'] },
+        },
+        description:
+          'Whether to remove the stored proxy instead of setting one. The server spells removal as an explicit null, which a text field cannot express, so Proxy URL is ignored while this is on.',
       },
       {
         displayName: 'Config Fields',
@@ -316,7 +397,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'Log Out asks WhatsApp to unlink this device, wipes the stored credentials and clears the phone number, so the next Start needs a fresh QR or pairing code. It needs a running session: on a stopped one it fails, so do not put a Stop in front of it. Stop keeps the credentials and reconnects without a QR; Delete removes the session and its data but never tells WhatsApp to unlink, leaving the device in the account\'s Linked Devices list.',
+          "Log Out asks WhatsApp to unlink this device, wipes the stored credentials and clears the phone number, so the next Start needs a fresh QR or pairing code. It needs a running session: on a stopped one it fails, so do not put a Stop in front of it. Stop keeps the credentials and reconnects without a QR; Delete removes the session and its data but never tells WhatsApp to unlink, leaving the device in the account's Linked Devices list.",
         name: 'sessionLogoutNotice',
         type: 'notice',
         default: '',
@@ -490,7 +571,11 @@ export class OpenWa implements INodeType {
           { name: 'Forward', value: 'forward', action: 'Forward a message to another chat' },
           { name: 'Get Batch Status', value: 'getBatchStatus', action: 'Get bulk batch status' },
           { name: 'Get History', value: 'getHistory', action: 'Get the message history of a chat' },
-          { name: 'Get Media', value: 'getMedia', action: 'Download the stored media of a message' },
+          {
+            name: 'Get Media',
+            value: 'getMedia',
+            action: 'Download the stored media of a message',
+          },
           {
             name: 'Get Reactions',
             value: 'getReactions',
@@ -819,7 +904,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['message'], operation: ['sendLocation'] },
         },
-        description: 'Latitude coordinate',
+        description:
+          'Latitude coordinate. Both coordinates default to 0, and 0,0 is a real point in the Atlantic that the server accepts, so an untouched pair sends a valid but wrong location rather than failing.',
       },
       {
         displayName: 'Longitude',
@@ -1135,7 +1221,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'A 404 here does not only mean the message is missing. The same answer covers a message with no media, media whose download was disabled or exceeded the storage cap, and media sent by URL, whose bytes the gateway never stores. Media sent from a binary field or base64 is retrievable; the same send done from a URL is not. The response is raw bytes, so the server\'s explanation does not reach the workflow.',
+          "A 404 here does not only mean the message is missing. The same answer covers a message with no media, media whose download was disabled or exceeded the storage cap, and media sent by URL, whose bytes the gateway never stores. Media sent from a binary field or base64 is retrievable; the same send done from a URL is not. The response is raw bytes, so the gateway's own sentence is decoded out of them and surfaced on the error description rather than in the item body.",
         name: 'messageGetMediaNotice',
         type: 'notice',
         default: '',
@@ -1172,7 +1258,7 @@ export class OpenWa implements INodeType {
         placeholder: 'Pizza, Sushi',
         displayOptions: { show: { resource: ['message'], operation: ['votePoll'] } },
         description:
-          'The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll\'s own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.',
+          "The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll's own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.",
       },
       {
         displayName: 'Product ID',
@@ -1182,7 +1268,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['message'], operation: ['sendProduct'] } },
         description:
-          'The ID of the product in this account\'s catalog. A product with no image cannot be sent as a card, which the server reports as a 400.',
+          "The ID of the product in this account's catalog. A product with no image cannot be sent as a card, which the server reports as a 400.",
       },
       {
         displayName: 'Message',
@@ -1224,7 +1310,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
         description:
-          'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk.',
+          'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk. Items that are exactly alike (same chat ID, type, content, and variables) are collapsed by the server, keeping the first, so the batch total it reports back can be lower than the number of items sent.',
       },
       {
         displayName: 'Batch ID',
@@ -1300,7 +1386,7 @@ export class OpenWa implements INodeType {
         placeholder: 'Pizza, Sushi, Salad',
         displayOptions: { show: { resource: ['message'], operation: ['sendPoll'] } },
         description:
-          'The answers to vote on (2–12). Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
+          'The answers to vote on (2–12). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. An answer whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it into two answers and the poll would still post.',
       },
       {
         displayName: 'Allow Multiple Answers',
@@ -1382,6 +1468,14 @@ export class OpenWa implements INodeType {
         displayOptions: { show: { resource: ['message'], operation: ['list'] } },
         options: [
           {
+            displayName: 'After Row ID',
+            name: 'after',
+            type: 'string',
+            default: '',
+            description:
+              'Keyset cursor: the row ID of the last message of the previous page, taken from the list response. It is the ID the gateway assigns the stored row, not the WhatsApp message ID that Get Reactions and Edit take. Anchors the window to a row rather than to a count, so a message arriving mid-walk cannot shift the page boundary the way Offset does. Takes precedence over Offset. A value that is not a row ID in this session is refused with an error rather than answering an empty page, so a stale or foreign cursor cannot look like the end of the history. Requires server ≥ 0.23.4: an older server reads this route query loosely and ignores the cursor, silently falling back to Offset paging.',
+          },
+          {
             displayName: 'Chat Name or ID',
             name: 'chatId',
             type: 'options',
@@ -1401,10 +1495,18 @@ export class OpenWa implements INodeType {
             description: 'Only return messages from this sender',
           },
           {
+            displayName: 'Inline Media',
+            name: 'inlineMedia',
+            type: 'boolean',
+            default: true,
+            description:
+              'Whether to carry media payloads inline in each returned message. Turn this off to get only the { omitted, sizeBytes } marker and fetch the bytes with Get Media instead. The inline-media budget is spent per response, so a paged walk re-spends it on every page. Requires server ≥ 0.23.4; an older server ignores this and always inlines.',
+          },
+          {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 100 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -1414,9 +1516,18 @@ export class OpenWa implements INodeType {
             type: 'number',
             typeOptions: { minValue: 0 },
             default: 0,
-            description: 'Number of messages to skip before collecting the result set',
+            description:
+              'Number of messages to skip before collecting the result set. Ignored when After Row ID is set, and prone to drift on a live chat: a message arriving between pages shifts every later offset.',
           },
         ],
+      },
+      {
+        displayName:
+          "Get History reads the conversation from the device and is whatsapp-web.js only; the Baileys engine answers 501. Message > List serves the gateway's own stored copy on both engines.",
+        name: 'getHistoryEngineNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['getHistory'] } },
       },
       {
         displayName: 'Options',
@@ -1432,20 +1543,21 @@ export class OpenWa implements INodeType {
             type: 'boolean',
             default: false,
             description:
-              'Whether to pull older messages from the device instead of only what the server has stored',
+              'Whether to pull older messages from the device instead of only what the server has stored. It raises the Limit ceiling from 100 to 2000 and forces metadata-only, so Include Media is ignored while this is on. A large deep read is slow and raises the risk of WhatsApp rate-limiting the account.',
           },
           {
             displayName: 'Include Media',
             name: 'includeMedia',
             type: 'boolean',
             default: false,
-            description: 'Whether to include media payloads in the returned messages',
+            description:
+              'Whether to include media payloads in the returned messages. Ignored when Deep is on.',
           },
           {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 2000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -1509,7 +1621,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['contact'], operation: ['checkExists'] },
         },
-        description: 'Phone number to check (without + or spaces)',
+        description:
+          'Phone number in international format. Spaces, +, hyphens and parentheses are stripped before the check, so leaving them in is fine.',
       },
       {
         displayName: 'Contact Name or ID',
@@ -1559,7 +1672,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'The addressbook is keyed by phone number, so this needs a plain <code>@c.us</code> contact ID. A privacy ID (<code>@lid</code>), a group, or a channel is refused. This writes to the WhatsApp account\'s own addressbook and syncs to the linked devices, so it is a real change to the account, not a note kept on the gateway. It is not added to the phone\'s native contacts.',
+          "The addressbook is keyed by phone number, so this needs a plain <code>@c.us</code> contact ID. A privacy ID (<code>@lid</code>), a group, or a channel is refused. This writes to the WhatsApp account's own addressbook and syncs to the linked devices, so it is a real change to the account, not a note kept on the gateway. It is not added to the phone's native contacts.",
         name: 'contactSaveNotice',
         type: 'notice',
         default: '',
@@ -2085,7 +2198,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['webhook'], operation: ['create'] },
         },
-        description: 'The URL to receive webhook events',
+        description:
+          'The URL to receive webhook events. Credentials in the URL (https://user:pass@host/hook) are refused outright rather than stripped, because they would be persisted with the registration and echoed into delivery logs. When the gateway has SSRF protection on, a URL resolving to a private or loopback address is also refused, with a deliberately generic message that does not say which rule it broke.',
       },
       {
         displayName: 'Events',
@@ -2111,7 +2225,8 @@ export class OpenWa implements INodeType {
             name: 'filters',
             type: 'json',
             default: '',
-            description: 'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. Value shape is enforced: the ID, mentions and type fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+            description:
+              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
           },
           {
             displayName: 'Headers',
@@ -2180,6 +2295,14 @@ export class OpenWa implements INodeType {
             description: 'Whether the webhook is enabled',
           },
           {
+            displayName: 'Clear Secret',
+            name: 'clearSecret',
+            type: 'boolean',
+            default: false,
+            description:
+              'Whether to stop signing deliveries by removing the stored secret. The server spells this as an empty secret, which a blank field cannot express: an n8n collection yields a blank as soon as the field is added, so a blank Secret is ignored rather than read as a request to disable signing. Ignores Secret while it is on.',
+          },
+          {
             displayName: 'Events',
             name: 'events',
             type: 'multiOptions',
@@ -2201,7 +2324,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Custom delivery headers as a flat JSON object of string values, e.g. {"X-Team":"ops"}',
+              'Custom delivery headers as a flat JSON object of string values, e.g. {"X-Team":"ops"}. Replaces the stored map wholesale rather than merging into it, so send every header you want kept. Enter null to clear them. The server never returns stored headers, and strips content-type and x-openwa-* names at delivery so a custom header cannot shadow a system one.',
           },
           {
             displayName: 'Retry Count',
@@ -2218,7 +2341,7 @@ export class OpenWa implements INodeType {
             typeOptions: { password: true },
             default: '',
             description:
-              'HMAC-SHA256 signing secret, at least 16 characters. Set a value to rotate it; an empty value is ignored. To disable signing, recreate the webhook without a secret.',
+              'HMAC-SHA256 signing secret, at least 16 characters (255 at most). Set a value to rotate it; a blank value is ignored, because a collection yields one as soon as the field is added. Turn on Clear Secret to stop signing instead.',
           },
           {
             displayName: 'URL',
@@ -2329,7 +2452,7 @@ export class OpenWa implements INodeType {
         default: '',
         displayOptions: { show: { resource: ['chat'], operation: ['mute'] } },
         description:
-          'When the mute expires. Leave empty to unmute now. There is no duration form, so a fixed mute is expressed as a moment in the future, and a date already past is accepted but expires immediately.',
+          'When the mute expires, sent as epoch milliseconds. Leave empty to unmute now. There is no duration form, so a fixed mute is expressed as a moment in the future, and a date already past is accepted but expires immediately. Chat > List reports a still-muted chat as muteExpiration 0 when the mute is indefinite; 0 is not a value this field accepts, so re-apply an indefinite mute with a far-future moment instead.',
       },
       {
         displayName: 'State',
@@ -2434,11 +2557,11 @@ export class OpenWa implements INodeType {
         default: true,
         displayOptions: { show: { resource: ['presence'], operation: ['setOwn'] } },
         description:
-          'Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder\'s own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published, and the setting resets on every reconnect.',
+          "Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder's own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published, and the setting resets on every reconnect.",
       },
       {
         displayName:
-          'Presence is connection-scoped. A subscription and the account\'s own availability both live on the socket, so a restart, a Stop/Start, or any automatic reconnect ends them and nothing on the server re-issues them. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.',
+          "Presence is connection-scoped. A subscription and the account's own availability both live on the socket, so a restart, a Stop/Start, or any automatic reconnect ends them and nothing on the server re-issues them. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.",
         name: 'presenceScopeNotice',
         type: 'notice',
         default: '',
@@ -2638,7 +2761,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'The ID of the label. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+          'The ID of the label. The dropdown is fed by the label listing, which is whatsapp-web.js only, so on Baileys it stays empty even for Add to Chat and Remove From Chat, which do work there. Supply the ID from an expression on that engine. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
       },
       {
         displayName: 'Label ID',
@@ -2675,13 +2798,13 @@ export class OpenWa implements INodeType {
             typeOptions: { minValue: 0, maxValue: 19 },
             default: 0,
             description:
-              'Which of WhatsApp\'s 20 predefined label colours to use, as an index from 0 to 19. This is not a hex value, and the colour a read returns is a hex string that cannot be converted back, so a read then write cannot preserve it.',
+              "Which of WhatsApp's 20 predefined label colours to use, as an index from 0 to 19. This is not a hex value, and the colour a read returns is a hex string that cannot be converted back, so a read then write cannot preserve it.",
           },
         ],
       },
       {
         displayName:
-          'The two halves of this resource run on opposite engines. Reading labels (List, Get, Get Chats, Get for Chat) works on whatsapp-web.js and answers 501 on Baileys, while writing them (Create or Update, Delete) works on Baileys and answers 501 on whatsapp-web.js. On one session you can create a label you cannot then list.',
+          'Label support splits by engine. Reading labels (List, Get, Get Chats, Get for Chat) works on whatsapp-web.js and answers 501 on Baileys, while editing them (Create or Update, Delete) works on Baileys and answers 501 on whatsapp-web.js. Only Add to Chat and Remove From Chat work on both. On one session you can create a label you cannot then list.',
         name: 'labelEngineNotice',
         type: 'notice',
         default: '',
@@ -2707,7 +2830,11 @@ export class OpenWa implements INodeType {
           { name: 'Send Image', value: 'sendImage', action: 'Post an image status' },
           { name: 'Send Text', value: 'sendText', action: 'Post a text status' },
           { name: 'Send Video', value: 'sendVideo', action: 'Post a video status' },
-          { name: 'Send Voice', value: 'sendVoice', action: 'Post an audio status as a voice note' },
+          {
+            name: 'Send Voice',
+            value: 'sendVoice',
+            action: 'Post an audio status as a voice note',
+          },
         ],
         default: 'list',
       },
@@ -2775,7 +2902,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['status'], operation: ['sendText', 'sendVoice'] },
         },
-        description: 'Background color for the status. Leave empty for the server default.',
+        description:
+          'Background color for the status. Leave empty for the server default. On Send Voice it is Baileys only: whatsapp-web.js posts no styling with a media status and drops it.',
       },
       {
         displayName: 'Font',
@@ -2794,7 +2922,8 @@ export class OpenWa implements INodeType {
         ],
         default: -1,
         displayOptions: { show: { resource: ['status'], operation: ['sendText'] } },
-        description: 'Font index from the WhatsApp status font set',
+        description:
+          'Font index from the WhatsApp status font set. Indexes 8, 9 and 10 reach Baileys but not whatsapp-web.js, which honors 0 to 7 and falls back to the default above that.',
       },
       {
         displayName: 'Caption',
@@ -2885,7 +3014,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to that account\'s usual status audience regardless, so do not rely on it to limit who sees it there.',
+          "Who may see this status (max 256, @c.us or @lid, never a group). Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Required on the Baileys engine, which is the only engine that honors it. On whatsapp-web.js the list is ignored and the status goes to that account's usual status audience regardless, so do not rely on it to limit who sees it there.",
       },
       {
         displayName: 'Image Source',
@@ -3188,7 +3317,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs.',
+          'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs. A 503 can mean WhatsApp left the catalog query unanswered, which it does permanently for some business accounts, so treat a repeated 503 as that account being unsupported rather than as a transient worth retrying.',
         name: 'catalogEngineNotice',
         type: 'notice',
         default: '',
@@ -3351,6 +3480,14 @@ export class OpenWa implements INodeType {
             description: 'Max number of results to return',
           },
         ],
+      },
+      {
+        displayName:
+          'Channel support splits by engine. List and Get Messages work on whatsapp-web.js and answer 501 on Baileys, while Subscribe, Demote Admin and Transfer Ownership work on Baileys and answer 501 on whatsapp-web.js. Create, Get, Mute, Unsubscribe and Delete work on both.',
+        name: 'channelEngineNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['channel'] } },
       },
 
       // ============== AUTOMATION RULE OPERATIONS ==============
@@ -3979,7 +4116,26 @@ export class OpenWa implements INodeType {
             options,
           );
         } catch (requestError) {
-          throw isBinary ? decodeBinaryErrorBody(requestError) : requestError;
+          // Classified here, the one place a failure is known to have come off the
+          // wire. Everything else in this block is the node's own validation, and
+          // calling that a NodeApiError blames the gateway for a bad parameter.
+          const decoded = isBinary ? decodeBinaryErrorBody(requestError) : requestError;
+          // A rejection with no shape at all takes NodeApiError down when it reads
+          // `.message` off it, and that TypeError then replaces the failure with a
+          // sentence about a null dereference. Rare, but it lands on the two paths a
+          // user has least ability to diagnose: a thrown error and a kept-going item.
+          const apiError = new NodeApiError(
+            this.getNode(),
+            (decoded ?? {
+              message: 'The request failed without returning a response',
+            }) as JsonObject,
+          );
+          // n8n has usually wrapped the failure already, and NodeApiError hands an
+          // existing one straight back without reading its options, so the item index
+          // is assigned to the result to survive both shapes. Without it a failed run
+          // names no item, which is all the user has to go on with many of them.
+          apiError.context.itemIndex = i;
+          throw apiError;
         }
 
         if (isBinary) {
@@ -4000,6 +4156,11 @@ export class OpenWa implements INodeType {
             i,
             'data',
           ) as string;
+          // No mimeType argument on purpose. The media routes serve everything
+          // outside a small image/video/audio allowlist as `application/octet-stream`
+          // (the gateway's inertMimetype, so the endpoint cannot host active content),
+          // and handing prepareBinaryData that placeholder suppresses the byte
+          // sniffing that recovers application/pdf and its file extension.
           const binaryData = await this.helpers.prepareBinaryData(
             Buffer.isBuffer(media) ? media : Buffer.from(media),
           );
@@ -4024,19 +4185,63 @@ export class OpenWa implements INodeType {
           // Either way a bare '' is not valid item json, so downstream nodes would
           // otherwise receive an unreadable item.
           json = spec.method === 'DELETE' ? { success: true } : {};
+        } else if (Array.isArray(response)) {
+          // n8n's convention is one item per row. Left whole, a list route's array
+          // lands on a single item's `json`, where `$json.<field>` is undefined and
+          // Split Out has no field to point at. Contacts > List Blocked answers a
+          // bare `string[]`, and a string is not valid item json, so a non-object
+          // row is wrapped under `data` the same way the text branch wraps its body.
+          for (const row of response as JsonValue[]) {
+            returnData.push({
+              json:
+                typeof row === 'object' && row !== null && !Array.isArray(row)
+                  ? row
+                  : { data: row },
+              pairedItem: { item: i },
+            });
+          }
+          continue;
         } else {
           json = response as JsonObject;
         }
         returnData.push({ json, pairedItem: { item: i } });
       } catch (error) {
         if (this.continueOnFail()) {
-          returnData.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
+          // The request failure arrives already classified from the inner catch, and
+          // its description carries the server's explanation of WHY (the 404 on Get
+          // Media covers five different situations). Reading only `message` here
+          // threw that away on exactly the path built to keep going past it.
+          // Nothing in here may throw: this is the branch the user turned on so a
+          // bad item cannot stop the run. Both wrappers dereference their argument,
+          // so a `null`/`undefined` rejection would take the whole execution down
+          // on the one path built to survive it.
+          let message: string;
+          let description: string | undefined;
+          try {
+            const wrapped =
+              error instanceof NodeApiError
+                ? error
+                : new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
+            message = wrapped.message;
+            const detail = explanationText(wrapped.description);
+            description = detail && detail !== wrapped.message ? detail : undefined;
+          } catch {
+            message = String((error as Error | undefined)?.message ?? error);
+          }
+          returnData.push({
+            json: description === undefined ? { error: message } : { error: message, description },
+            pairedItem: { item: i },
+          });
           continue;
         }
-        if (error instanceof NodeOperationError) {
-          throw new NodeOperationError(this.getNode(), error);
-        }
-        throw new NodeApiError(this.getNode(), error as JsonObject);
+        // Only what the request produced is an API error, and it arrives already
+        // wrapped from the catch above. Everything else is this node's own
+        // validation, including the bare Errors sanitizePathParam throws, which as
+        // NodeApiErrors read as gateway faults. NodeOperationError returns an
+        // existing one untouched, so a handler keeps the item index it set.
+        throw error instanceof NodeApiError
+          ? error
+          : new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
       }
     }
 

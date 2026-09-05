@@ -4,6 +4,11 @@ on:
   pull_request:
     branches:
       - main
+    # `edited` is load-bearing: a workflow re-run replays the original event
+    # payload, so a title corrected after a red check is only ever seen by a run
+    # the edit itself triggers. Naming types replaces the default set, so the
+    # three defaults are restated here.
+    types: [opened, reopened, synchronize, edited]
   push:
     branches:
       - main
@@ -13,11 +18,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # `git log -1 <head sha>` needs that commit present, and the default
+          # shallow clone of a pull request already carries it. Two is cheap
+          # insurance for the merge commit checkout puts on top.
+          fetch-depth: 2
       - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - run: npm ci
+      # release-please derives the version and the changelog from the commit
+      # subjects on main, and a pull request lands there as one squash commit.
+      # Under the default COMMIT_OR_PR_TITLE that subject is the lone COMMIT
+      # SUBJECT when the branch holds exactly one commit, and the PULL REQUEST
+      # TITLE otherwise. Lint whichever one will actually land, rather than both:
+      # linting the whole range fails on merge commits from main and on subjects
+      # the squash discards, neither of which the contributor can do anything about.
+      - name: Lint the subject that will land on main
+        if: github.event_name == 'pull_request'
+        env:
+          # Through the environment, never interpolated into the run script: an
+          # expression expands before the shell sees it, so a crafted title would
+          # execute on the runner.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$PR_COMMITS" = "1" ]; then
+            git log -1 --format=%B "$HEAD_SHA" | npx --no -- commitlint
+          else
+            printf '%s' "$PR_TITLE" | npx --no -- commitlint
+          fi
       - run: npm run lint
+      - run: npm run format:check
       # Run the same lint gate the n8n Creator Portal enforces, against the local
       # source, so a rule violation fails CI before publishing instead of after the
       # portal rejects the release. The scanner's toolchain (TypeScript 7, ESLint 9)
@@ -28,12 +61,24 @@ jobs:
           tmp=$(mktemp -d)
           # --ignore-scripts: the scanner pulls in a native module (isolated-vm) it never uses
           # for linting; skipping its node-gyp build keeps the install off Node's version quirks.
-          (cd "$tmp" && npm init -y >/dev/null && npm i --ignore-scripts @n8n/scan-community-package@beta >/dev/null)
+          # Pinned: the beta tag moves roughly weekly, so an upstream rule can turn
+          # a green branch red with no commit here. Bump it deliberately.
+          (cd "$tmp" && npm init -y >/dev/null && npm i --ignore-scripts @n8n/scan-community-package@0.34.0 >/dev/null)
           N8N_SCANNER_PATH="$tmp/node_modules/@n8n/scan-community-package/scanner/scanner.mjs" \
             node scripts/n8n-scan.mjs
       - run: npm run build
       # Fail if the committed dist/ is stale relative to src/ — GitHub installs serve
       # the committed dist/ verbatim, so it must always match the build of src/.
+      # `git diff` compares tracked files only, so a build output that is entirely
+      # new stays invisible to it: a PR adding a handler passed this gate while its
+      # compiled module was never committed, and the GitHub-install path then loads
+      # a package whose require target does not exist. Porcelain sees untracked too.
       - name: Verify committed dist/ matches source
-        run: git diff --exit-code -- dist
+        run: |
+          changed=$(git status --porcelain -- dist)
+          if [ -n "$changed" ]; then
+            echo "dist/ does not match a fresh build of the source:"
+            echo "$changed"
+            exit 1
+          fi
       - run: node --test test/*.test.mjs

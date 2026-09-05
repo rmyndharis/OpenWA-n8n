@@ -50,7 +50,7 @@ function getRecipients(ctx, itemIndex) {
 }
 /** Reads the optional caption shared by the image and video send operations. */
 function getCaption(ctx, itemIndex) {
-    const caption = (0, params_1.asText)(ctx.getNodeParameter('statusCaption', itemIndex, ''));
+    const caption = (0, params_1.asText)(ctx.getNodeParameter('statusCaption', itemIndex, ''), 'Caption');
     if (!caption) {
         return undefined;
     }
@@ -91,7 +91,7 @@ async function buildStatusRequest(operation, itemIndex) {
             const body = {
                 text: (0, params_1.requireText)(this, 'statusText', 'Status text', itemIndex, MAX_TEXT_LENGTH),
             };
-            const backgroundColor = this.getNodeParameter('statusBackgroundColor', itemIndex, '').trim();
+            const backgroundColor = (0, params_1.asText)(this.getNodeParameter('statusBackgroundColor', itemIndex, ''), 'Background colour');
             if (backgroundColor) {
                 body.backgroundColor = backgroundColor;
             }
@@ -112,7 +112,7 @@ async function buildStatusRequest(operation, itemIndex) {
             const body = {
                 audio: await media_1.resolveMediaSource.call(this, itemIndex, STATUS_VOICE_MEDIA, 'audio/ogg; codecs=opus'),
             };
-            const backgroundColor = this.getNodeParameter('statusBackgroundColor', itemIndex, '').trim();
+            const backgroundColor = (0, params_1.asText)(this.getNodeParameter('statusBackgroundColor', itemIndex, ''), 'Background colour');
             if (backgroundColor) {
                 body.backgroundColor = backgroundColor;
             }
@@ -147,4 +147,3 @@ async function buildStatusRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=status.js.map

@@ -23,8 +23,8 @@ async function buildTemplateRequest(operation, itemIndex) {
             name: (0, params_1.requireText)(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
             body: (0, params_1.requireText)(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
         };
-        const header = (0, params_1.asText)(this.getNodeParameter('templateHeader', itemIndex, ''));
-        const footer = (0, params_1.asText)(this.getNodeParameter('templateFooter', itemIndex, ''));
+        const header = (0, params_1.asText)(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
+        const footer = (0, params_1.asText)(this.getNodeParameter('templateFooter', itemIndex, ''), 'Footer');
         if (header) {
             if (header.length > MAX_HEADER_FOOTER_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Header cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`, { itemIndex });
@@ -77,10 +77,15 @@ async function buildTemplateRequest(operation, itemIndex) {
                     }
                     continue;
                 }
-                if (value.length > max) {
+                // Coerced for the same reason the blank-rejecting branch routes through
+                // optionalNonBlank: an expression can resolve to a number, whose `.length`
+                // is undefined, so the cap would pass and the server would answer a 400
+                // naming no field. A blank stays blank here, which clears the field.
+                const text = (0, params_1.asText)(value);
+                if (text.length > max) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Template ${key} cannot exceed ${max} characters`, { itemIndex });
                 }
-                body[key] = value;
+                body[key] = text;
             }
             if (Object.keys(body).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });
@@ -91,4 +96,3 @@ async function buildTemplateRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=template.js.map

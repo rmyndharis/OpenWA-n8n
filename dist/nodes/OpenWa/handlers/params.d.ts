@@ -1,21 +1,5 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
-/**
- * Reads a required WhatsApp JID (e.g. 628123456789@c.us, 1203630@g.us) and
- * returns it trimmed. Callers that put it in a URL path wrap it in
- * `encodeURIComponent`; callers that send it in a body use it as-is.
- *
- * Kept apart from sanitizePathParam because a JID legitimately contains `@` and
- * `.`, and because the caller needs a NodeOperationError carrying the item index
- * rather than the bare Error that helper throws.
- */
-/**
- * A node parameter read as text. An expression can resolve to a number, a boolean
- * or an object, and calling .trim() on one throws a TypeError that reaches the user
- * as an opaque API error naming no field. Coercing keeps the value usable where it
- * makes sense (a numeric id) and lets the emptiness and length checks below give a
- * pointed message where it does not.
- */
-export declare function asText(value: unknown): string;
+export declare function asText(value: unknown, label?: string): string;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
 /**
  * Reads a required free-text parameter, trimmed, optionally length-checked
@@ -38,6 +22,17 @@ export declare function toQueryParams(options: IDataObject | undefined): IDataOb
  * bounds as numbers and reject anything `Number()` cannot parse. A value that is
  * already numeric passes straight through, so an expression supplying epoch-ms
  * keeps working.
+ *
+ * A string of twelve or more digits is read as epoch-ms before `Date.parse` sees it.
+ * Upstream JSON routinely carries a millisecond timestamp as text to avoid losing
+ * precision, and `Date.parse` answers NaN for a 13-digit string, so the exact value
+ * these routes want was being rejected as "not a valid date".
+ *
+ * Twelve is the floor because it is what separates milliseconds from every shorter
+ * thing a numeric string can be. Epoch-SECONDS is ten digits and a compact date is
+ * eight, and reading either as milliseconds lands in 1970: the request then succeeds
+ * against a mute that has already expired, which is worse than the loud refusal
+ * `Date.parse` gives them. A bare `2026` keeps its year reading for the same reason.
  */
 export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: string, itemIndex: number): number;
 /**
@@ -52,18 +47,4 @@ export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: s
  * message that names the field and says how to leave it unchanged.
  */
 export declare function optionalNonBlank(ctx: IExecuteFunctions, value: string | undefined, label: string, itemIndex: number, maxLength?: number): string | undefined;
-/**
- * Normalises a list parameter into a trimmed, blank-free array of strings.
- *
- * These fields are plain strings rather than n8n `multipleValues` collections so
- * that they can be driven by an expression — a fixed set of input rows cannot
- * scale to a list only known at runtime. That means three shapes reach us, and
- * all three are accepted:
- *
- *   - a real array, when an expression resolves to one (`{{ $json.ids }}`)
- *   - a JSON array string, when one is pasted or built as text
- *   - a comma- or newline-separated string, when typed by hand
- *
- * Returns an empty array when nothing was provided.
- */
 export declare function toStringList(raw: unknown): string[];

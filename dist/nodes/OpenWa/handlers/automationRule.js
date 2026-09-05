@@ -90,4 +90,3 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=automationRule.js.map

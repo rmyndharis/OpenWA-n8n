@@ -57,4 +57,3 @@ async function buildMediaRequest(operation, itemIndex) {
         body,
     };
 }
-//# sourceMappingURL=media.js.map

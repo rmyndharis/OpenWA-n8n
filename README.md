@@ -67,9 +67,9 @@ Create an **OpenWA API** credential:
 
 The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
-> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations: Session → Get Status / List All, and Contact → Check Exists / Get Info. An **ADMIN** key (the first-boot default) also works for every operation.
+> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations include Session → Get Status / List All / Get Proxy, and Contact → Check Exists / Get Info. Some need **ADMIN**: **Webhook → Get Delivery Failures**, the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**, and every **API Key** operation except **Validate**, which any valid key may call to report its own role. An **ADMIN** key (the first-boot default) works for every operation.
 
-> **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Configure these on the server, not in the node.
+> **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Some surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session → Create**, **Session → Update Proxy**, the **System** reads **Get Settings**, **Get Stats Overview** and **Get Message Stats**, and every **API Key** operation except **Validate**. Configure all of this on the server, not in the node.
 
 ---
 
@@ -200,6 +200,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Session**         | Delete                      | Delete a session                                     |
 | **Session**         | Force Kill                  | Force kill a stuck session                           |
 | **Session**         | Get Config                  | Get the tunable configuration for a session          |
+| **Session**         | Get Proxy                   | Get the egress proxy for a session                   |
 | **Session**         | Get QR                      | Get the QR code for authentication                   |
 | **Session**         | Get Stats Overview          | Get an overview of all sessions                      |
 | **Session**         | Get Status                  | Get session status                                   |
@@ -209,6 +210,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Session**         | Start                       | Start a session                                      |
 | **Session**         | Stop                        | Stop a session                                       |
 | **Session**         | Update Config               | Update the tunable configuration for a session       |
+| **Session**         | Update Proxy                | Update the egress proxy for a session                |
 | **Status**          | Delete                      | Delete a status update                               |
 | **Status**          | Get by Contact              | Get the statuses of a contact                        |
 | **Status**          | Get Media                   | Get the media of a status update                     |
@@ -237,7 +239,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Webhook**         | Test                        | Send a test delivery to a webhook                    |
 | **Webhook**         | Update                      | Update a webhook                                     |
 
-> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: the whole **API Key** resource, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
+> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: every **API Key** operation except **Validate**, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
 
 > **Observability:** **Check** / **Check Liveness** / **Check Readiness** return the server's health JSON as-is, so a workflow can alert on availability. **Check Readiness** is the one that also probes the database connections. `/api/metrics` is deliberately not offered — it authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here.
 
@@ -247,7 +249,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Send Product** returns `{id, timestamp}` where every other send returns `{messageId, timestamp}`. The node passes the response through unchanged rather than normalising it, so the difference stays visible.
 
-> **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page of up to 1000 entries. On an account with more than that, set the field from an expression instead of picking from the list.
+> **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page: up to 1000 entries where the route pages (sessions, groups, chats, contacts), and whatever the route returns where it does not (templates, labels, webhooks, channels, API keys). On an account with more than that, set the field from an expression instead of picking from the list. The **Label Name or ID** dropdown is whatsapp-web.js only, because the label listing behind it answers `501` on Baileys.
 
 > **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list and is the only engine that honors it. whatsapp-web.js ignores the list entirely and posts to every contact whether one is supplied or not, so do not rely on it to limit the audience there.
 
@@ -326,7 +328,7 @@ The Trigger's optional **Filters** field is registered with the webhook, so the 
 { "conditions": [{ "field": "isGroup", "operator": "is", "value": false }] }
 ```
 
-Conditions are ANDed, at most 20. The fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `fromMe`, `hasMedia` and `mentions`. Value shape is enforced at registration: the id, mentions and type fields take a non-empty array, `body` takes a plain string, and the boolean fields take a real boolean.
+Conditions are ANDed, at most 20. The fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `kind`, `fromMe`, `hasMedia` and `mentions`. `kind` (server >= 0.23.4) names the chat kind, one of `individual`, `group`, `channel`, `status`, `broadcast` or `unknown`; it is the only way to single out or exclude a Channel post, which `isGroup` reports as false along with everything else. Value shape is enforced at registration: the ID, mentions, type and kind fields take a non-empty array, `body` takes a plain string, and the boolean fields take a real boolean.
 
 > Two things are worth knowing before relying on them. Filters only narrow **message** events, so `session.*`, `group.*` and `call.*` events are delivered whatever the filter says. And a filtered-out delivery is silent: from n8n it is indistinguishable from nothing having happened, so an over-strict filter looks like a broken trigger. Changing the filter re-registers the webhook on the next activation.
 
@@ -390,7 +392,7 @@ It is best-effort: workflow static data is saved per execution, so two deliverie
 
 Requires an OpenWA server **≥ 0.16.0**. A floor is set by the newest thing the node needs, and three things move it independently.
 
-The **routes** the action node calls top out at v0.16.0, which is what now sets the badge: **Call > Create Link** arrived there. Most of the rest of the surface landed in v0.14.0 (message pin/star/vote, chat archive/mute/pin/clear, presence, media conversion, voice statuses, group pictures and join preview, channel administration, label writes and automation rules) with membership requests, the blocklist read and session config in v0.15.0. Against an older server those specific operations answer `404` and everything else still works.
+The **routes** the action node calls set the badge at v0.16.0: **Call > Create Link** arrived there. Most of the rest of the surface landed in v0.14.0 (message pin/star/vote, chat archive/mute/pin/clear, presence, media conversion, voice statuses, group pictures and join preview, channel administration, label writes and automation rules) with membership requests, the blocklist read and session config in v0.15.0. Two operations sit above the badge: **Session > Get Proxy** and **Session > Update Proxy** need server **≥ 0.23.4**, where the per-session proxy became readable and patchable rather than fixed at creation. Against an older server those specific operations answer `404` and everything else still works.
 
 The **event catalog** sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 (a v0.14.x server knows 22 events, not 23), so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation.
 
@@ -402,6 +404,11 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | **Message IDs** | Chat > Mark Read | server **≥ 0.23.0** |
 | **Mentions** | Message > Edit, Reply and Send Template | server **≥ 0.23.0** |
 | **Link Preview** | Message > Send Template | server **≥ 0.23.0** |
+| **After Row ID** | Message > List | server **≥ 0.23.4** |
+| **Inline Media** | Message > List | server **≥ 0.23.4** |
+| **`kind` filter field** | Trigger Filters, Webhook > Create / Update | server **≥ 0.23.4** |
+
+> Three of those rows fail differently on an older server, because they are not body fields. **After Row ID** and **Inline Media** are query parameters the messages route reads loose, so a pre-0.23.4 server ignores them instead of refusing: a cursor walk silently falls back to offset paging, and the inline-media opt-out silently keeps inlining. The **`kind`** filter field is validated when the webhook is registered, so a condition naming it is refused with a `400` at activation rather than at delivery.
 
 > Everything else in the table above is available at the badge floor. Where an operation exists on only one engine, the node says so on the field or resource rather than leaving a `501` to explain itself.
 

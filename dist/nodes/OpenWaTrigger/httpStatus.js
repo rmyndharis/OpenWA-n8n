@@ -14,4 +14,3 @@ function httpStatusFromError(error) {
     const status = Number(raw);
     return Number.isFinite(status) ? status : undefined;
 }
-//# sourceMappingURL=httpStatus.js.map

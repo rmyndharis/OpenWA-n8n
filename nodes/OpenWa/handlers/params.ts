@@ -17,9 +17,36 @@ import { NodeOperationError } from 'n8n-workflow';
  * makes sense (a numeric id) and lets the emptiness and length checks below give a
  * pointed message where it does not.
  */
-export function asText(value: unknown): string {
+/** What an object with nothing useful to say stringifies to. */
+const OPAQUE_OBJECT = '[object Object]';
+
+export function asText(value: unknown, label = 'This field'): string {
   if (value === undefined || value === null) {
     return '';
+  }
+  if (typeof value === 'object') {
+    // Refused only when stringifying it carries NOTHING. The gateway validates with
+    // implicit conversion, which rewrites the value before `@IsString()` sees it, so
+    // "[object Object]" is accepted and reaches a chat as a real message; on
+    // Message > Edit it overwrites text already delivered, which nothing can undo.
+    //
+    // Everything else keeps working, and that distinction is the point: a bare
+    // `{{ $now }}` on a string field resolves to a Luxon DateTime OBJECT rather than
+    // a string, and it stringifies to an ISO-8601 instant the gateway has always
+    // taken. Refusing every object would break that, and a plain Date with it.
+    let text: string;
+    try {
+      text = String(value);
+    } catch {
+      // A null-prototype object has no toString at all, so String() throws.
+      text = OPAQUE_OBJECT;
+    }
+    if (text === OPAQUE_OBJECT) {
+      throw new Error(
+        `${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`,
+      );
+    }
+    return text.trim();
   }
   return typeof value === 'string' ? value.trim() : String(value).trim();
 }
@@ -30,7 +57,7 @@ export function requireJid(
   label: string,
   itemIndex: number,
 ): string {
-  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -49,7 +76,7 @@ export function requireText(
   itemIndex: number,
   maxLength?: number,
 ): string {
-  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -85,6 +112,17 @@ export function toQueryParams(options: IDataObject | undefined): IDataObject {
  * bounds as numbers and reject anything `Number()` cannot parse. A value that is
  * already numeric passes straight through, so an expression supplying epoch-ms
  * keeps working.
+ *
+ * A string of twelve or more digits is read as epoch-ms before `Date.parse` sees it.
+ * Upstream JSON routinely carries a millisecond timestamp as text to avoid losing
+ * precision, and `Date.parse` answers NaN for a 13-digit string, so the exact value
+ * these routes want was being rejected as "not a valid date".
+ *
+ * Twelve is the floor because it is what separates milliseconds from every shorter
+ * thing a numeric string can be. Epoch-SECONDS is ten digits and a compact date is
+ * eight, and reading either as milliseconds lands in 1970: the request then succeeds
+ * against a mute that has already expired, which is worse than the loud refusal
+ * `Date.parse` gives them. A bare `2026` keeps its year reading for the same reason.
  */
 export function toEpochMs(
   ctx: IExecuteFunctions,
@@ -92,8 +130,13 @@ export function toEpochMs(
   label: string,
   itemIndex: number,
 ): number {
-  const ms = typeof raw === 'number' ? raw : Date.parse(String(raw));
-  if (!Number.isFinite(ms)) {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  const ms =
+    typeof raw === 'number' ? raw : /^\d{12,}$/.test(text) ? Number(text) : Date.parse(String(raw));
+  // A bare number under four digits is refused rather than parsed. Date.parse reads
+  // one as a year, so '0' (what Chat > List reports for an indefinite mute) resolves
+  // to the year 2000 and the gateway accepts a mute that expired decades ago.
+  if (!Number.isFinite(ms) || /^\d{1,3}$/.test(text)) {
     throw new NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
   }
   return ms;
@@ -120,7 +163,7 @@ export function optionalNonBlank(
   if (value === undefined || value === null) {
     return undefined;
   }
-  const trimmed = asText(value);
+  const trimmed = asText(value, label);
   if (!trimmed) {
     throw new NodeOperationError(
       ctx.getNode(),
@@ -129,11 +172,9 @@ export function optionalNonBlank(
     );
   }
   if (maxLength !== undefined && trimmed.length > maxLength) {
-    throw new NodeOperationError(
-      ctx.getNode(),
-      `${label} cannot exceed ${maxLength} characters`,
-      { itemIndex },
-    );
+    throw new NodeOperationError(ctx.getNode(), `${label} cannot exceed ${maxLength} characters`, {
+      itemIndex,
+    });
   }
   return trimmed;
 }
@@ -152,29 +193,42 @@ export function optionalNonBlank(
  *
  * Returns an empty array when nothing was provided.
  */
+function listEntry(value: unknown): string {
+  if (typeof value === 'object' && value !== null) {
+    throw new Error(
+      'List entries must be text. Map the expression to the values themselves, e.g. {{ $json.items.map((i) => i.id) }}.',
+    );
+  }
+  return String(value ?? '').trim();
+}
+
 export function toStringList(raw: unknown): string[] {
   if (raw === undefined || raw === null || raw === '') {
     return [];
   }
 
   if (Array.isArray(raw)) {
-    return raw.map((v) => String(v).trim()).filter(Boolean);
+    return raw.map(listEntry).filter(Boolean);
   }
 
   if (typeof raw !== 'string') {
-    return [String(raw).trim()].filter(Boolean);
+    return [listEntry(raw)].filter(Boolean);
   }
 
   const trimmed = raw.trim();
   if (trimmed.startsWith('[')) {
+    // Only the parse is guarded. Mapping inside the try swallowed the refusal
+    // listEntry throws, and the text then fell through to the comma splitter, so a
+    // pasted array of objects was chopped into JSON fragments instead of refused.
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(trimmed);
-      if (Array.isArray(parsed)) {
-        return parsed.map((v) => String(v).trim()).filter(Boolean);
-      }
+      parsed = JSON.parse(trimmed);
     } catch {
-      // Not valid JSON after all — fall through and treat it as a plain
-      // separated list rather than failing on a stray bracket.
+      // Not valid JSON after all: fall through and treat it as a plain separated
+      // list rather than failing on a stray bracket.
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.map(listEntry).filter(Boolean);
     }
   }
 

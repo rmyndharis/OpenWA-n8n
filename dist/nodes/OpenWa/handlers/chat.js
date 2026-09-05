@@ -80,4 +80,3 @@ async function buildChatRequest(operation, itemIndex) {
             return null;
     }
 }
-//# sourceMappingURL=chat.js.map

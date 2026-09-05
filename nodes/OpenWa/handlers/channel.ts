@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, requireText, toQueryParams } from './params';
+import { requireJid, requireText, toQueryParams, asText } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -44,9 +44,10 @@ export async function buildChannelRequest(
     };
     // Omit rather than send '': an empty string validates and is forwarded as a
     // real empty description rather than "no description".
-    const description = (
-      this.getNodeParameter('channelDescription', itemIndex, '') as string
-    ).trim();
+    const description = asText(
+      this.getNodeParameter('channelDescription', itemIndex, ''),
+      'Description',
+    );
     if (description) {
       if (description.length > 2048) {
         throw new NodeOperationError(

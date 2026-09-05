@@ -57,7 +57,7 @@ function getRecipients(ctx: IExecuteFunctions, itemIndex: number): string[] | un
 
 /** Reads the optional caption shared by the image and video send operations. */
 function getCaption(ctx: IExecuteFunctions, itemIndex: number): string | undefined {
-  const caption = asText(ctx.getNodeParameter('statusCaption', itemIndex, ''));
+  const caption = asText(ctx.getNodeParameter('statusCaption', itemIndex, ''), 'Caption');
   if (!caption) {
     return undefined;
   }
@@ -123,9 +123,10 @@ export async function buildStatusRequest(
       const body: Record<string, unknown> = {
         text: requireText(this, 'statusText', 'Status text', itemIndex, MAX_TEXT_LENGTH),
       };
-      const backgroundColor = (
-        this.getNodeParameter('statusBackgroundColor', itemIndex, '') as string
-      ).trim();
+      const backgroundColor = asText(
+        this.getNodeParameter('statusBackgroundColor', itemIndex, ''),
+        'Background colour',
+      );
       if (backgroundColor) {
         body.backgroundColor = backgroundColor;
       }
@@ -152,9 +153,10 @@ export async function buildStatusRequest(
           'audio/ogg; codecs=opus',
         ),
       };
-      const backgroundColor = (
-        this.getNodeParameter('statusBackgroundColor', itemIndex, '') as string
-      ).trim();
+      const backgroundColor = asText(
+        this.getNodeParameter('statusBackgroundColor', itemIndex, ''),
+        'Background colour',
+      );
       if (backgroundColor) {
         body.backgroundColor = backgroundColor;
       }

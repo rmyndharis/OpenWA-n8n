@@ -33,8 +33,8 @@ export async function buildTemplateRequest(
       name: requireText(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
       body: requireText(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
     };
-    const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''));
-    const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''));
+    const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
+    const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''), 'Footer');
     if (header) {
       if (header.length > MAX_HEADER_FOOTER_LENGTH) {
         throw new NodeOperationError(
@@ -105,14 +105,19 @@ export async function buildTemplateRequest(
           }
           continue;
         }
-        if (value.length > max) {
+        // Coerced for the same reason the blank-rejecting branch routes through
+        // optionalNonBlank: an expression can resolve to a number, whose `.length`
+        // is undefined, so the cap would pass and the server would answer a 400
+        // naming no field. A blank stays blank here, which clears the field.
+        const text = asText(value);
+        if (text.length > max) {
           throw new NodeOperationError(
             this.getNode(),
             `Template ${key} cannot exceed ${max} characters`,
             { itemIndex },
           );
         }
-        body[key] = value;
+        body[key] = text;
       }
       if (Object.keys(body).length === 0) {
         throw new NodeOperationError(

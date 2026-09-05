@@ -55,6 +55,10 @@ const PARAMS = {
   statusBatchId: 'b1',
   batchId: '',
   labelId: 'l1',
+  // automationRule is the one handler that validates a path parameter before it
+  // dispatches on `operation`, so without this every rule operation throws on the
+  // id and the parity check can never reach its own fallthrough.
+  ruleId: 'r1',
   templateId: 't1',
   keyId: 'k1',
   apiKeyId: 'k1',

@@ -28,4 +28,3 @@ function verifyOpenWaSignature(rawBody, secret, signatureHeader) {
     }
     return (0, node_crypto_1.timingSafeEqual)(provided, expectedBuf);
 }
-//# sourceMappingURL=verifySignature.js.map

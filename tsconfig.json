@@ -6,7 +6,6 @@
     "lib": ["ES2021"],
     "declaration": true,
     "skipLibCheck": true,
-    "sourceMap": true,
     "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,

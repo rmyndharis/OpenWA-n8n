@@ -9,4 +9,3 @@ var OpenWa_node_1 = require("./nodes/OpenWa/OpenWa.node");
 Object.defineProperty(exports, "OpenWa", { enumerable: true, get: function () { return OpenWa_node_1.OpenWa; } });
 var OpenWaTrigger_node_1 = require("./nodes/OpenWaTrigger/OpenWaTrigger.node");
 Object.defineProperty(exports, "OpenWaTrigger", { enumerable: true, get: function () { return OpenWaTrigger_node_1.OpenWaTrigger; } });
-//# sourceMappingURL=index.js.map

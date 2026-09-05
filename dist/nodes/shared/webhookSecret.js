@@ -29,4 +29,3 @@ function webhookSecretProblem(secret) {
     }
     return null;
 }
-//# sourceMappingURL=webhookSecret.js.map

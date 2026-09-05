@@ -73,10 +73,7 @@ export async function buildAutomationRuleRequest(
     return { endpoint: base, method: 'POST', body };
   }
 
-  const ruleId = sanitizePathParam(
-    this.getNodeParameter('ruleId', itemIndex) as string,
-    'Rule ID',
-  );
+  const ruleId = sanitizePathParam(this.getNodeParameter('ruleId', itemIndex) as string, 'Rule ID');
 
   switch (operation) {
     case 'get':

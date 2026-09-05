@@ -19,4 +19,3 @@ function sanitizePathParam(value, paramName) {
     }
     return encodeURIComponent(trimmed);
 }
-//# sourceMappingURL=sanitizePathParam.js.map
