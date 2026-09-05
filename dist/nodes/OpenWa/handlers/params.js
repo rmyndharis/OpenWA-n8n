@@ -24,14 +24,39 @@ const n8n_workflow_1 = require("n8n-workflow");
  * makes sense (a numeric id) and lets the emptiness and length checks below give a
  * pointed message where it does not.
  */
-function asText(value) {
+/** What an object with nothing useful to say stringifies to. */
+const OPAQUE_OBJECT = '[object Object]';
+function asText(value, label = 'This field') {
     if (value === undefined || value === null) {
         return '';
+    }
+    if (typeof value === 'object') {
+        // Refused only when stringifying it carries NOTHING. The gateway validates with
+        // implicit conversion, which rewrites the value before `@IsString()` sees it, so
+        // "[object Object]" is accepted and reaches a chat as a real message; on
+        // Message > Edit it overwrites text already delivered, which nothing can undo.
+        //
+        // Everything else keeps working, and that distinction is the point: a bare
+        // `{{ $now }}` on a string field resolves to a Luxon DateTime OBJECT rather than
+        // a string, and it stringifies to an ISO-8601 instant the gateway has always
+        // taken. Refusing every object would break that, and a plain Date with it.
+        let text;
+        try {
+            text = String(value);
+        }
+        catch {
+            // A null-prototype object has no toString at all, so String() throws.
+            text = OPAQUE_OBJECT;
+        }
+        if (text === OPAQUE_OBJECT) {
+            throw new Error(`${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`);
+        }
+        return text.trim();
     }
     return typeof value === 'string' ? value.trim() : String(value).trim();
 }
 function requireJid(ctx, paramName, label, itemIndex) {
-    const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+    const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
     if (!value) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
@@ -43,7 +68,7 @@ function requireJid(ctx, paramName, label, itemIndex) {
  * message instead of a generic 400.
  */
 function requireText(ctx, paramName, label, itemIndex, maxLength) {
-    const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+    const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
     if (!value) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
@@ -115,7 +140,7 @@ function optionalNonBlank(ctx, value, label, itemIndex, maxLength) {
     if (value === undefined || value === null) {
         return undefined;
     }
-    const trimmed = asText(value);
+    const trimmed = asText(value, label);
     if (!trimmed) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. Remove it from the fields to leave it unchanged.`, { itemIndex });
     }

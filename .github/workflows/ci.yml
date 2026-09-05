@@ -18,24 +18,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # `git log -1 <head sha>` needs that commit present, and the default
+          # shallow clone of a pull request already carries it. Two is cheap
+          # insurance for the merge commit checkout puts on top.
+          fetch-depth: 2
       - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - run: npm ci
       # release-please derives the version and the changelog from the commit
-      # subjects on main, and every pull request lands there as a single squash
-      # commit whose subject is the pull request title (the repo allows squash
-      # only, and its COMMIT_OR_PR_TITLE default takes the title for anything
-      # past one commit). Branch commit messages are discarded by that squash, so
-      # the title is the only text that has to be a conventional commit.
-      - name: Lint pull request title
+      # subjects on main, and a pull request lands there as one squash commit.
+      # Under the default COMMIT_OR_PR_TITLE that subject is the lone COMMIT
+      # SUBJECT when the branch holds exactly one commit, and the PULL REQUEST
+      # TITLE otherwise. Lint whichever one will actually land, rather than both:
+      # linting the whole range fails on merge commits from main and on subjects
+      # the squash discards, neither of which the contributor can do anything about.
+      - name: Lint the subject that will land on main
         if: github.event_name == 'pull_request'
         env:
           # Through the environment, never interpolated into the run script: an
           # expression expands before the shell sees it, so a crafted title would
           # execute on the runner.
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s' "$PR_TITLE" | npx --no -- commitlint
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$PR_COMMITS" = "1" ]; then
+            git log -1 --format=%B "$HEAD_SHA" | npx --no -- commitlint
+          else
+            printf '%s' "$PR_TITLE" | npx --no -- commitlint
+          fi
       - run: npm run lint
       - run: npm run format:check
       # Run the same lint gate the n8n Creator Portal enforces, against the local

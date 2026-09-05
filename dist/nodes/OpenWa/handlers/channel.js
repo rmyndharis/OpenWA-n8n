@@ -31,7 +31,7 @@ async function buildChannelRequest(operation, itemIndex) {
         };
         // Omit rather than send '': an empty string validates and is forwarded as a
         // real empty description rather than "no description".
-        const description = (0, params_1.asText)(this.getNodeParameter('channelDescription', itemIndex, ''));
+        const description = (0, params_1.asText)(this.getNodeParameter('channelDescription', itemIndex, ''), 'Description');
         if (description) {
             if (description.length > 2048) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Channel description cannot exceed 2048 characters', { itemIndex });

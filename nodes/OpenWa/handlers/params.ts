@@ -17,9 +17,36 @@ import { NodeOperationError } from 'n8n-workflow';
  * makes sense (a numeric id) and lets the emptiness and length checks below give a
  * pointed message where it does not.
  */
-export function asText(value: unknown): string {
+/** What an object with nothing useful to say stringifies to. */
+const OPAQUE_OBJECT = '[object Object]';
+
+export function asText(value: unknown, label = 'This field'): string {
   if (value === undefined || value === null) {
     return '';
+  }
+  if (typeof value === 'object') {
+    // Refused only when stringifying it carries NOTHING. The gateway validates with
+    // implicit conversion, which rewrites the value before `@IsString()` sees it, so
+    // "[object Object]" is accepted and reaches a chat as a real message; on
+    // Message > Edit it overwrites text already delivered, which nothing can undo.
+    //
+    // Everything else keeps working, and that distinction is the point: a bare
+    // `{{ $now }}` on a string field resolves to a Luxon DateTime OBJECT rather than
+    // a string, and it stringifies to an ISO-8601 instant the gateway has always
+    // taken. Refusing every object would break that, and a plain Date with it.
+    let text: string;
+    try {
+      text = String(value);
+    } catch {
+      // A null-prototype object has no toString at all, so String() throws.
+      text = OPAQUE_OBJECT;
+    }
+    if (text === OPAQUE_OBJECT) {
+      throw new Error(
+        `${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`,
+      );
+    }
+    return text.trim();
   }
   return typeof value === 'string' ? value.trim() : String(value).trim();
 }
@@ -30,7 +57,7 @@ export function requireJid(
   label: string,
   itemIndex: number,
 ): string {
-  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -49,7 +76,7 @@ export function requireText(
   itemIndex: number,
   maxLength?: number,
 ): string {
-  const value = asText(ctx.getNodeParameter(paramName, itemIndex));
+  const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
   if (!value) {
     throw new NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
   }
@@ -136,7 +163,7 @@ export function optionalNonBlank(
   if (value === undefined || value === null) {
     return undefined;
   }
-  const trimmed = asText(value);
+  const trimmed = asText(value, label);
   if (!trimmed) {
     throw new NodeOperationError(
       ctx.getNode(),

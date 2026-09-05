@@ -83,17 +83,6 @@ const RESOURCE_BUILDERS = {
     webhook: webhook_1.buildWebhookRequest,
 };
 /**
- * Recovers the server's explanation from a failed binary request.
- *
- * A binary operation asks for an arraybuffer, so when the server answers with an
- * error its JSON body arrives as raw bytes and the message never reaches the user.
- * Get Media is the case that matters: its 404 covers five different situations, and
- * without this the workflow sees only the status code. The decoded body is written
- * back onto the error so the thrown NodeApiError carries it.
- *
- * Decorating an error must never itself throw, so every step is guarded.
- */
-/**
  * A server explanation as a single string.
  *
  * NestJS sends a class-validator rejection as `message: string[]` ("chatId must be a
@@ -106,6 +95,17 @@ function explanationText(value) {
         : value;
     return typeof text === 'string' && text.trim() ? text.trim() : undefined;
 }
+/**
+ * Recovers the server's explanation from a failed binary request.
+ *
+ * A binary operation asks for an arraybuffer, so when the server answers with an
+ * error its JSON body arrives as raw bytes and the message never reaches the user.
+ * Get Media is the case that matters: its 404 covers five different situations, and
+ * without this the workflow sees only the status code. The decoded body is written
+ * back onto the error so the thrown NodeApiError carries it.
+ *
+ * Decorating an error must never itself throw, so every step is guarded.
+ */
 function decodeBinaryErrorBody(error) {
     const toText = (value) => {
         let buffer;
@@ -1429,11 +1429,11 @@ class OpenWa {
                     displayOptions: { show: { resource: ['message'], operation: ['list'] } },
                     options: [
                         {
-                            displayName: 'After Message ID',
+                            displayName: 'After Row ID',
                             name: 'after',
                             type: 'string',
                             default: '',
-                            description: 'Keyset cursor: the ID of the last message of the previous page. Anchors the window to a row rather than to a count, so a message arriving mid-walk cannot shift the page boundary the way Offset does. Takes precedence over Offset. An ID that names no message in this session is refused with an error rather than answering an empty page, so a stale cursor cannot look like the end of the history. Requires server ≥ 0.23.4: an older server reads this route query loosely and ignores the cursor, silently falling back to Offset paging.',
+                            description: 'Keyset cursor: the row ID of the last message of the previous page, taken from the list response. It is the ID the gateway assigns the stored row, not the WhatsApp message ID that Get Reactions and Edit take. Anchors the window to a row rather than to a count, so a message arriving mid-walk cannot shift the page boundary the way Offset does. Takes precedence over Offset. A value that is not a row ID in this session is refused with an error rather than answering an empty page, so a stale or foreign cursor cannot look like the end of the history. Requires server ≥ 0.23.4: an older server reads this route query loosely and ignores the cursor, silently falling back to Offset paging.',
                         },
                         {
                             displayName: 'Chat Name or ID',
@@ -1474,7 +1474,7 @@ class OpenWa {
                             type: 'number',
                             typeOptions: { minValue: 0 },
                             default: 0,
-                            description: 'Number of messages to skip before collecting the result set. Ignored when After Message ID is set, and prone to drift on a live chat: a message arriving between pages shifts every later offset.',
+                            description: 'Number of messages to skip before collecting the result set. Ignored when After Row ID is set, and prone to drift on a live chat: a message arriving between pages shifts every later offset.',
                         },
                     ],
                 },
@@ -3963,7 +3963,14 @@ class OpenWa {
                     // Classified here, the one place a failure is known to have come off the
                     // wire. Everything else in this block is the node's own validation, and
                     // calling that a NodeApiError blames the gateway for a bad parameter.
-                    const apiError = new n8n_workflow_1.NodeApiError(this.getNode(), (isBinary ? decodeBinaryErrorBody(requestError) : requestError));
+                    const decoded = isBinary ? decodeBinaryErrorBody(requestError) : requestError;
+                    // A rejection with no shape at all takes NodeApiError down when it reads
+                    // `.message` off it, and that TypeError then replaces the failure with a
+                    // sentence about a null dereference. Rare, but it lands on the two paths a
+                    // user has least ability to diagnose: a thrown error and a kept-going item.
+                    const apiError = new n8n_workflow_1.NodeApiError(this.getNode(), (decoded ?? {
+                        message: 'The request failed without returning a response',
+                    }));
                     // n8n has usually wrapped the failure already, and NodeApiError hands an
                     // existing one straight back without reading its options, so the item index
                     // is assigned to the result to survive both shapes. Without it a failed run

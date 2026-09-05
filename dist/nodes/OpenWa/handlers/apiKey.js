@@ -67,10 +67,11 @@ function collectApiKeyFields(fields, itemIndex) {
     // never expires when one with an expiry was asked for.
     if (fields.expiresAt !== undefined && fields.expiresAt !== null && fields.expiresAt !== '') {
         const expiresAt = (0, params_1.toEpochMs)(this, fields.expiresAt, 'Expiry date', itemIndex);
-        // Date rejects anything past +/-8.64e15 ms, and toISOString on it throws a bare
-        // RangeError naming neither the field nor the operation. An epoch expressed in
-        // microseconds or nanoseconds lands there.
-        if (Math.abs(expiresAt) > 8.64e15) {
+        // A century is the ceiling because it is the smallest bound that still catches
+        // the mistake this guard exists for. An epoch in MICROseconds is only ~1.79e15,
+        // inside the +/-8.64e15 that Date itself accepts, so bounding on Date alone let
+        // it through to a year-58648 expiry and an opaque gateway rejection.
+        if (!(expiresAt < Date.now() + 100 * 365 * 24 * 60 * 60 * 1000)) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Expiry date is not a valid date', {
                 itemIndex,
             });

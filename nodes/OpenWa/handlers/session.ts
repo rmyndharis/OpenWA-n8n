@@ -47,7 +47,7 @@ export async function buildSessionRequest(
 ): Promise<RequestSpec | null> {
   if (operation === 'create') {
     const body: Record<string, unknown> = {};
-    const sessionName = asText(this.getNodeParameter('sessionName', itemIndex));
+    const sessionName = asText(this.getNodeParameter('sessionName', itemIndex), 'Session name');
     if (!sessionName) {
       throw new NodeOperationError(this.getNode(), 'Session name cannot be empty', {
         itemIndex,
@@ -78,7 +78,7 @@ export async function buildSessionRequest(
     }
     // Omit rather than send '': the DTO validates it as a URL, so a blank value is
     // a 400 while an absent key is the documented "no proxy".
-    const proxyUrl = asText(this.getNodeParameter('proxyUrl', itemIndex, ''));
+    const proxyUrl = asText(this.getNodeParameter('proxyUrl', itemIndex, ''), 'Proxy URL');
     if (proxyUrl) {
       assertProxyUrl.call(this, proxyUrl, itemIndex);
       body.proxyUrl = proxyUrl;
@@ -139,7 +139,7 @@ export async function buildSessionRequest(
           body: { proxyUrl: null },
         };
       }
-      const proxyUrl = asText(this.getNodeParameter('proxyUrl', itemIndex, ''));
+      const proxyUrl = asText(this.getNodeParameter('proxyUrl', itemIndex, ''), 'Proxy URL');
       if (!proxyUrl) {
         // An empty body would be dropped before the request is sent, turning the
         // PATCH into a no-op read that reports the old proxy as if it were written.
@@ -199,10 +199,10 @@ export async function buildSessionRequest(
       return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
     }
     case 'requestPairingCode': {
-      const phoneNumber = asText(this.getNodeParameter('pairingPhoneNumber', itemIndex)).replace(
-        /[\s+\-()]/g,
-        '',
-      );
+      const phoneNumber = asText(
+        this.getNodeParameter('pairingPhoneNumber', itemIndex),
+        'Phone number',
+      ).replace(/[\s+\-()]/g, '');
       if (!/^\d{6,15}$/.test(phoneNumber)) {
         throw new NodeOperationError(
           this.getNode(),

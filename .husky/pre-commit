@@ -4,7 +4,10 @@
 # Refused outright when tracked files are still unstaged, because the rebuild reads
 # the worktree rather than the index: staging its output during a partial commit
 # would attach build output for code this commit does not carry.
-if ! git diff --quiet; then
+# dist/ is excluded because this hook is about to regenerate and stage it, and the
+# repo's own loop builds before committing. It is SOURCE drift that makes the
+# output unrepresentative of the commit, not drift in the output itself.
+if ! git diff --quiet -- . ':!dist'; then
   echo 'pre-commit: unstaged tracked changes, so dist/ would not match this commit.'
   echo 'Stage them, stash them, or commit with --no-verify and rebuild separately.'
   exit 1

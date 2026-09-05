@@ -22,6 +22,9 @@ function makeCtx({
   params = {},
   response = {},
   throwErr = null,
+  throwFalsy = false,
+  throwOnCall = 0,
+  items = 1,
   continueOnFail = false,
   binary = null,
 } = {}) {
@@ -30,7 +33,7 @@ function makeCtx({
   const ctx = {
     calls,
     prepared,
-    getInputData: () => [{ json: {} }],
+    getInputData: () => Array.from({ length: items }, () => ({ json: {} })),
     getNodeParameter: (name, _i, fallback) => (name in params ? params[name] : fallback),
     getCredentials: async () => ({ serverUrl: BASE }),
     continueOnFail: () => continueOnFail,
@@ -45,6 +48,13 @@ function makeCtx({
     helpers: {
       httpRequestWithAuthentication: async (credName, options) => {
         calls.push({ credName, options });
+        // `throwFalsy` exists because the truthiness check below cannot express a
+        // rejection of null or undefined, which is exactly the shape that used to
+        // take the error handling down.
+        // throwOnCall targets one item in a multi-item run, so a test can assert
+        // which item a failure was attributed to.
+        if (throwOnCall && calls.length !== throwOnCall) return response;
+        if (throwFalsy) throw throwErr;
         if (throwErr) throw throwErr;
         return response;
       },
@@ -3181,6 +3191,79 @@ for (const [label, params, check] of coercionCases) {
   });
 }
 
+test('a shapeless object is refused on any text field, and the message names it', async () => {
+  // asText is shared by ~50 call sites, so this is the guard that closes Edit,
+  // captions and Status, not just the two message-body sites below.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'edit',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        messageId: 'm1',
+        message: { text: 'hi' },
+      }),
+    /Message must be text/,
+  );
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'group',
+        operation: 'updateSubject',
+        sessionId: 'abc-123',
+        groupId: 'g@g.us',
+        groupSubject: { t: 'x' },
+      }),
+    /Subject must be text/,
+  );
+});
+
+test('a date object on a text field still sends the timestamp it stringifies to', async () => {
+  // A bare {{ $now }} on a string field resolves to a Luxon DateTime OBJECT, not a
+  // string. Refusing every object would break that, and a plain Date with it.
+  const when = new Date(Date.UTC(2026, 8, 5, 10, 0, 0));
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'updateSubject',
+    sessionId: 'abc-123',
+    groupId: 'g@g.us',
+    groupSubject: when,
+  });
+  assert.equal(singleCall(ctx).options.body.subject, String(when));
+});
+
+test('an object with no toString at all is refused rather than crashing', async () => {
+  const shapeless = Object.create(null);
+  shapeless.a = 1;
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'group',
+        operation: 'updateSubject',
+        sessionId: 'abc-123',
+        groupId: 'g@g.us',
+        groupSubject: shapeless,
+      }),
+    /Subject must be text/,
+  );
+});
+
+test('apiKey/create refuses an expiry beyond a century, which is what a microsecond epoch looks like', async () => {
+  // ~1.79e15 sits inside the +/-8.64e15 Date itself accepts, so only the century
+  // ceiling catches it. Without that it reached the gateway as a year-58648 date.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'apiKey',
+        operation: 'create',
+        keyName: 'ops',
+        keyFields: { expiresAt: 1.79e15 },
+      }),
+    /Expiry date is not a valid date/,
+  );
+});
+
 test('message/sendText refuses an object body instead of sending [object Object]', async () => {
   // The gateway validates with enableImplicitConversion, which rewrites the value
   // before @IsString() sees it, so an object arrives at WhatsApp as literal text.
@@ -3452,8 +3535,10 @@ test('continueOnFail keeps a class-validator 400, whose message is an array', as
   assert.match(output[0][0].json.description, /letters, numbers, and hyphens/);
 });
 
-test('a proxy HTML error page is not copied into the error description', async () => {
-  const page = `<html><head><title>502 Bad Gateway</title></head><body>${'x'.repeat(4000)}</body></html>`;
+test('a SHORT proxy HTML page is rejected on being markup, not on length', async () => {
+  // Deliberately under the 300-character cap, so only the markup guard can reject it.
+  const page = '<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body>\r\n</html>';
+  assert.ok(page.length < 300, 'fixture must be under the length cap to isolate the markup guard');
   const axiosLike = Object.assign(new Error('Request failed with status code 502'), {
     response: { status: 502, data: Buffer.from(page) },
   });
@@ -3473,6 +3558,43 @@ test('a proxy HTML error page is not copied into the error description', async (
   );
 });
 
+test('a long plain-text body is rejected on length, not on being markup', async () => {
+  // No leading '<', so only the length cap can reject it.
+  const wall = 'gateway timeout: '.repeat(40);
+  assert.ok(wall.length > 300 && !wall.startsWith('<'));
+  const axiosLike = Object.assign(new Error('Request failed with status code 504'), {
+    response: { status: 504, data: Buffer.from(wall) },
+  });
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'message', operation: 'getMedia', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1' },
+        { throwErr: axiosLike },
+      ),
+    (err) => {
+      assert.ok(!String(err.description ?? '').includes('gateway timeout'));
+      return true;
+    },
+  );
+});
+
+test('a request failure names the item it belongs to', async () => {
+  const axiosLike = Object.assign(new Error('Request failed with status code 500'), {
+    response: { status: 500, data: { message: 'engine down' } },
+  });
+  await assert.rejects(
+    () =>
+      run(
+        { resource: 'session', operation: 'listAll' },
+        { throwErr: axiosLike, throwOnCall: 2, items: 3 },
+      ),
+    (err) => {
+      assert.equal(err.context.itemIndex, 1, 'the second item is index 1');
+      return true;
+    },
+  );
+});
+
 test('a short plain-text body from an intermediary is still worth surfacing', async () => {
   const axiosLike = Object.assign(new Error('Request failed with status code 502'), {
     response: { status: 502, data: Buffer.from('Bad Gateway') },
@@ -3485,6 +3607,30 @@ test('a short plain-text body from an intermediary is still worth surfacing', as
       ),
     (err) => {
       assert.equal(err.description, 'Bad Gateway');
+      return true;
+    },
+  );
+});
+
+test('a rejection with no shape is still reported as a failed request', async () => {
+  // NodeApiError reads .message off its argument, so a null rejection used to
+  // surface as "Cannot read properties of null" on both the throw path and the
+  // Continue On Fail path, replacing the failure with a null-dereference notice.
+  const { output } = await run(
+    { resource: 'session', operation: 'listAll' },
+    { throwErr: null, continueOnFail: true, throwFalsy: true },
+  );
+  assert.match(output[0][0].json.error, /failed without returning a response/);
+});
+
+test('a parameter mistake is a NodeOperationError, not a gateway failure', async () => {
+  // sanitizePathParam throws a bare Error. Reported as a NodeApiError it read as a
+  // gateway fault, sending the user to look at a server that was never contacted.
+  await assert.rejects(
+    () => run({ resource: 'session', operation: 'getStatus', sessionId: '  ' }),
+    (err) => {
+      assert.equal(err.constructor.name, 'NodeOperationError');
+      assert.match(err.message, /Session ID cannot be empty/);
       return true;
     },
   );
@@ -4189,7 +4335,49 @@ const guardCases = [
     { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1' },
     /At least one field must be provided to update/,
   ],
+  [
+    // '0' is what Chat > List reports for an indefinite mute. Date.parse reads a
+    // short digit string as a year, so without the refusal it becomes the year 2000.
+    'chat/mute refuses the indefinite-mute sentinel instead of reading it as a year',
+    { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '0' },
+    /Mute Until is not a valid date/,
+  ],
 ];
+
+// Both toggles below DELETE stored configuration, so they are compared against a
+// real `true`. An expression yielding the string 'false' is truthy, and a truthiness
+// check would read that refusal as consent.
+const strictToggleCases = [
+  [
+    'session/updateProxy ignores a truthy "false" and still writes the URL',
+    {
+      resource: 'session',
+      operation: 'updateProxy',
+      sessionId: 'abc-123',
+      proxyClear: 'false',
+      proxyUrl: 'socks5://127.0.0.1:1080',
+    },
+    { proxyUrl: 'socks5://127.0.0.1:1080' },
+  ],
+  [
+    'webhook/update ignores a truthy "false" and keeps the secret',
+    {
+      resource: 'webhook',
+      operation: 'update',
+      sessionId: 'abc-123',
+      webhookId: 'w1',
+      updateFields: { clearSecret: 'false', active: true },
+    },
+    { active: true },
+  ],
+];
+
+for (const [label, params, expectedBody] of strictToggleCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    assert.deepEqual(singleCall(ctx).options.body, expectedBody);
+  });
+}
 
 for (const [label, params, pattern] of guardCases) {
   test(label, async () => {

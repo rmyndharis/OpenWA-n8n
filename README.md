@@ -67,9 +67,9 @@ Create an **OpenWA API** credential:
 
 The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
-> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations include Session → Get Status / List All / Get Proxy, and Contact → Check Exists / Get Info. Two need more than OPERATOR: **Webhook → Get Delivery Failures** is **ADMIN**-only. The **API Key** resource is administration except for **Validate**, which any valid key may call to report its own role. An **ADMIN** key (the first-boot default) works for every operation.
+> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations include Session → Get Status / List All / Get Proxy, and Contact → Check Exists / Get Info. Some need **ADMIN**: **Webhook → Get Delivery Failures**, the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**, and every **API Key** operation except **Validate**, which any valid key may call to report its own role. An **ADMIN** key (the first-boot default) works for every operation.
 
-> **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Three surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session → Create**, **Session → Update Proxy**, and every **API Key** operation except **Validate**. Configure these on the server, not in the node.
+> **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Some surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session → Create**, **Session → Update Proxy**, the **System** reads **Get Settings**, **Get Stats Overview** and **Get Message Stats**, and every **API Key** operation except **Validate**. Configure all of this on the server, not in the node.
 
 ---
 
@@ -239,7 +239,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Webhook**         | Test                        | Send a test delivery to a webhook                    |
 | **Webhook**         | Update                      | Update a webhook                                     |
 
-> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: the whole **API Key** resource, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
+> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: every **API Key** operation except **Validate**, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
 
 > **Observability:** **Check** / **Check Liveness** / **Check Readiness** return the server's health JSON as-is, so a workflow can alert on availability. **Check Readiness** is the one that also probes the database connections. `/api/metrics` is deliberately not offered — it authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here.
 
@@ -404,11 +404,11 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | **Message IDs** | Chat > Mark Read | server **≥ 0.23.0** |
 | **Mentions** | Message > Edit, Reply and Send Template | server **≥ 0.23.0** |
 | **Link Preview** | Message > Send Template | server **≥ 0.23.0** |
-| **After Message ID** | Message > List | server **≥ 0.23.4** |
+| **After Row ID** | Message > List | server **≥ 0.23.4** |
 | **Inline Media** | Message > List | server **≥ 0.23.4** |
 | **`kind` filter field** | Trigger Filters, Webhook > Create / Update | server **≥ 0.23.4** |
 
-> Three of those rows fail differently on an older server, because they are not body fields. **After Message ID** and **Inline Media** are query parameters the messages route reads loose, so a pre-0.23.4 server ignores them instead of refusing: a cursor walk silently falls back to offset paging, and the inline-media opt-out silently keeps inlining. The **`kind`** filter field is validated when the webhook is registered, so a condition naming it is refused with a `400` at activation rather than at delivery.
+> Three of those rows fail differently on an older server, because they are not body fields. **After Row ID** and **Inline Media** are query parameters the messages route reads loose, so a pre-0.23.4 server ignores them instead of refusing: a cursor walk silently falls back to offset paging, and the inline-media opt-out silently keeps inlining. The **`kind`** filter field is validated when the webhook is registered, so a condition naming it is refused with a `400` at activation rather than at delivery.
 
 > Everything else in the table above is available at the badge floor. Where an operation exists on only one engine, the node says so on the field or resource rather than leaving a `501` to explain itself.
 

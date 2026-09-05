@@ -39,7 +39,7 @@ async function buildContactRequest(operation, itemIndex) {
         };
     }
     if (operation === 'checkExists') {
-        const phoneNumber = (0, params_1.asText)(this.getNodeParameter('phoneNumber', itemIndex)).replace(/[\s+\-()]/g, '');
+        const phoneNumber = (0, params_1.asText)(this.getNodeParameter('phoneNumber', itemIndex), 'Phone number').replace(/[\s+\-()]/g, '');
         if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must be digits in international format. Spaces, +, hyphens and parentheses are stripped first; any other character is rejected.', { itemIndex });
         }
@@ -63,7 +63,7 @@ async function buildContactRequest(operation, itemIndex) {
         operation === 'getPhone' ||
         operation === 'save' ||
         operation === 'delete') {
-        const contactId = (0, params_1.asText)(this.getNodeParameter('contactId', itemIndex));
+        const contactId = (0, params_1.asText)(this.getNodeParameter('contactId', itemIndex), 'Contact ID');
         if (!contactId) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Contact ID cannot be empty', {
                 itemIndex,
@@ -102,7 +102,7 @@ async function buildContactRequest(operation, itemIndex) {
                 const body = {
                     firstName: (0, params_1.requireText)(this, 'contactFirstName', 'First Name', itemIndex, 100),
                 };
-                const lastName = (0, params_1.asText)(this.getNodeParameter('contactLastName', itemIndex, ''));
+                const lastName = (0, params_1.asText)(this.getNodeParameter('contactLastName', itemIndex, ''), 'Last Name');
                 if (lastName) {
                     body.lastName = lastName;
                 }

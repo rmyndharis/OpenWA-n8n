@@ -33,7 +33,7 @@ function assertProxyUrl(proxyUrl, itemIndex) {
 async function buildSessionRequest(operation, itemIndex) {
     if (operation === 'create') {
         const body = {};
-        const sessionName = (0, params_1.asText)(this.getNodeParameter('sessionName', itemIndex));
+        const sessionName = (0, params_1.asText)(this.getNodeParameter('sessionName', itemIndex), 'Session name');
         if (!sessionName) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Session name cannot be empty', {
                 itemIndex,
@@ -59,7 +59,7 @@ async function buildSessionRequest(operation, itemIndex) {
         }
         // Omit rather than send '': the DTO validates it as a URL, so a blank value is
         // a 400 while an absent key is the documented "no proxy".
-        const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''));
+        const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''), 'Proxy URL');
         if (proxyUrl) {
             assertProxyUrl.call(this, proxyUrl, itemIndex);
             body.proxyUrl = proxyUrl;
@@ -113,7 +113,7 @@ async function buildSessionRequest(operation, itemIndex) {
                     body: { proxyUrl: null },
                 };
             }
-            const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''));
+            const proxyUrl = (0, params_1.asText)(this.getNodeParameter('proxyUrl', itemIndex, ''), 'Proxy URL');
             if (!proxyUrl) {
                 // An empty body would be dropped before the request is sent, turning the
                 // PATCH into a no-op read that reports the old proxy as if it were written.
@@ -157,7 +157,7 @@ async function buildSessionRequest(operation, itemIndex) {
             return { endpoint: `/api/sessions/${sessionId}/config`, method: 'PATCH', body };
         }
         case 'requestPairingCode': {
-            const phoneNumber = (0, params_1.asText)(this.getNodeParameter('pairingPhoneNumber', itemIndex)).replace(/[\s+\-()]/g, '');
+            const phoneNumber = (0, params_1.asText)(this.getNodeParameter('pairingPhoneNumber', itemIndex), 'Phone number').replace(/[\s+\-()]/g, '');
             if (!/^\d{6,15}$/.test(phoneNumber)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Phone number must be 6–15 digits in international format (e.g. 628123456789)', { itemIndex });
             }

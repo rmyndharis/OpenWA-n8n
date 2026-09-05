@@ -33,8 +33,8 @@ export async function buildTemplateRequest(
       name: requireText(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
       body: requireText(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
     };
-    const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''));
-    const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''));
+    const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
+    const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''), 'Footer');
     if (header) {
       if (header.length > MAX_HEADER_FOOTER_LENGTH) {
         throw new NodeOperationError(
