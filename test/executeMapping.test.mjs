@@ -27,6 +27,7 @@ function makeCtx({
   items = 1,
   continueOnFail = false,
   binary = null,
+  typeVersion = 2,
 } = {}) {
   const calls = [];
   const prepared = [];
@@ -41,7 +42,7 @@ function makeCtx({
       id: 'node-1',
       name: 'OpenWA',
       type: 'n8n-nodes-openwa.openWa',
-      typeVersion: 1,
+      typeVersion,
       position: [0, 0],
       parameters: {},
     }),
@@ -2602,6 +2603,30 @@ test('contact/listBlocked wraps its bare ids, which are not valid item json', as
     output[0].map((item) => item.json),
     [{ data: '628123456789@c.us' }, { data: '628999999999@c.us' }],
   );
+});
+
+test('node version 1 keeps the whole array on one item, as every release before 1.0 did', async () => {
+  // A workflow saved before 1.0 reads `$json[0]` or maps the array in a Code
+  // node. Its node stays at typeVersion 1 across the package upgrade, so the
+  // shape it was built against must survive. Only a node added fresh gets
+  // version 2 and the one-item-per-row output; a node added on 1.0.0, which
+  // shipped that output under version 1, falls back too.
+  const { output } = await run(
+    { resource: 'chat', operation: 'list', sessionId: 'abc-123' },
+    { response: [{ id: 'a@c.us' }, { id: 'b@c.us' }], typeVersion: 1 },
+  );
+  assert.equal(output[0].length, 1);
+  assert.deepEqual(output[0][0].json, [{ id: 'a@c.us' }, { id: 'b@c.us' }]);
+  assert.deepEqual(output[0][0].pairedItem, { item: 0 });
+});
+
+test('the node offers both versions and a new node gets the current one', () => {
+  const { description } = new OpenWa();
+  // n8n gives a new node the last entry. Setting defaultVersion instead would
+  // also work, but n8n then stops adding the Custom API Call entry to the
+  // Resource dropdown, which every release so far has offered.
+  assert.deepEqual(description.version, [1, 2]);
+  assert.equal(description.defaultVersion, undefined);
 });
 
 test('an empty list emits no items rather than one empty array', async () => {
