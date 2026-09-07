@@ -191,7 +191,14 @@ class OpenWa {
             name: 'openWa',
             icon: 'file:openwa.svg',
             group: ['transform'],
-            version: 1,
+            // Version 2 emits one item per row for a list route; version 1 keeps the
+            // whole array on a single item, as every release before 1.0 did. A node
+            // saved in a workflow keeps its version across package upgrades, so the
+            // shape an existing workflow was built against survives. 1.0.0 shipped the
+            // per-row output under version 1, so a node added on it also falls back.
+            // A new node gets the last entry. No defaultVersion on purpose: n8n only
+            // adds the Custom API Call entry to the Resource dropdown when it is unset.
+            version: [1, 2],
             subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
             description: 'Interact with OpenWA WhatsApp API Gateway',
             defaults: {
@@ -4016,12 +4023,14 @@ class OpenWa {
                     // otherwise receive an unreadable item.
                     json = spec.method === 'DELETE' ? { success: true } : {};
                 }
-                else if (Array.isArray(response)) {
+                else if (Array.isArray(response) && this.getNode().typeVersion >= 2) {
                     // n8n's convention is one item per row. Left whole, a list route's array
                     // lands on a single item's `json`, where `$json.<field>` is undefined and
                     // Split Out has no field to point at. Contacts > List Blocked answers a
                     // bare `string[]`, and a string is not valid item json, so a non-object
                     // row is wrapped under `data` the same way the text branch wraps its body.
+                    // Version 1 falls through and keeps the array whole, the shape every
+                    // workflow saved up to 1.0.0 was built against.
                     for (const row of response) {
                         returnData.push({
                             json: typeof row === 'object' && row !== null && !Array.isArray(row)
