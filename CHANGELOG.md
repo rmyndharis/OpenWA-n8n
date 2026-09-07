@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.0.0...v1.0.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* keep the whole-array list output behind node version 1 ([#52](https://github.com/rmyndharis/OpenWA-n8n/issues/52)) ([77980a5](https://github.com/rmyndharis/OpenWA-n8n/commit/77980a5c6c8fe501cfe42ead07227b0fa6e411bd))
+
 ## [1.0.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v0.10.0...v1.0.0) (2026-09-05)
 
 
