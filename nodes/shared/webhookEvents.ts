@@ -32,7 +32,8 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
   {
     name: 'Call Received',
     value: 'call.received',
-    description: 'Triggers when an incoming WhatsApp call is detected',
+    description:
+      'Triggers when an incoming WhatsApp call is detected. Not reliable on whatsapp-web.js, where a WhatsApp Web build can drop the call hook while messages keep working.',
   },
   {
     name: 'Call Rejected',

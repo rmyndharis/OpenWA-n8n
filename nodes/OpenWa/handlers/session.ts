@@ -88,7 +88,9 @@ export async function buildSessionRequest(
 
   if (operation === 'listAll') {
     const options = this.getNodeParameter('sessionListOptions', itemIndex, {}) as IDataObject;
-    return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: toQueryParams(options) };
+    // Trimmed as Create trims it: the server matches the name exactly.
+    const qs = toQueryParams({ ...options, name: asText(options.name, 'Name') });
+    return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
   }
 
   if (operation === 'getStatsOverview') {

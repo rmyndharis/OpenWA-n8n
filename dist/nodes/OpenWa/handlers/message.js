@@ -21,6 +21,7 @@ const CHATLESS_OPERATIONS = new Set([
 ]);
 // Server-side DTO limits.
 const MAX_EDIT_BODY_LENGTH = 4096;
+const MAX_BUTTON_ID_LENGTH = 256;
 const MAX_POLL_NAME_LENGTH = 255;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
@@ -406,6 +407,20 @@ async function buildMessageRequest(operation, itemIndex) {
             // array is how a vote is cleared.
             options: selections,
         };
+    }
+    else if (operation === 'clickButton') {
+        endpoint = `/api/sessions/${sessionId}/messages/click-button`;
+        body = {
+            chatId,
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
+            buttonId: (0, params_1.requireText)(this, 'buttonId', 'Button ID', itemIndex, MAX_BUTTON_ID_LENGTH),
+        };
+        // Omitted rather than sent blank: the server marks it non-empty and resolves
+        // the label from the stored prompt when it is absent.
+        const text = (0, params_1.asText)(this.getNodeParameter('buttonText', itemIndex, ''), 'Button Text');
+        if (text) {
+            body.text = text;
+        }
     }
     else if (operation === 'sendProduct') {
         endpoint = `/api/sessions/${sessionId}/messages/send-product`;
