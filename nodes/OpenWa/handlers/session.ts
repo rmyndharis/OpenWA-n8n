@@ -88,8 +88,21 @@ export async function buildSessionRequest(
 
   if (operation === 'listAll') {
     const options = this.getNodeParameter('sessionListOptions', itemIndex, {}) as IDataObject;
-    // Trimmed as Create trims it: the server matches the name exactly.
-    const qs = toQueryParams({ ...options, name: asText(options.name, 'Name') });
+    const qs = toQueryParams(options);
+    if ('name' in options) {
+      // Trimmed as Create trims it: the server matches the name exactly. A blank one
+      // is refused, as the server refuses ?name=, because dropping it lists every
+      // session, and a downstream Stop or Delete then acts on all of them.
+      const name = asText(options.name, 'Name');
+      if (!name) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Name filter is empty. Remove the option to list every session.',
+          { itemIndex },
+        );
+      }
+      qs.name = name;
+    }
     return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
   }
 

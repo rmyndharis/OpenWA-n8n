@@ -68,8 +68,17 @@ async function buildSessionRequest(operation, itemIndex) {
     }
     if (operation === 'listAll') {
         const options = this.getNodeParameter('sessionListOptions', itemIndex, {});
-        // Trimmed as Create trims it: the server matches the name exactly.
-        const qs = (0, params_1.toQueryParams)({ ...options, name: (0, params_1.asText)(options.name, 'Name') });
+        const qs = (0, params_1.toQueryParams)(options);
+        if ('name' in options) {
+            // Trimmed as Create trims it: the server matches the name exactly. A blank one
+            // is refused, as the server refuses ?name=, because dropping it lists every
+            // session, and a downstream Stop or Delete then acts on all of them.
+            const name = (0, params_1.asText)(options.name, 'Name');
+            if (!name) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Name filter is empty. Remove the option to list every session.', { itemIndex });
+            }
+            qs.name = name;
+        }
         return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
     }
     if (operation === 'getStatsOverview') {

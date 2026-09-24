@@ -162,6 +162,17 @@ export async function buildGroupRequest(
       const requesters = toStringList(
         this.getNodeParameter('groupRequestParticipants', itemIndex, ''),
       );
+      // Only a field left empty means "every pending request". An expression that
+      // found nobody reads the same after resolution, and acting on everyone then
+      // admits or turns away the whole queue, which cannot be undone.
+      const raw = this.getNode().parameters.groupRequestParticipants;
+      if (requesters.length === 0 && typeof raw === 'string' && raw.startsWith('=')) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.',
+          { itemIndex },
+        );
+      }
       if (requesters.length > MAX_PARTICIPANTS) {
         throw new NodeOperationError(
           this.getNode(),
@@ -241,10 +252,17 @@ export async function buildGroupRequest(
       // Coerced rather than cast: an expression can resolve to a number or null, and
       // `.length` on one is undefined, so the cap below would pass and a non-string
       // would reach the server's @IsString as a 400 that names no field.
-      const description = asText(
-        this.getNodeParameter('groupDescription', itemIndex, ''),
-        'Description',
-      );
+      // An empty field clears the description, so an expression that resolved to
+      // nothing (a missing input field) must not read as one.
+      const rawDescription = this.getNodeParameter('groupDescription', itemIndex, '');
+      if (rawDescription === undefined || rawDescription === null) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Description resolved to nothing. To clear the description, leave the field empty.',
+          { itemIndex },
+        );
+      }
+      const description = asText(rawDescription, 'Description');
       if (description.length > MAX_DESCRIPTION_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),

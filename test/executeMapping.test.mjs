@@ -28,6 +28,9 @@ function makeCtx({
   continueOnFail = false,
   binary = null,
   typeVersion = 2,
+  // The raw, unresolved parameters as n8n stores them; an expression is a string
+  // starting with '='. getNodeParameter above returns the resolved values.
+  nodeParameters = {},
 } = {}) {
   const calls = [];
   const prepared = [];
@@ -44,7 +47,7 @@ function makeCtx({
       type: 'n8n-nodes-openwa.openWa',
       typeVersion,
       position: [0, 0],
-      parameters: {},
+      parameters: nodeParameters,
     }),
     helpers: {
       httpRequestWithAuthentication: async (credName, options) => {
@@ -4611,4 +4614,89 @@ test('a parameter mistake under Continue On Fail carries its error too', async (
     { continueOnFail: true },
   );
   assert.equal(output[0][0].error?.constructor.name, 'NodeOperationError');
+});
+
+// --- Empty expression results -------------------------------------------------
+// A field left empty on purpose and an expression that resolved to nothing used to
+// read the same. On these operations the empty reading acts on everything or erases
+// stored data, so an expression that finds nothing is refused instead.
+
+const emptyResolutionCases = [
+  [
+    'group/rejectMembershipRequests refuses an expression that resolved to no requesters',
+    {
+      resource: 'group',
+      operation: 'rejectMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: [],
+    },
+    { groupRequestParticipants: '={{ $json.toReject }}' },
+    /Requesters resolved to an empty list/,
+  ],
+  [
+    'group/approveMembershipRequests refuses an expression that resolved to blank text',
+    {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: '',
+    },
+    { groupRequestParticipants: "={{ $json.ids.join(',') }}" },
+    /Requesters resolved to an empty list/,
+  ],
+  [
+    'session/listAll refuses a Name filter that was added but left blank',
+    { resource: 'session', operation: 'listAll', sessionListOptions: { name: '  ' } },
+    {},
+    /Name filter is empty/,
+  ],
+  [
+    'session/listAll refuses a Name filter whose expression resolved to nothing',
+    { resource: 'session', operation: 'listAll', sessionListOptions: { name: undefined } },
+    {},
+    /Name filter is empty/,
+  ],
+  [
+    'group/updateDescription refuses a description that resolved to nothing',
+    {
+      resource: 'group',
+      operation: 'updateDescription',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupDescription: undefined,
+    },
+    {},
+    /Description resolved to nothing/,
+  ],
+  [
+    'profile/setStatus refuses a status that resolved to null',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: null },
+    {},
+    /Status resolved to nothing/,
+  ],
+];
+
+for (const [label, params, nodeParameters, pattern] of emptyResolutionCases) {
+  test(label, async () => {
+    const ctx = makeCtx({ params, nodeParameters });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('group/approveMembershipRequests still sends the requesters an expression resolved to', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: ['628123456789@c.us'],
+    },
+    nodeParameters: { groupRequestParticipants: '={{ $json.ids }}' },
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.deepEqual(singleCall(ctx).options.body, { participants: ['628123456789@c.us'] });
 });

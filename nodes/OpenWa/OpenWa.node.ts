@@ -1993,7 +1993,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'Which pending requests to act on, at most 256. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Leave empty to act on every pending request.',
+          'Which pending requests to act on, at most 256. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Leave empty to act on every pending request; an expression that resolves to an empty list is refused rather than read that way.',
       },
       {
         displayName: 'Picture Source',
