@@ -153,7 +153,7 @@ async function buildSessionRequest(operation, itemIndex) {
                 // Coerced first because the server's own DTO takes a numeric string, and
                 // because comparing a raw string against 0 below would read Number('') and
                 // Number(null) as the real value 0 rather than as missing input.
-                const text = (0, params_1.asText)(fields.maxReconnectAttempts);
+                const text = (0, params_1.asText)(fields.maxReconnectAttempts, 'Max Reconnect Attempts');
                 const cap = text === '' ? Number.NaN : Number(text);
                 if (!Number.isFinite(cap)) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Max Reconnect Attempts must be a number between -1 and 20', { itemIndex });

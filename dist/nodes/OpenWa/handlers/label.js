@@ -33,12 +33,13 @@ async function buildLabelRequest(operation, itemIndex) {
         const fields = this.getNodeParameter('labelFields', itemIndex, {});
         // The write replaces the whole label, so a field with no value would not be left
         // alone but cleared, and the advice has to say so.
-        (0, params_1.assertFieldsResolved)(this, fields, { labelColor: 'Color', labelName: 'Name' }, 'Give it a value: the write replaces the whole label, so a field left out is cleared.', itemIndex);
+        const wholeLabel = 'Give it a value: the write replaces the whole label, so a field left out is cleared.';
+        (0, params_1.assertFieldsResolved)(this, fields, { labelColor: 'Color', labelName: 'Name' }, wholeLabel, itemIndex);
         const body = {};
         // Refused rather than dropped when blank: the server marks it non-empty, so a
-        // blank cannot mean "clear the name" and dropping it would report success
-        // while leaving the label's name untouched.
-        const name = (0, params_1.optionalNonBlank)(this, fields.labelName, 'Label name', itemIndex, 100);
+        // blank cannot mean "clear the name", and dropping it would clear the name
+        // anyway, since the write replaces the whole label.
+        const name = (0, params_1.optionalNonBlank)(this, fields.labelName, 'Label name', itemIndex, 100, wholeLabel);
         if (name !== undefined) {
             body.name = name;
         }

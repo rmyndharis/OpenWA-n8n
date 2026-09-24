@@ -851,7 +851,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
         description:
-          "Name the recipient sees. Left empty, a binary source keeps the file's own name and a URL source takes the file name at the end of its path; failing that, or for base64, it is document.pdf.",
+          "Name the recipient sees. Left empty, a binary source keeps the file's own name and a URL source takes the file name at the end of its path, when either looks like a real file name (a short extension, not a server script); otherwise, and for base64, it is document.pdf.",
       },
       // Send Audio fields
       {
@@ -2285,7 +2285,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>chatId</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>chatId</code> (server ≥ 0.23.6) scopes to one conversation, a DM or a group such as <code>120363000000000000@g.us</code>, where <code>sender</code> matches only who wrote the message. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on an ID, type or kind field a given event does not carry suppresses that event outright: a <code>sender</code> or <code>chatId</code> filter alongside a Message Ack subscription drops every ack, because an ack carries neither. A boolean field the event lacks reads as false. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>chatId</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>chatId</code> (server ≥ 0.23.6) scopes to one conversation, a DM or a group such as <code>120363000000000000@g.us</code>, where <code>sender</code> matches only who wrote the message. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on an ID, type or kind field a given event does not carry suppresses that event outright: a <code>sender</code> or <code>chatId</code> filter alongside a Message Ack subscription drops every ack, because an ack carries neither. A boolean field the event lacks reads as false. Filter narrowly, or register a second webhook for the other events, at a URL of its own: an OpenWA Trigger removes any other registration using its URL when it activates. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
           },
           {
             displayName: 'Headers',
@@ -4314,19 +4314,22 @@ export class OpenWa implements INodeType {
             message = String((error as Error | undefined)?.message ?? error);
           }
           // n8n diverts an item to the error output only when its json holds nothing
-          // beyond error and message (1.x: exactly those; 2.x: also details), so there
-          // the server's reason goes under `message`. `description` sent every gateway
-          // failure down the success branch. Setting `error` on the item would divert
-          // it too, but n8n then rewrites its json to {error} and drops both the
-          // reason and the input fields it merges in. The regular output keeps
+          // beyond error and message (1.x: exactly those; 2.x: also details), and it
+          // then merges the input item underneath. So there the server's reason is
+          // folded into `error`: a `description` key sent every gateway failure down
+          // the success branch, and a `message` key overwrote the input's own
+          // `message`, the usual column for the text to send. Setting `error` on the
+          // item would divert it too, but n8n then rewrites its json to {error} and
+          // drops the input fields it merges in. The regular output keeps
           // `description`, the shape workflows built on it already read.
-          const reasonKey =
-            this.getNode().onError === 'continueErrorOutput' ? 'message' : 'description';
+          const toErrorOutput = this.getNode().onError === 'continueErrorOutput';
           returnData.push({
             json:
               description === undefined
                 ? { error: message }
-                : { error: message, [reasonKey]: description },
+                : toErrorOutput
+                  ? { error: `${message}: ${description}` }
+                  : { error: message, description },
             pairedItem: { item: i },
           });
           continue;

@@ -297,9 +297,10 @@ export async function buildGroupRequest(
         ephemeralSeconds?: number;
         memberAddMode?: string;
       };
-      // An expression that resolved to nothing: undefined was skipped, reporting a
-      // setting that was never applied as a success, and null draws a 400 whose
-      // detail production strips, so the field is named here instead.
+      // A setting added but with no value, from an expression that found nothing or a
+      // cleared input: undefined was skipped, reporting a setting that was never
+      // applied as a success, and null draws a 400 whose detail production strips, so
+      // the field is named here instead.
       assertFieldsResolved(
         this,
         settings as IDataObject,

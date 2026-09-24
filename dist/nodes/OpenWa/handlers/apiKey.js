@@ -85,7 +85,7 @@ function collectApiKeyFields(fields, remedy, itemIndex) {
     if (name !== undefined) {
         body.name = name;
     }
-    const role = (0, params_1.asText)(fields.role);
+    const role = (0, params_1.asText)(fields.role, 'Role');
     if (role) {
         body.role = role;
     }

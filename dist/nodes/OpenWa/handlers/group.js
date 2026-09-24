@@ -215,9 +215,10 @@ async function buildGroupRequest(operation, itemIndex) {
         }
         case 'updateSettings': {
             const settings = this.getNodeParameter('groupSettings', itemIndex, {});
-            // An expression that resolved to nothing: undefined was skipped, reporting a
-            // setting that was never applied as a success, and null draws a 400 whose
-            // detail production strips, so the field is named here instead.
+            // A setting added but with no value, from an expression that found nothing or a
+            // cleared input: undefined was skipped, reporting a setting that was never
+            // applied as a success, and null draws a 400 whose detail production strips, so
+            // the field is named here instead.
             (0, params_1.assertFieldsResolved)(this, settings, {
                 announce: 'Announce',
                 ephemeralSeconds: 'Disappearing Messages (Seconds)',

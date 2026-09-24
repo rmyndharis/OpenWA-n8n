@@ -191,7 +191,7 @@ export async function buildSessionRequest(
         // Coerced first because the server's own DTO takes a numeric string, and
         // because comparing a raw string against 0 below would read Number('') and
         // Number(null) as the real value 0 rather than as missing input.
-        const text = asText(fields.maxReconnectAttempts);
+        const text = asText(fields.maxReconnectAttempts, 'Max Reconnect Attempts');
         const cap = text === '' ? Number.NaN : Number(text);
         if (!Number.isFinite(cap)) {
           throw new NodeOperationError(

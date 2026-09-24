@@ -132,7 +132,7 @@ export async function buildTemplateRequest(
         // optionalNonBlank: an expression can resolve to a number, whose `.length`
         // is undefined, so the cap would pass and the server would answer a 400
         // naming no field. A blank stays blank here, which clears the field.
-        const text = asText(value);
+        const text = asText(value, `Template ${key}`);
         if (textLength(text) > max) {
           throw new NodeOperationError(
             this.getNode(),

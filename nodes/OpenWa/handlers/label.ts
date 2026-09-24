@@ -52,18 +52,20 @@ export async function buildLabelRequest(
     };
     // The write replaces the whole label, so a field with no value would not be left
     // alone but cleared, and the advice has to say so.
+    const wholeLabel =
+      'Give it a value: the write replaces the whole label, so a field left out is cleared.';
     assertFieldsResolved(
       this,
       fields as IDataObject,
       { labelColor: 'Color', labelName: 'Name' },
-      'Give it a value: the write replaces the whole label, so a field left out is cleared.',
+      wholeLabel,
       itemIndex,
     );
     const body: Record<string, unknown> = {};
     // Refused rather than dropped when blank: the server marks it non-empty, so a
-    // blank cannot mean "clear the name" and dropping it would report success
-    // while leaving the label's name untouched.
-    const name = optionalNonBlank(this, fields.labelName, 'Label name', itemIndex, 100);
+    // blank cannot mean "clear the name", and dropping it would clear the name
+    // anyway, since the write replaces the whole label.
+    const name = optionalNonBlank(this, fields.labelName, 'Label name', itemIndex, 100, wholeLabel);
     if (name !== undefined) {
       body.name = name;
     }
