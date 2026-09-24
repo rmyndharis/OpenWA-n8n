@@ -4585,3 +4585,30 @@ test('message/cancelBatch encodes the batch ID rather than refusing it', async (
     `${BASE}/api/sessions/abc-123/messages/batch/nightly%5Ceu/cancel`,
   );
 });
+
+// --- Error output -------------------------------------------------------------
+// n8n routes a kept-going item to the error output only when the item carries
+// `error` or its json has nothing beyond error/message/details. The json here also
+// carries `description`, so without `error` on the item every gateway failure went
+// down the success branch.
+
+test('a failed request under Continue On Fail carries its error for the error output', async () => {
+  const axiosLike = Object.assign(new Error('Request failed with status code 409'), {
+    response: { status: 409, data: { message: 'Session is not ready (status: disconnected)' } },
+  });
+  const { output } = await run(
+    { resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: '1@c.us', message: 'hi' },
+    { throwErr: axiosLike, continueOnFail: true },
+  );
+  const item = output[0][0];
+  assert.ok(item.error instanceof NodeApiError, 'the item must carry the NodeApiError');
+  assert.match(item.json.description, /Session is not ready/);
+});
+
+test('a parameter mistake under Continue On Fail carries its error too', async () => {
+  const { output } = await run(
+    { resource: 'session', operation: 'getStatus', sessionId: '  ' },
+    { continueOnFail: true },
+  );
+  assert.equal(output[0][0].error?.constructor.name, 'NodeOperationError');
+});

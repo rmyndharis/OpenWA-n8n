@@ -4120,10 +4120,12 @@ class OpenWa {
                     // on the one path built to survive it.
                     let message;
                     let description;
+                    let wrapped;
                     try {
-                        const wrapped = error instanceof n8n_workflow_1.NodeApiError
-                            ? error
-                            : new n8n_workflow_1.NodeOperationError(this.getNode(), error, { itemIndex: i });
+                        wrapped =
+                            error instanceof n8n_workflow_1.NodeApiError
+                                ? error
+                                : new n8n_workflow_1.NodeOperationError(this.getNode(), error, { itemIndex: i });
                         message = wrapped.message;
                         const detail = explanationText(wrapped.description);
                         description = detail && detail !== wrapped.message ? detail : undefined;
@@ -4131,8 +4133,12 @@ class OpenWa {
                     catch {
                         message = String(error?.message ?? error);
                     }
+                    // `error` on the item is what sends it down the error output. n8n otherwise
+                    // recognises a failed item only when its json holds nothing beyond
+                    // error/message/details, and `description` is outside that set.
                     returnData.push({
                         json: description === undefined ? { error: message } : { error: message, description },
+                        ...(wrapped && { error: wrapped }),
                         pairedItem: { item: i },
                     });
                     continue;

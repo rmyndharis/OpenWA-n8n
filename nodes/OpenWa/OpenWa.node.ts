@@ -4298,8 +4298,9 @@ export class OpenWa implements INodeType {
           // on the one path built to survive it.
           let message: string;
           let description: string | undefined;
+          let wrapped: NodeApiError | NodeOperationError | undefined;
           try {
-            const wrapped =
+            wrapped =
               error instanceof NodeApiError
                 ? error
                 : new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
@@ -4309,8 +4310,12 @@ export class OpenWa implements INodeType {
           } catch {
             message = String((error as Error | undefined)?.message ?? error);
           }
+          // `error` on the item is what sends it down the error output. n8n otherwise
+          // recognises a failed item only when its json holds nothing beyond
+          // error/message/details, and `description` is outside that set.
           returnData.push({
             json: description === undefined ? { error: message } : { error: message, description },
+            ...(wrapped && { error: wrapped }),
             pairedItem: { item: i },
           });
           continue;
