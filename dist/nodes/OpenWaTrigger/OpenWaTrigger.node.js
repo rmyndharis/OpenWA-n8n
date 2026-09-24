@@ -256,6 +256,32 @@ class OpenWaTrigger {
                     if (parsedFilters !== undefined) {
                         body.filters = parsedFilters;
                     }
+                    // n8n saves this node's static data only after every trigger in the workflow
+                    // has registered, so an activation that fails later leaves a registration
+                    // whose id was never saved: delete() cannot find it, and each retry used to
+                    // add another, every one delivering each event again. This node's URL is
+                    // unique to it, so a registration carrying it is one of those leftovers.
+                    const existing = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                        method: 'GET',
+                        url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
+                        json: true,
+                    });
+                    for (const stale of Array.isArray(existing) ? existing : []) {
+                        if (stale.url !== webhookUrl || stale.id === undefined)
+                            continue;
+                        try {
+                            await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+                                method: 'DELETE',
+                                url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(String(stale.id))}`,
+                                json: true,
+                            });
+                        }
+                        catch (error) {
+                            if ((0, httpStatus_1.httpStatusFromError)(error) !== 404) {
+                                throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                            }
+                        }
+                    }
                     const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
                         method: 'POST',
                         url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,

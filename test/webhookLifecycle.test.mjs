@@ -34,6 +34,8 @@ function makeCtx({
   // What GET /webhooks/:id answers. Defaults to a registration that still matches
   // the configuration below, which is what checkExists must accept as healthy.
   getResponse,
+  // What GET /webhooks (the session's list) answers.
+  listResponse = [],
 } = {}) {
   const staticData = {};
   if (webhookId !== undefined) staticData.webhookId = webhookId;
@@ -54,6 +56,9 @@ function makeCtx({
       httpRequestWithAuthentication: async (_cred, options) => {
         calls.push(options);
         if (throwErr) throw throwErr;
+        if (options.method === 'GET' && options.url.endsWith('/webhooks')) {
+          return listResponse;
+        }
         if (options.method === 'GET') {
           return (
             getResponse ?? { id: webhookId, active: true, url: WEBHOOK_URL, events, sessionId: 'default' }
@@ -293,7 +298,29 @@ test('create: stores the webhook id, session id, and config hash — never the s
   );
   assert.ok(!String(staticData.configHash).includes('sixteen-char-secret'));
   // the secret still goes to the server on registration
-  assert.equal(calls[0].body.secret, 'sixteen-char-secret');
+  assert.equal(calls.find((c) => c.method === 'POST').body.secret, 'sixteen-char-secret');
+});
+
+test('create: removes an earlier registration for this URL before registering again', async () => {
+  // An activation that failed after its POST left a registration whose id n8n never
+  // saved, so delete() could not find it and every retry added another.
+  const { ctx, calls } = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    listResponse: [
+      { id: 'orphan', url: WEBHOOK_URL },
+      { id: 'someone-else', url: 'https://other.example/hook' },
+    ],
+  });
+  assert.equal(await hooks().create.call(ctx), true);
+  assert.deepEqual(
+    calls.map((c) => `${c.method} ${c.url}`),
+    [
+      'GET http://localhost:2785/api/sessions/default/webhooks',
+      'DELETE http://localhost:2785/api/sessions/default/webhooks/orphan',
+      'POST http://localhost:2785/api/sessions/default/webhooks',
+    ],
+  );
 });
 
 test('create: rejects a secret shorter than 16 characters before any request', async () => {
