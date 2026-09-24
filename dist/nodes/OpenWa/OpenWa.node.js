@@ -838,7 +838,7 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['message'], operation: ['sendDocument'] },
                     },
-                    description: "Name the recipient sees. Leave empty to keep the binary file's own name, or, for a URL or base64 source, the name OpenWA gives it.",
+                    description: "Name the recipient sees. Left empty, a binary source keeps the file's own name and a URL source takes the file name at the end of its path; failing that, or for base64, it is document.pdf.",
                 },
                 // Send Audio fields
                 {

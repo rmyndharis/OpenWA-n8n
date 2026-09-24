@@ -1,7 +1,7 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { optionalNonBlank, requireJid, requireText } from './params';
+import { assertFieldsResolved, optionalNonBlank, requireJid, requireText } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -50,6 +50,15 @@ export async function buildLabelRequest(
       labelName?: string;
       labelColor?: number;
     };
+    // The write replaces the whole label, so a field with no value would not be left
+    // alone but cleared, and the advice has to say so.
+    assertFieldsResolved(
+      this,
+      fields as IDataObject,
+      { labelColor: 'Color', labelName: 'Name' },
+      'Give it a value: the write replaces the whole label, so a field left out is cleared.',
+      itemIndex,
+    );
     const body: Record<string, unknown> = {};
     // Refused rather than dropped when blank: the server marks it non-empty, so a
     // blank cannot mean "clear the name" and dropping it would report success
@@ -60,10 +69,7 @@ export async function buildLabelRequest(
     }
     // 0 is a real colour, so this tests for presence rather than truthiness. The
     // field lives in a collection precisely so "not set" stays distinguishable.
-    // null is excluded with it: an expression resolving to one satisfied the guard
-    // below and then reached a server that reads null as "not set", replacing this
-    // message with a bare 400.
-    if (fields.labelColor !== undefined && fields.labelColor !== null) {
+    if (fields.labelColor !== undefined) {
       body.color = fields.labelColor;
     }
     if (Object.keys(body).length === 0) {

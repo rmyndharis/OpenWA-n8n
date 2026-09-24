@@ -1,7 +1,16 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { toStringList, asText, textLength, inviteCodeFrom } from './params';
+import {
+  assertFieldsResolved,
+  LEAVE_UNCHANGED,
+  toStringList,
+  asText,
+  textLength,
+  inviteCodeFrom,
+  isExpression,
+  isTemplateExpression,
+} from './params';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import type { RequestSpec } from './types';
 
@@ -163,8 +172,10 @@ export async function buildGroupRequest(
       // Only a field left empty means "every pending request". An expression that
       // found nobody reads the same after resolution, and acting on everyone then
       // admits or turns away the whole queue, which cannot be undone.
-      const raw = this.getNode().parameters.groupRequestParticipants;
-      if (requesters.length === 0 && typeof raw === 'string' && raw.startsWith('=')) {
+      if (
+        requesters.length === 0 &&
+        isExpression(this.getNode().parameters.groupRequestParticipants)
+      ) {
         throw new NodeOperationError(
           this.getNode(),
           'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.',
@@ -251,16 +262,21 @@ export async function buildGroupRequest(
       // `.length` on one is undefined, so the cap below would pass and a non-string
       // would reach the server's @IsString as a 400 that names no field.
       // An empty field clears the description, so an expression that resolved to
-      // nothing (a missing input field) must not read as one.
+      // nothing (a missing input field) must not read as one, nor a template
+      // expression whose missing fields rendered to whitespace alone.
       const rawDescription = this.getNodeParameter('groupDescription', itemIndex, '');
-      if (rawDescription === undefined || rawDescription === null) {
+      const description = asText(rawDescription, 'Description');
+      if (
+        rawDescription === undefined ||
+        rawDescription === null ||
+        (!description && isTemplateExpression(this.getNode().parameters.groupDescription))
+      ) {
         throw new NodeOperationError(
           this.getNode(),
           'Description resolved to nothing. To clear the description, leave the field empty.',
           { itemIndex },
         );
       }
-      const description = asText(rawDescription, 'Description');
       if (textLength(description) > MAX_DESCRIPTION_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
@@ -281,6 +297,21 @@ export async function buildGroupRequest(
         ephemeralSeconds?: number;
         memberAddMode?: string;
       };
+      // An expression that resolved to nothing: undefined was skipped, reporting a
+      // setting that was never applied as a success, and null draws a 400 whose
+      // detail production strips, so the field is named here instead.
+      assertFieldsResolved(
+        this,
+        settings as IDataObject,
+        {
+          announce: 'Announce',
+          ephemeralSeconds: 'Disappearing Messages (Seconds)',
+          locked: 'Locked',
+          memberAddMode: 'Member Add Mode',
+        },
+        LEAVE_UNCHANGED,
+        itemIndex,
+      );
       const body: Record<string, unknown> = {};
       if (settings.announce !== undefined) {
         body.announce = settings.announce;

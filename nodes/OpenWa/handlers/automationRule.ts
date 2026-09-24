@@ -1,8 +1,14 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { parseJsonParam } from '../../shared/jsonParam';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { optionalNonBlank, requireText } from './params';
+import {
+  assertFieldsResolved,
+  LEAVE_UNCHANGED,
+  assertStoredName,
+  optionalNonBlank,
+  requireText,
+} from './params';
 import type { RequestSpec } from './types';
 
 // Server-side DTO limits.
@@ -48,7 +54,13 @@ export async function buildAutomationRuleRequest(
 
   if (operation === 'create') {
     const body: Record<string, unknown> = {
-      name: requireText(this, 'ruleName', 'Name', itemIndex, MAX_RULE_NAME_LENGTH),
+      name: assertStoredName(
+        this,
+        requireText(this, 'ruleName', 'Name', itemIndex, MAX_RULE_NAME_LENGTH),
+        'Name',
+        MAX_RULE_NAME_LENGTH,
+        itemIndex,
+      ),
       replyText: requireText(this, 'ruleReplyText', 'Reply text', itemIndex, MAX_REPLY_TEXT_LENGTH),
     };
     const conditions = parseConditions(
@@ -91,10 +103,24 @@ export async function buildAutomationRuleRequest(
         cooldownSeconds?: number;
         enabled?: boolean;
       };
+      // cooldownSeconds and enabled are NOT NULL columns that answer 500 to a null.
+      assertFieldsResolved(
+        this,
+        fields as IDataObject,
+        {
+          conditions: 'Conditions',
+          cooldownSeconds: 'Cooldown (Seconds)',
+          enabled: 'Enabled',
+          name: 'Name',
+          replyText: 'Reply Text',
+        },
+        LEAVE_UNCHANGED,
+        itemIndex,
+      );
       const body: Record<string, unknown> = {};
       const name = optionalNonBlank(this, fields.name, 'Name', itemIndex, MAX_RULE_NAME_LENGTH);
       if (name !== undefined) {
-        body.name = name;
+        body.name = assertStoredName(this, name, 'Name', MAX_RULE_NAME_LENGTH, itemIndex);
       }
       const replyText = optionalNonBlank(
         this,
@@ -110,22 +136,11 @@ export async function buildAutomationRuleRequest(
       if (conditions !== undefined) {
         body.conditions = conditions;
       }
-      // A null here is written into a NOT NULL column and answers 500, so an
-      // expression that resolved to nothing stops before the request.
-      for (const [key, label] of [
-        ['cooldownSeconds', 'Cooldown (Seconds)'],
-        ['enabled', 'Enabled'],
-      ] as const) {
-        if (fields[key] === null) {
-          throw new NodeOperationError(
-            this.getNode(),
-            `${label} resolved to nothing. Remove it from the fields to leave it unchanged.`,
-            { itemIndex },
-          );
-        }
-        if (fields[key] !== undefined) {
-          body[key] = fields[key];
-        }
+      if (fields.cooldownSeconds !== undefined) {
+        body.cooldownSeconds = fields.cooldownSeconds;
+      }
+      if (fields.enabled !== undefined) {
+        body.enabled = fields.enabled;
       }
       if (Object.keys(body).length === 0) {
         throw new NodeOperationError(

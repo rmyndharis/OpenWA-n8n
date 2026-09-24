@@ -1,7 +1,16 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { asText, optionalNonBlank, requireText, toEpochMs, toStringList } from './params';
+import {
+  asText,
+  isExpression,
+  assertFieldsResolved,
+  LEAVE_UNCHANGED,
+  optionalNonBlank,
+  requireText,
+  toEpochMs,
+  toStringList,
+} from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -32,9 +41,31 @@ export async function buildApiKeyRequest(
     // Name, so a copied Update node created its key under the old name.
     const fields = { ...(this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject) };
     delete fields.name;
+    // A restriction with no value is refused here too: dropping it would create a
+    // key broader than the one asked for. That includes a list whose expression
+    // found no entries, which reads the same as one left out once resolved.
+    const raw = (this.getNode().parameters.keyFields ?? {}) as IDataObject;
+    for (const [key, label] of [
+      ['allowedIps', 'Allowed IPs'],
+      ['allowedSessions', 'Allowed Sessions'],
+      ['allowedChats', 'Allowed Chats'],
+    ] as const) {
+      if (isExpression(raw[key]) && toStringList(fields[key]).length === 0) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`,
+          { itemIndex },
+        );
+      }
+    }
     const body: IDataObject = {
       name: requireText(this, 'keyName', 'API key name', itemIndex),
-      ...collectApiKeyFields.call(this, fields, itemIndex),
+      ...collectApiKeyFields.call(
+        this,
+        fields,
+        'Give it a value, or remove it from the fields to create the key without it.',
+        itemIndex,
+      ),
     };
     return { endpoint: base, method: 'POST', body };
   }
@@ -55,6 +86,7 @@ export async function buildApiKeyRequest(
       const body = collectApiKeyFields.call(
         this,
         this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject,
+        LEAVE_UNCHANGED,
         itemIndex,
       );
       if (Object.keys(body).length === 0) {
@@ -73,14 +105,30 @@ export async function buildApiKeyRequest(
 
 /**
  * Maps the shared optional-fields collection onto the DTO. The three list fields
- * arrive as n8n `multipleValues` strings and are normalised here; an empty list
- * is dropped rather than sent, so it never silently clears a whitelist.
+ * arrive as plain strings (comma-separated or a JSON array) or as an expression's
+ * array, and are normalised here; an empty list is dropped rather than sent, so it
+ * never silently clears a whitelist.
  */
 function collectApiKeyFields(
   this: IExecuteFunctions,
   fields: IDataObject,
+  remedy: string,
   itemIndex: number,
 ): IDataObject {
+  assertFieldsResolved(
+    this,
+    fields,
+    {
+      allowedChats: 'Allowed Chats',
+      allowedIps: 'Allowed IPs',
+      allowedSessions: 'Allowed Sessions',
+      expiresAt: 'Expires At',
+      name: 'Name',
+      role: 'Role',
+    },
+    remedy,
+    itemIndex,
+  );
   const body: IDataObject = {};
   // Refused when blank rather than dropped: dropping it reported a rename that
   // never happened as a success.

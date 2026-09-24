@@ -1,7 +1,15 @@
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { optionalNonBlank, requireText, asText, textLength } from './params';
+import {
+  assertFieldsResolved,
+  LEAVE_UNCHANGED,
+  assertStoredName,
+  optionalNonBlank,
+  requireText,
+  asText,
+  textLength,
+} from './params';
 import type { RequestSpec } from './types';
 
 // Server-side DTO limits.
@@ -30,7 +38,13 @@ export async function buildTemplateRequest(
 
   if (operation === 'create') {
     const body: Record<string, unknown> = {
-      name: requireText(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
+      name: assertStoredName(
+        this,
+        requireText(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
+        'Template name',
+        MAX_NAME_LENGTH,
+        itemIndex,
+      ),
       body: requireText(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
     };
     const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
@@ -76,6 +90,13 @@ export async function buildTemplateRequest(
         header?: string;
         footer?: string;
       };
+      assertFieldsResolved(
+        this,
+        fields as IDataObject,
+        { body: 'Body', footer: 'Footer', header: 'Header', name: 'Name' },
+        LEAVE_UNCHANGED,
+        itemIndex,
+      );
       const limits: Record<string, number> = {
         name: MAX_NAME_LENGTH,
         body: MAX_BODY_LENGTH,
@@ -90,9 +111,8 @@ export async function buildTemplateRequest(
       const body: Record<string, unknown> = {};
       for (const [key, max] of Object.entries(limits)) {
         const value = fields[key as keyof typeof fields];
-        // null as well as undefined: a collection subfield driven by an expression
-        // can resolve to null, and letting it through reaches `value.length` below.
-        if (value === undefined || value === null) {
+        // Absent: a present field that resolved to nothing was refused above.
+        if (value === undefined) {
           continue;
         }
         if (REJECTS_BLANK.has(key)) {
@@ -101,7 +121,10 @@ export async function buildTemplateRequest(
           // would go out as {}, reporting success while changing nothing.
           const parsed = optionalNonBlank(this, value, `Template ${key}`, itemIndex, max);
           if (parsed !== undefined) {
-            body[key] = parsed;
+            body[key] =
+              key === 'name'
+                ? assertStoredName(this, parsed, 'Template name', max, itemIndex)
+                : parsed;
           }
           continue;
         }

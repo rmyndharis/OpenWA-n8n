@@ -25,9 +25,22 @@ async function buildApiKeyRequest(operation, itemIndex) {
         // Name, so a copied Update node created its key under the old name.
         const fields = { ...this.getNodeParameter('keyFields', itemIndex, {}) };
         delete fields.name;
+        // A restriction with no value is refused here too: dropping it would create a
+        // key broader than the one asked for. That includes a list whose expression
+        // found no entries, which reads the same as one left out once resolved.
+        const raw = (this.getNode().parameters.keyFields ?? {});
+        for (const [key, label] of [
+            ['allowedIps', 'Allowed IPs'],
+            ['allowedSessions', 'Allowed Sessions'],
+            ['allowedChats', 'Allowed Chats'],
+        ]) {
+            if ((0, params_1.isExpression)(raw[key]) && (0, params_1.toStringList)(fields[key]).length === 0) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`, { itemIndex });
+            }
+        }
         const body = {
             name: (0, params_1.requireText)(this, 'keyName', 'API key name', itemIndex),
-            ...collectApiKeyFields.call(this, fields, itemIndex),
+            ...collectApiKeyFields.call(this, fields, 'Give it a value, or remove it from the fields to create the key without it.', itemIndex),
         };
         return { endpoint: base, method: 'POST', body };
     }
@@ -40,7 +53,7 @@ async function buildApiKeyRequest(operation, itemIndex) {
         case 'revoke':
             return { endpoint: `${base}/${apiKeyId}/revoke`, method: 'POST', body: {} };
         case 'update': {
-            const body = collectApiKeyFields.call(this, this.getNodeParameter('keyFields', itemIndex, {}), itemIndex);
+            const body = collectApiKeyFields.call(this, this.getNodeParameter('keyFields', itemIndex, {}), params_1.LEAVE_UNCHANGED, itemIndex);
             if (Object.keys(body).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });
             }
@@ -52,10 +65,19 @@ async function buildApiKeyRequest(operation, itemIndex) {
 }
 /**
  * Maps the shared optional-fields collection onto the DTO. The three list fields
- * arrive as n8n `multipleValues` strings and are normalised here; an empty list
- * is dropped rather than sent, so it never silently clears a whitelist.
+ * arrive as plain strings (comma-separated or a JSON array) or as an expression's
+ * array, and are normalised here; an empty list is dropped rather than sent, so it
+ * never silently clears a whitelist.
  */
-function collectApiKeyFields(fields, itemIndex) {
+function collectApiKeyFields(fields, remedy, itemIndex) {
+    (0, params_1.assertFieldsResolved)(this, fields, {
+        allowedChats: 'Allowed Chats',
+        allowedIps: 'Allowed IPs',
+        allowedSessions: 'Allowed Sessions',
+        expiresAt: 'Expires At',
+        name: 'Name',
+        role: 'Role',
+    }, remedy, itemIndex);
     const body = {};
     // Refused when blank rather than dropped: dropping it reported a rename that
     // never happened as a success.

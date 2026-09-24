@@ -34,7 +34,7 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
     }
     if (operation === 'create') {
         const body = {
-            name: (0, params_1.requireText)(this, 'ruleName', 'Name', itemIndex, MAX_RULE_NAME_LENGTH),
+            name: (0, params_1.assertStoredName)(this, (0, params_1.requireText)(this, 'ruleName', 'Name', itemIndex, MAX_RULE_NAME_LENGTH), 'Name', MAX_RULE_NAME_LENGTH, itemIndex),
             replyText: (0, params_1.requireText)(this, 'ruleReplyText', 'Reply text', itemIndex, MAX_REPLY_TEXT_LENGTH),
         };
         const conditions = parseConditions(this, this.getNodeParameter('ruleConditions', itemIndex, ''), itemIndex);
@@ -62,10 +62,18 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
             // `replyText` are non-empty on the server, so a blank one is refused by name
             // rather than dropped, which would report success while leaving it untouched.
             const fields = this.getNodeParameter('ruleUpdateFields', itemIndex, {});
+            // cooldownSeconds and enabled are NOT NULL columns that answer 500 to a null.
+            (0, params_1.assertFieldsResolved)(this, fields, {
+                conditions: 'Conditions',
+                cooldownSeconds: 'Cooldown (Seconds)',
+                enabled: 'Enabled',
+                name: 'Name',
+                replyText: 'Reply Text',
+            }, params_1.LEAVE_UNCHANGED, itemIndex);
             const body = {};
             const name = (0, params_1.optionalNonBlank)(this, fields.name, 'Name', itemIndex, MAX_RULE_NAME_LENGTH);
             if (name !== undefined) {
-                body.name = name;
+                body.name = (0, params_1.assertStoredName)(this, name, 'Name', MAX_RULE_NAME_LENGTH, itemIndex);
             }
             const replyText = (0, params_1.optionalNonBlank)(this, fields.replyText, 'Reply text', itemIndex, MAX_REPLY_TEXT_LENGTH);
             if (replyText !== undefined) {
@@ -75,18 +83,11 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
             if (conditions !== undefined) {
                 body.conditions = conditions;
             }
-            // A null here is written into a NOT NULL column and answers 500, so an
-            // expression that resolved to nothing stops before the request.
-            for (const [key, label] of [
-                ['cooldownSeconds', 'Cooldown (Seconds)'],
-                ['enabled', 'Enabled'],
-            ]) {
-                if (fields[key] === null) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} resolved to nothing. Remove it from the fields to leave it unchanged.`, { itemIndex });
-                }
-                if (fields[key] !== undefined) {
-                    body[key] = fields[key];
-                }
+            if (fields.cooldownSeconds !== undefined) {
+                body.cooldownSeconds = fields.cooldownSeconds;
+            }
+            if (fields.enabled !== undefined) {
+                body.enabled = fields.enabled;
             }
             if (Object.keys(body).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });

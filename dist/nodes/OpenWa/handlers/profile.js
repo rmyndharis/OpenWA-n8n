@@ -33,11 +33,15 @@ async function buildProfileRequest(operation, itemIndex) {
             // An empty string is valid here: it clears the about text. Send it as-is
             // rather than dropping the field, which the API would reject as missing.
             // An expression that resolved to nothing must not read as a deliberate clear.
+            // A template expression renders missing fields as '', so one can resolve to
+            // whitespace alone, which trims to the same empty string as a deliberate clear.
             const rawStatus = this.getNodeParameter('profileStatus', itemIndex, '');
-            if (rawStatus === undefined || rawStatus === null) {
+            const status = (0, params_1.asText)(rawStatus, 'Status');
+            if (rawStatus === undefined ||
+                rawStatus === null ||
+                (!status && (0, params_1.isTemplateExpression)(this.getNode().parameters.profileStatus))) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Status resolved to nothing. To clear the about text, leave the field empty.', { itemIndex });
             }
-            const status = (0, params_1.asText)(rawStatus, 'Status');
             if ((0, params_1.textLength)(status) > MAX_STATUS_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Status cannot exceed ${MAX_STATUS_LENGTH} characters`, { itemIndex });
             }

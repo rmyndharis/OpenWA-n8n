@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildMediaRequest = buildMediaRequest;
-const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
-const params_1 = require("./params");
+const media_1 = require("../media");
 /**
  * Server-side media conversion.
  *
@@ -31,18 +30,14 @@ async function buildMediaRequest(operation, itemIndex) {
     const source = this.getNodeParameter('mediaConvertSource', itemIndex, 'binary');
     let body;
     if (source === 'url') {
-        const url = (0, params_1.asText)(this.getNodeParameter('mediaConvertUrl', itemIndex, ''), 'Media URL');
-        if (!url) {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media URL cannot be empty', { itemIndex });
-        }
-        body = { url };
+        body = {
+            url: (0, media_1.mediaValue)(this.getNodeParameter('mediaConvertUrl', itemIndex, ''), 'Media URL'),
+        };
     }
     else if (source === 'base64') {
-        const base64 = (0, params_1.asText)(this.getNodeParameter('mediaConvertBase64', itemIndex, ''), 'Base64 Data');
-        if (!base64) {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Base64 data cannot be empty', { itemIndex });
-        }
-        body = { base64 };
+        body = {
+            base64: (0, media_1.mediaValue)(this.getNodeParameter('mediaConvertBase64', itemIndex, ''), 'Base64 Data'),
+        };
     }
     else {
         const binaryPropertyName = this.getNodeParameter('mediaConvertBinaryProperty', itemIndex, 'data');

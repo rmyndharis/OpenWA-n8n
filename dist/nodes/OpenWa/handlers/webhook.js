@@ -101,16 +101,23 @@ async function buildWebhookRequest(operation, itemIndex) {
         const updateFields = this.getNodeParameter('updateFields', itemIndex, {});
         // Only forward the fields the user set — the server treats the PUT as a partial
         // update, so unspecified fields keep their current value.
-        const labels = { url: 'URL', events: 'Events', active: 'Active', retryCount: 'Retry Count' };
+        // A field with no value is refused before anything is read: the four scalar
+        // fields are NOT NULL columns that answer 500 to a null, and a null Filters would
+        // clear the webhook's filters, which only typed "null" should do.
+        (0, params_1.assertFieldsResolved)(this, updateFields, {
+            active: 'Active',
+            clearSecret: 'Clear Secret',
+            events: 'Events',
+            filters: 'Filters (JSON)',
+            headers: 'Headers (JSON)',
+            retryCount: 'Retry Count',
+            secret: 'Secret',
+            url: 'URL',
+        }, params_1.LEAVE_UNCHANGED, itemIndex);
         for (const key of ['url', 'events', 'active', 'retryCount']) {
             const value = updateFields[key];
             if (value === undefined)
                 continue;
-            // All four are NOT NULL columns: a null reaches the database and answers 500
-            // without applying anything, so an expression that resolved to nothing stops here.
-            if (value === null) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${labels[key]} resolved to nothing. Remove it from the fields to leave it unchanged.`, { itemIndex });
-            }
             if (key === 'url') {
                 const url = (0, params_1.asText)(value, 'URL');
                 if (!url) {
@@ -144,8 +151,9 @@ async function buildWebhookRequest(operation, itemIndex) {
             const raw = updateFields[key];
             if (raw === undefined)
                 continue; // field not added — nothing to send
-            // Padding included: ' null' parses to null all the same.
-            const isNull = raw === null || (typeof raw === 'string' && raw.trim() === 'null');
+            // Typed "null", padding included: ' null' parses to null all the same. A real
+            // null was refused above.
+            const isNull = typeof raw === 'string' && raw.trim() === 'null';
             if (key === 'filters' && isNull) {
                 body.filters = null; // explicit null clears existing filters
                 continue;

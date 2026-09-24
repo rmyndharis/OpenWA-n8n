@@ -20,7 +20,7 @@ async function buildTemplateRequest(operation, itemIndex) {
     }
     if (operation === 'create') {
         const body = {
-            name: (0, params_1.requireText)(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH),
+            name: (0, params_1.assertStoredName)(this, (0, params_1.requireText)(this, 'templateName', 'Template name', itemIndex, MAX_NAME_LENGTH), 'Template name', MAX_NAME_LENGTH, itemIndex),
             body: (0, params_1.requireText)(this, 'templateBody', 'Template body', itemIndex, MAX_BODY_LENGTH),
         };
         const header = (0, params_1.asText)(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
@@ -48,6 +48,7 @@ async function buildTemplateRequest(operation, itemIndex) {
         case 'update': {
             // Partial update — only the fields the user added are sent.
             const fields = this.getNodeParameter('templateUpdateFields', itemIndex, {});
+            (0, params_1.assertFieldsResolved)(this, fields, { body: 'Body', footer: 'Footer', header: 'Header', name: 'Name' }, params_1.LEAVE_UNCHANGED, itemIndex);
             const limits = {
                 name: MAX_NAME_LENGTH,
                 body: MAX_BODY_LENGTH,
@@ -62,9 +63,8 @@ async function buildTemplateRequest(operation, itemIndex) {
             const body = {};
             for (const [key, max] of Object.entries(limits)) {
                 const value = fields[key];
-                // null as well as undefined: a collection subfield driven by an expression
-                // can resolve to null, and letting it through reaches `value.length` below.
-                if (value === undefined || value === null) {
+                // Absent: a present field that resolved to nothing was refused above.
+                if (value === undefined) {
                     continue;
                 }
                 if (REJECTS_BLANK.has(key)) {
@@ -73,7 +73,10 @@ async function buildTemplateRequest(operation, itemIndex) {
                     // would go out as {}, reporting success while changing nothing.
                     const parsed = (0, params_1.optionalNonBlank)(this, value, `Template ${key}`, itemIndex, max);
                     if (parsed !== undefined) {
-                        body[key] = parsed;
+                        body[key] =
+                            key === 'name'
+                                ? (0, params_1.assertStoredName)(this, parsed, 'Template name', max, itemIndex)
+                                : parsed;
                     }
                     continue;
                 }

@@ -18,3 +18,11 @@ export interface MediaParamNames {
  * MIME type falls back to `binaryFallbackMime` (per media kind).
  */
 export declare function resolveMediaSource(this: IExecuteFunctions, itemIndex: number, params: MediaParamNames, binaryFallbackMime: string): Promise<Record<string, unknown>>;
+/**
+ * A URL or base64 payload, trimmed and coerced. A list holding one value is read as
+ * that value; a longer one is refused rather than joined: joined, two URLs read as
+ * one bogus URL and two base64 payloads decode to one corrupt file, the first alone
+ * or both run together depending on padding. A blank one is
+ * refused by name, since the gateway's own 400 for it names no field in production.
+ */
+export declare function mediaValue(value: unknown, label: string): string;
