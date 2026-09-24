@@ -119,8 +119,8 @@ async function buildGroupRequest(operation, itemIndex) {
             // Only a field left empty means "every pending request". An expression that
             // found nobody reads the same after resolution, and acting on everyone then
             // admits or turns away the whole queue, which cannot be undone.
-            const raw = this.getNode().parameters.groupRequestParticipants;
-            if (requesters.length === 0 && typeof raw === 'string' && raw.startsWith('=')) {
+            if (requesters.length === 0 &&
+                (0, params_1.isExpression)(this.getNode().parameters.groupRequestParticipants)) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.', { itemIndex });
             }
             if (requesters.length > MAX_PARTICIPANTS) {
@@ -195,12 +195,15 @@ async function buildGroupRequest(operation, itemIndex) {
             // `.length` on one is undefined, so the cap below would pass and a non-string
             // would reach the server's @IsString as a 400 that names no field.
             // An empty field clears the description, so an expression that resolved to
-            // nothing (a missing input field) must not read as one.
+            // nothing (a missing input field) must not read as one, nor a template
+            // expression whose missing fields rendered to whitespace alone.
             const rawDescription = this.getNodeParameter('groupDescription', itemIndex, '');
-            if (rawDescription === undefined || rawDescription === null) {
+            const description = (0, params_1.asText)(rawDescription, 'Description');
+            if (rawDescription === undefined ||
+                rawDescription === null ||
+                (!description && (0, params_1.isTemplateExpression)(this.getNode().parameters.groupDescription))) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Description resolved to nothing. To clear the description, leave the field empty.', { itemIndex });
             }
-            const description = (0, params_1.asText)(rawDescription, 'Description');
             if ((0, params_1.textLength)(description) > MAX_DESCRIPTION_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`, { itemIndex });
             }
@@ -212,6 +215,15 @@ async function buildGroupRequest(operation, itemIndex) {
         }
         case 'updateSettings': {
             const settings = this.getNodeParameter('groupSettings', itemIndex, {});
+            // An expression that resolved to nothing: undefined was skipped, reporting a
+            // setting that was never applied as a success, and null draws a 400 whose
+            // detail production strips, so the field is named here instead.
+            (0, params_1.assertFieldsResolved)(this, settings, {
+                announce: 'Announce',
+                ephemeralSeconds: 'Disappearing Messages (Seconds)',
+                locked: 'Locked',
+                memberAddMode: 'Member Add Mode',
+            }, params_1.LEAVE_UNCHANGED, itemIndex);
             const body = {};
             if (settings.announce !== undefined) {
                 body.announce = settings.announce;

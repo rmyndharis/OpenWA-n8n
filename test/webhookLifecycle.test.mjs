@@ -36,6 +36,8 @@ function makeCtx({
   getResponse,
   // What GET /webhooks (the session's list) answers.
   listResponse = [],
+  // What a DELETE of a given webhook id throws, keyed by id.
+  deleteErrors = {},
 } = {}) {
   const staticData = {};
   if (webhookId !== undefined) staticData.webhookId = webhookId;
@@ -56,6 +58,8 @@ function makeCtx({
       httpRequestWithAuthentication: async (_cred, options) => {
         calls.push(options);
         if (throwErr) throw throwErr;
+        const deleted = options.method === 'DELETE' && options.url.split('/').pop();
+        if (deleted && deleteErrors[deleted]) throw deleteErrors[deleted];
         if (options.method === 'GET' && options.url.endsWith('/webhooks')) {
           return listResponse;
         }
@@ -501,4 +505,36 @@ test('checkExists: an unfiltered registration matching an unfiltered node is not
     getResponse: { id: 'w1', active: true, url: WEBHOOK_URL, events: ['message.received'], filters: null },
   });
   assert.equal(await hooks().checkExists.call(ctx), true);
+});
+
+test('create: a leftover that is already gone (404) does not stop the registration', async () => {
+  const { ctx, calls } = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    listResponse: [{ id: 'gone', url: WEBHOOK_URL }],
+    deleteErrors: { gone: { statusCode: 404 } },
+  });
+  assert.equal(await hooks().create.call(ctx), true);
+  assert.equal(calls.at(-1).method, 'POST');
+});
+
+test('create: any other failure removing a leftover stops before registering again', async () => {
+  const { ctx, calls } = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    listResponse: [{ id: 'stuck', url: WEBHOOK_URL }],
+    deleteErrors: { stuck: { statusCode: 500, message: 'boom' } },
+  });
+  await assert.rejects(() => hooks().create.call(ctx));
+  assert.equal(calls.some((c) => c.method === 'POST'), false);
+});
+
+test('create: a listed registration without an id is left alone', async () => {
+  const { ctx, calls } = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    listResponse: [{ url: WEBHOOK_URL }],
+  });
+  assert.equal(await hooks().create.call(ctx), true);
+  assert.equal(calls.some((c) => c.method === 'DELETE'), false);
 });

@@ -2,7 +2,7 @@ import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { webhookSecretProblem } from '../../shared/webhookSecret';
-import { asText, toQueryParams } from './params';
+import { asText, assertFieldsResolved, LEAVE_UNCHANGED, toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -131,19 +131,28 @@ export async function buildWebhookRequest(
     >;
     // Only forward the fields the user set — the server treats the PUT as a partial
     // update, so unspecified fields keep their current value.
-    const labels = { url: 'URL', events: 'Events', active: 'Active', retryCount: 'Retry Count' };
+    // A field with no value is refused before anything is read: the four scalar
+    // fields are NOT NULL columns that answer 500 to a null, and a null Filters would
+    // clear the webhook's filters, which only typed "null" should do.
+    assertFieldsResolved(
+      this,
+      updateFields as IDataObject,
+      {
+        active: 'Active',
+        clearSecret: 'Clear Secret',
+        events: 'Events',
+        filters: 'Filters (JSON)',
+        headers: 'Headers (JSON)',
+        retryCount: 'Retry Count',
+        secret: 'Secret',
+        url: 'URL',
+      },
+      LEAVE_UNCHANGED,
+      itemIndex,
+    );
     for (const key of ['url', 'events', 'active', 'retryCount'] as const) {
       const value = updateFields[key];
       if (value === undefined) continue;
-      // All four are NOT NULL columns: a null reaches the database and answers 500
-      // without applying anything, so an expression that resolved to nothing stops here.
-      if (value === null) {
-        throw new NodeOperationError(
-          this.getNode(),
-          `${labels[key]} resolved to nothing. Remove it from the fields to leave it unchanged.`,
-          { itemIndex },
-        );
-      }
       if (key === 'url') {
         const url = asText(value, 'URL');
         if (!url) {
@@ -179,8 +188,9 @@ export async function buildWebhookRequest(
     for (const key of ['headers', 'filters'] as const) {
       const raw = updateFields[key];
       if (raw === undefined) continue; // field not added — nothing to send
-      // Padding included: ' null' parses to null all the same.
-      const isNull = raw === null || (typeof raw === 'string' && raw.trim() === 'null');
+      // Typed "null", padding included: ' null' parses to null all the same. A real
+      // null was refused above.
+      const isNull = typeof raw === 'string' && raw.trim() === 'null';
       if (key === 'filters' && isNull) {
         body.filters = null; // explicit null clears existing filters
         continue;

@@ -1,12 +1,17 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.LEAVE_UNCHANGED = void 0;
 exports.asText = asText;
 exports.isOn = isOn;
+exports.isExpression = isExpression;
+exports.isTemplateExpression = isTemplateExpression;
 exports.requireJid = requireJid;
 exports.requireFullJid = requireFullJid;
 exports.inviteCodeFrom = inviteCodeFrom;
 exports.requireText = requireText;
 exports.textLength = textLength;
+exports.assertStoredName = assertStoredName;
+exports.assertFieldsResolved = assertFieldsResolved;
 exports.toQueryParams = toQueryParams;
 exports.toEpochMs = toEpochMs;
 exports.optionalNonBlank = optionalNonBlank;
@@ -57,6 +62,11 @@ function asText(value, label = 'This field') {
         if (text.includes('[object ')) {
             throw new Error(`${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`);
         }
+        // A Date or Luxon DateTime that failed to parse stringifies to these, which
+        // would otherwise go out as the text itself.
+        if (text === 'Invalid Date' || text === 'Invalid DateTime') {
+            throw new Error(`${label} is not a valid date`);
+        }
         return text.trim();
     }
     return typeof value === 'string' ? value.trim() : String(value).trim();
@@ -72,6 +82,25 @@ function isOn(value) {
         return !['', 'false', '0', 'no', 'off'].includes(value.trim().toLowerCase());
     }
     return Boolean(value);
+}
+/**
+ * Whether a raw, unresolved node parameter is an expression: n8n stores one as a
+ * string starting with '='. Read from getNode().parameters, never from the resolved
+ * value, where a field left empty and an expression that found nothing look alike.
+ */
+function isExpression(raw) {
+    return typeof raw === 'string' && raw.startsWith('=');
+}
+/**
+ * Whether a raw parameter is an expression that renders as text around or between
+ * its {{ }} blocks, as opposed to one block that is the whole value. n8n renders a
+ * missing field inside such a template as '', so it can come out as whitespace
+ * alone; a whole-value block returns undefined for a missing field instead, and a
+ * real '' from one is a deliberate value.
+ */
+function isTemplateExpression(raw) {
+    // Even a space outside the block makes n8n render the value as text.
+    return isExpression(raw) && !/^=\{\{(?:(?!\}\})[\s\S])*\}\}$/.test(raw);
 }
 function requireJid(ctx, paramName, label, itemIndex) {
     const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
@@ -138,9 +167,44 @@ function requireText(ctx, paramName, label, itemIndex, maxLength) {
  * refused emoji text the gateway accepts.
  */
 function textLength(text) {
-    const selectors = text.match(/[^️︎][️︎]/g)?.length ?? 0;
+    const selectors = text.match(/[^\uFE0F\uFE0E][\uFE0F\uFE0E]/g)?.length ?? 0;
     const pairs = text.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0;
     return text.length - selectors - pairs;
+}
+/**
+ * Refuses a name longer than the varchar(max) column the gateway stores it in.
+ * PostgreSQL counts code points, so a character with its presentation selector is two
+ * there though one to the gateway's validator, and a name the validator accepts can
+ * still fail the insert with a 500 that names no field. SQLite does not enforce the
+ * length, but the node cannot tell which database a gateway runs, so the cap applies
+ * to both; it is still looser than the UTF-16 count 1.0.1 used.
+ */
+function assertStoredName(ctx, name, label, max, itemIndex) {
+    if ([...name].length > max) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot exceed ${max} characters`, {
+            itemIndex,
+        });
+    }
+    return name;
+}
+/** The remedy an update route offers for a field with no value. */
+exports.LEAVE_UNCHANGED = 'Remove it from the fields to leave it unchanged.';
+/**
+ * Refuses a collection field that was added but holds no value. A key appears in an
+ * n8n collection only once its option is added, so undefined or null there comes from
+ * an expression that found nothing, or from a number or options input cleared in the
+ * editor, which n8n stores as null. Dropping the key reported a change that never
+ * happened as a success. `remedy` says what to do instead, which depends on the route:
+ * leaving a field out keeps it on an update but clears it on a whole-record write.
+ */
+function assertFieldsResolved(ctx, fields, labels, remedy, itemIndex) {
+    for (const [key, value] of Object.entries(fields)) {
+        if (value === undefined || value === null) {
+            throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${labels[key] ?? key} has no value. ${remedy}`, {
+                itemIndex,
+            });
+        }
+    }
 }
 /**
  * Turns a `collection` parameter into a query object.
@@ -206,20 +270,24 @@ function toEpochMs(ctx, raw, label, itemIndex) {
     return ms;
 }
 /**
- * What n8n's date picker stores, a wall-clock time with no zone, and the same with a
- * space for the T, as an expression often builds it.
+ * What n8n's date picker stores, a wall-clock time with no zone, and the forms an
+ * expression often builds instead: a space for the T, more than three fractional
+ * digits, or a date with no time at all.
  */
-const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
+const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Reads a zone-less wall-clock time in the workflow's timezone. Date.parse reads it
  * in the n8n process's zone instead, which in a container is usually UTC, so a mute
- * picked for 09:00 in Jakarta ended seven hours late.
+ * picked for 09:00 in Jakarta ended seven hours late. A date alone reads as midnight.
  */
 function wallTimeToEpochMs(text, timeZone) {
     // An impossible date (month 13) or a zone Intl does not know falls back to
-    // Date.parse, which refuses the first by field name and reads the second in the
-    // process zone, instead of escaping as a bare RangeError.
-    const asUtc = Date.parse(`${text.replace(' ', 'T')}Z`);
+    // Date.parse, instead of escaping as a bare RangeError. Date.parse refuses the first
+    // by field name and reads the second in the process zone, or at UTC midnight for a
+    // date with no time.
+    const [date, time = '00:00'] = text.split(/[T ]/);
+    const asUtc = Date.parse(`${date}T${time.replace(/(\.\d{3})\d+$/, '$1')}Z`);
     if (!timeZone || !Number.isFinite(asUtc)) {
         return undefined;
     }
@@ -239,16 +307,27 @@ function wallTimeToEpochMs(text, timeZone) {
     catch {
         return undefined;
     }
-    // The zone's offset from UTC at an instant, from how that instant reads there.
+    // The zone's offset from UTC at an instant, from how that instant reads there. The
+    // year is set on its own because Date.UTC reads 0-99 as 1900-1999.
     const offsetAt = (instant) => {
         const part = Object.fromEntries(format.formatToParts(new Date(instant)).map((p) => [p.type, Number(p.value)]));
-        const wall = Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second);
-        return wall - (instant - (((instant % 1000) + 1000) % 1000));
+        const wall = new Date(0);
+        wall.setUTCFullYear(part.year, part.month - 1, part.day);
+        wall.setUTCHours(part.hour, part.minute, part.second);
+        return wall.getTime() - (instant - (((instant % 1000) + 1000) % 1000));
     };
-    // Two passes, because the offset to subtract is the one in force at the answer,
-    // which differs from the one at the first guess across a daylight-saving change.
-    const guess = asUtc - offsetAt(asUtc);
-    return asUtc - offsetAt(guess);
+    // The wall time reads back correctly under the offset in force a day before or a
+    // day after it. Across a fall-back overlap both do, and the earlier instant is
+    // taken; inside a spring-forward gap neither does, and the offset from before the
+    // gap moves it forward by the gap's length, in every zone whichever side of UTC it
+    // is. That is Temporal's "compatible" rule. Luxon, which n8n's own nodes use,
+    // agrees on every gap but reads an overlap by the zone's offset at the moment of
+    // the call, so its answer there changes with the season the workflow runs in.
+    const before = offsetAt(asUtc - DAY_MS);
+    const valid = [before, offsetAt(asUtc + DAY_MS)]
+        .map((offset) => asUtc - offset)
+        .filter((instant) => offsetAt(instant) === asUtc - instant);
+    return valid.length > 0 ? Math.min(...valid) : asUtc - before;
 }
 /**
  * Reads an optional text field from an update collection, for the fields the server

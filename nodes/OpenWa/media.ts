@@ -36,13 +36,32 @@ export async function resolveMediaSource(
       mimetype: binary.mimeType || binaryFallbackMime,
     };
   }
-  // Trimmed and coerced: a URL pasted with a stray space is refused by the gateway
-  // with a 400 that names no field, and an object would be sent as one.
   if (source === 'url') {
-    return { url: asText(this.getNodeParameter(params.url, itemIndex), 'Media URL') };
+    return { url: mediaValue(this.getNodeParameter(params.url, itemIndex), 'Media URL') };
   }
   return {
-    base64: asText(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),
+    base64: mediaValue(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),
     mimetype: this.getNodeParameter(params.mimeType, itemIndex) as string,
   };
+}
+
+/**
+ * A URL or base64 payload, trimmed and coerced. A list holding one value is read as
+ * that value; a longer one is refused rather than joined: joined, two URLs read as
+ * one bogus URL and two base64 payloads decode to one corrupt file, the first alone
+ * or both run together depending on padding. A blank one is
+ * refused by name, since the gateway's own 400 for it names no field in production.
+ */
+export function mediaValue(value: unknown, label: string): string {
+  if (Array.isArray(value)) {
+    if (value.length !== 1) {
+      throw new Error(`${label} must be a single value, not a list`);
+    }
+    value = value[0];
+  }
+  const text = asText(value, label);
+  if (!text) {
+    throw new Error(`${label} cannot be empty`);
+  }
+  return text;
 }

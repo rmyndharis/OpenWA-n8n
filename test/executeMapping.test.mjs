@@ -2776,7 +2776,7 @@ test('operations ask for JSON parsing', async () => {
   assert.equal(singleCall(ctx).options.json, true);
 });
 
-test('template/update refuses an empty patch when its only field resolved to null', async () => {
+test('template/update refuses a PUT whose only field resolved to null', async () => {
   // optionalNonBlank returns undefined for null. Assigning that left the key in the
   // body, so the all-empty guard never fired and a {} PUT reported success.
   await assert.rejects(
@@ -2788,19 +2788,23 @@ test('template/update refuses an empty patch when its only field resolved to nul
         templateId: 't1',
         templateUpdateFields: { name: null },
       }),
-    /At least one field must be provided/,
+    /Name has no value/,
   );
 });
 
-test('template/update ignores a null field and still sends the ones that were set', async () => {
-  const { ctx } = await run({
-    resource: 'template',
-    operation: 'update',
-    sessionId: 'abc-123',
-    templateId: 't1',
-    templateUpdateFields: { name: null, body: 'new body' },
-  });
-  assert.deepEqual(singleCall(ctx).options.body, { body: 'new body' });
+test('template/update refuses a field that resolved to null rather than sending the rest', async () => {
+  // Sending the rest reported a rename that never happened as a success.
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'template',
+        operation: 'update',
+        sessionId: 'abc-123',
+        templateId: 't1',
+        templateUpdateFields: { name: null, body: 'new body' },
+      }),
+    /Name has no value/,
+  );
 });
 
 test('a text parameter resolved to a number is coerced, not crashed on', async () => {
@@ -4902,10 +4906,12 @@ test('chat/mute reads a picked date in the workflow timezone, not the process on
       chatId: '1@c.us',
       muteUntil: '2026-10-01T09:00:00',
     },
-    timezone: 'Asia/Jakarta',
+    // +05:45, which no host this suite runs on uses, so the process zone cannot
+    // produce the expected instant by coincidence.
+    timezone: 'Asia/Kathmandu',
   });
   await new OpenWa().execute.call(ctx);
-  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-10-01T02:00:00Z'));
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-10-01T03:15:00Z'));
 });
 
 test('a picked date lands on the right instant across a daylight-saving change', async () => {
@@ -5039,7 +5045,7 @@ const operationGuardCases = [
   [
     'webhook/update refuses Active resolving to nothing',
     { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { active: null } },
-    /Active resolved to nothing/,
+    /Active has no value/,
   ],
   [
     'webhook/update refuses a blank URL',
@@ -5049,7 +5055,7 @@ const operationGuardCases = [
   [
     'automationRule/update refuses Cooldown resolving to nothing',
     { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { cooldownSeconds: null } },
-    /Cooldown \(Seconds\) resolved to nothing/,
+    /Cooldown \(Seconds\) has no value/,
   ],
   [
     'apiKey/update refuses a blank Name instead of dropping it',
@@ -5186,4 +5192,267 @@ test('API Key > Create does not offer the Update-only Fields > Name', () => {
   const keyFields = new OpenWa().description.properties.find((p) => p.name === 'keyFields');
   const name = keyFields.options.find((o) => o.name === 'name');
   assert.deepEqual(name.displayOptions, { show: { '/operation': ['update'] } });
+});
+
+// --- Send Document naming ---------------------------------------------------
+
+const documentBase = {
+  resource: 'message',
+  operation: 'sendDocument',
+  sessionId: 'abc-123',
+  chatId: '1@c.us',
+  documentSource: 'url',
+};
+const sentFilename = async (params, opts) =>
+  singleCall((await run({ ...documentBase, ...params }, opts)).ctx).options.body.filename;
+
+test('Send Document leaves Filename empty by default, so the file can name itself', () => {
+  const field = new OpenWa().description.properties.find((p) => p.name === 'filename');
+  assert.equal(field.default, '');
+  assert.match(field.description, /document\.pdf/);
+});
+
+for (const [label, url, expected] of [
+  ['a script endpoint', 'https://erp.example.com/print.php?invoice=5', 'document.pdf'],
+  ['a token in the path', 'https://ex.com/d/eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlc2lnbmF0dXJl', 'document.pdf'],
+  ['an encoded object path', 'https://storage.example.com/o/invoices%2F2026%2Finv-1.pdf?alt=media', 'inv-1.pdf'],
+  ['a name past the gateway cap', `https://ex.com/d/${'x'.repeat(260)}.pdf`, 'document.pdf'],
+  ['a malformed escape', 'https://ex.com/d/bad%E0%A4%A.pdf', 'document.pdf'],
+]) {
+  test(`Send Document from ${label} is named ${expected}`, async () => {
+    assert.equal(await sentFilename({ documentUrl: url }), expected);
+  });
+}
+
+test('Send Document from a binary whose name is past the gateway cap keeps the old default', async () => {
+  const name = await sentFilename(
+    { documentSource: 'binary', documentBinaryProperty: 'data' },
+    { binary: { mimeType: 'application/pdf', fileName: `${'x'.repeat(260)}.pdf` } },
+  );
+  assert.equal(name, 'document.pdf');
+});
+
+test('Send Document names the URL field when an expression hands it an object', async () => {
+  await assert.rejects(() => run({ ...documentBase, documentUrl: { href: 'x' } }), /Media URL must be text/);
+});
+
+// --- Media sources --------------------------------------------------------------
+
+for (const [label, params, pattern] of [
+  [
+    'a list of URLs',
+    { imageSource: 'url', imageUrl: ['https://a/1.jpg', 'https://b/2.jpg'] },
+    /Media URL must be a single value/,
+  ],
+  [
+    'a list of base64 payloads',
+    { imageSource: 'base64', imageBase64: ['QUFB', 'QkJC'], imageMimeType: 'image/png' },
+    /Base64 Data must be a single value/,
+  ],
+  ['a blank URL', { imageSource: 'url', imageUrl: '  ' }, /Media URL cannot be empty/],
+  ['an unresolved URL', { imageSource: 'url', imageUrl: undefined }, /Media URL cannot be empty/],
+]) {
+  test(`Send Image refuses ${label} instead of sending it`, async () => {
+    const ctx = makeCtx({
+      params: { resource: 'message', operation: 'sendImage', sessionId: 'abc-123', chatId: '1@c.us', ...params },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+// --- Edit reads objects as text fields do ------------------------------------
+
+for (const [label, message, expected] of [
+  ['a Date', new Date('2026-09-24T10:00:00.000Z'), '2026-09-24T10:00:00.000Z'],
+  ['a list of strings', ['Out', 'for delivery'], 'Out,for delivery'],
+]) {
+  test(`message/edit sends ${label} as the text it reads as, as 1.0.1 did`, async () => {
+    const { ctx } = await run({
+      resource: 'message',
+      operation: 'edit',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      messageId: 'm1',
+      message,
+    });
+    const body = singleCall(ctx).options.body.body;
+    assert.equal(message instanceof Date ? new Date(body).toISOString() : body, expected);
+  });
+}
+
+// --- Wall-clock dates ---------------------------------------------------------
+
+const muteAt = async (muteUntil, timezone) => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil },
+    timezone,
+  });
+  await new OpenWa().execute.call(ctx);
+  return new Date(singleCall(ctx).options.body.muteUntil).toISOString();
+};
+
+for (const [label, text, zone, expected] of [
+  // The offset a day earlier is not the one in force here, so the reading has to
+  // come from the offset a day later.
+  ['just after spring-forward, west of UTC', '2026-03-08T04:00:00', 'America/New_York', '2026-03-08T08:00:00.000Z'],
+  ['a spring-forward gap, west of UTC, moves forward', '2026-03-08T02:30:00', 'America/New_York', '2026-03-08T07:30:00.000Z'],
+  ['a spring-forward gap, east of UTC, moves forward', '2026-03-29T02:30:00', 'Europe/Berlin', '2026-03-29T01:30:00.000Z'],
+  ['a fall-back overlap, west of UTC, takes the first', '2026-11-01T01:30:00', 'America/New_York', '2026-11-01T05:30:00.000Z'],
+  ['a fall-back overlap, east of UTC, takes the first', '2026-10-25T02:30:00', 'Europe/Berlin', '2026-10-25T00:30:00.000Z'],
+  ['a date with no time', '2026-10-01', 'Asia/Kathmandu', '2026-09-30T18:15:00.000Z'],
+  ['microseconds', '2026-10-01T09:00:00.123456', 'Asia/Kathmandu', '2026-10-01T03:15:00.123Z'],
+  ['a year below 100', '0099-06-01T00:00:00', 'UTC', '0099-06-01T00:00:00.000Z'],
+]) {
+  test(`a picked date: ${label}`, async () => {
+    assert.equal(await muteAt(text, zone), expected);
+  });
+}
+
+// --- Blank results from a template expression ----------------------------------
+
+for (const [label, params, nodeParameters, pattern] of [
+  [
+    'group/updateDescription refuses a template expression that rendered to whitespace',
+    { resource: 'group', operation: 'updateDescription', sessionId: 'abc-123', groupId: '1@g.us', groupDescription: '\n\n' },
+    { groupDescription: '={{ $json.rules }}\n\n{{ $json.contact }}' },
+    /Description resolved to nothing/,
+  ],
+  [
+    'profile/setStatus refuses a template expression that rendered to whitespace',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: ' ' },
+    { profileStatus: '={{ $json.about }} ' },
+    /Status resolved to nothing/,
+  ],
+]) {
+  test(label, async () => {
+    const ctx = makeCtx({ params, nodeParameters });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+// --- Names stored in varchar(100) ------------------------------------------------
+
+for (const [label, params] of [
+  ['template/create', { resource: 'template', operation: 'create', sessionId: 'abc-123', templateName: '❤️'.repeat(51), templateBody: 'Hi' }],
+  ['automationRule/create', { resource: 'automationRule', operation: 'create', sessionId: 'abc-123', ruleName: '❤️'.repeat(51), ruleReplyText: 'Hi' }],
+]) {
+  test(`${label} refuses a name longer than the varchar(100) column holds`, async () => {
+    // 51 hearts with their presentation selector: 51 characters to the gateway's
+    // validator, 102 to the PostgreSQL column, which answers 500.
+    await assert.rejects(() => run(params), /cannot exceed 100 characters/);
+  });
+}
+
+// --- Update fields that resolved to nothing --------------------------------------
+
+for (const [label, params] of [
+  ['webhook/update URL', { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { url: undefined, active: true } }],
+  ['webhook/update Filters', { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { filters: null, active: true } }],
+  ['automationRule/update Enabled', { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { enabled: undefined, name: 'x' } }],
+  ['apiKey/update Name', { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: undefined, role: 'viewer' } }],
+]) {
+  test(`${label} refuses a value that resolved to nothing instead of dropping it`, async () => {
+    const ctx = makeCtx({ params });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /has no value/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('chat/setState still accepts a bare number, which its route takes', async () => {
+  const { ctx } = await run({
+    resource: 'chat',
+    operation: 'setState',
+    sessionId: 'abc-123',
+    chatId: '628123456789',
+    chatState: 'typing',
+  });
+  assert.equal(singleCall(ctx).options.body.chatId, '628123456789');
+});
+
+test('Send Image takes the one URL a single-entry list holds', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendImage',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    imageSource: 'url',
+    imageUrl: [' https://a/1.jpg '],
+  });
+  assert.equal(singleCall(ctx).options.body.url, 'https://a/1.jpg');
+});
+
+// --- Follow-up: deliberate clears, advice that fits the route, invalid dates ------
+
+for (const [label, params, nodeParameters] of [
+  [
+    'group/updateDescription still clears through a whole expression that resolves to ""',
+    { resource: 'group', operation: 'updateDescription', sessionId: 'abc-123', groupId: '1@g.us', groupDescription: '' },
+    { groupDescription: "={{ '' }}" },
+  ],
+  [
+    'profile/setStatus still clears through a whole $fromAI expression that resolves to ""',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: '' },
+    { profileStatus: "={{ $fromAI('status') }}" },
+  ],
+]) {
+  test(label, async () => {
+    const ctx = makeCtx({ params, nodeParameters });
+    await new OpenWa().execute.call(ctx);
+    const body = singleCall(ctx).options.body;
+    assert.equal(body.description ?? body.status, '');
+  });
+}
+
+test('label/upsert tells the user a field left out is cleared, not left alone', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'label',
+        operation: 'upsert',
+        sessionId: 'abc-123',
+        newLabelId: 'l9',
+        labelFields: { labelName: 'VIP', labelColor: null },
+      }),
+    (err) => {
+      assert.match(err.message, /Color has no value/);
+      assert.match(err.message, /left out is cleared/);
+      assert.doesNotMatch(err.message, /leave it unchanged/);
+      return true;
+    },
+  );
+});
+
+test('apiKey/create does not advise leaving a restriction unchanged on a key that does not exist yet', async () => {
+  await assert.rejects(
+    () => run({ resource: 'apiKey', operation: 'create', keyName: 'ops', keyFields: { allowedIps: null } }),
+    (err) => {
+      assert.match(err.message, /Allowed IPs has no value/);
+      assert.doesNotMatch(err.message, /leave it unchanged/);
+      return true;
+    },
+  );
+});
+
+for (const [label, message] of [
+  ['an invalid Date', new Date('nope')],
+  ['a Luxon-like DateTime that is invalid', { toString: () => 'Invalid DateTime' }],
+]) {
+  test(`message/edit refuses ${label} instead of overwriting the message with its text`, async () => {
+    await assert.rejects(
+      () => run({ resource: 'message', operation: 'edit', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', message }),
+      /Message is not a valid date/,
+    );
+  });
+}
+
+test('apiKey/create refuses a restriction expression that resolved to an empty list', async () => {
+  // Dropped, it created a key with no restriction at all, broader than the one asked for.
+  const ctx = makeCtx({
+    params: { resource: 'apiKey', operation: 'create', keyName: 'customer-7', keyFields: { allowedChats: [] } },
+    nodeParameters: { keyFields: { allowedChats: '={{ $json.chats }}' } },
+  });
+  await assert.rejects(() => new OpenWa().execute.call(ctx), /Allowed Chats resolved to an empty list/);
+  assert.equal(ctx.calls.length, 0);
 });

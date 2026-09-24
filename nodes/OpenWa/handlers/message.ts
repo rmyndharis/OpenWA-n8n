@@ -31,6 +31,7 @@ const CHATLESS_OPERATIONS = new Set([
 // Server-side DTO limits.
 const MAX_EDIT_BODY_LENGTH = 4096;
 const MAX_BUTTON_ID_LENGTH = 256;
+const MAX_FILENAME_LENGTH = 255;
 const MAX_POLL_NAME_LENGTH = 255;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
@@ -166,11 +167,20 @@ function messageBody(ctx: IExecuteFunctions, raw: unknown, itemIndex: number): s
   return typeof raw === 'string' ? raw : String(raw);
 }
 
-/** The last path segment of a URL when it looks like a file name, else ''. */
+/**
+ * The file name at the end of a URL's path, or '' when the last segment does not look
+ * like one. It has to end in a short extension that is not a server script, so
+ * print.php?id=5 or a token in the path does not become the document's name. The
+ * segment is decoded before it is split, so an encoded object path (invoices%2Finv.pdf)
+ * yields inv.pdf rather than a name with slashes in it.
+ */
 function fileNameInUrl(url: string): string {
   try {
-    const last = new URL(url).pathname.split('/').pop() ?? '';
-    return last.includes('.') ? decodeURIComponent(last) : '';
+    const segment = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
+    const name = segment.split(/[/\\]/).pop() ?? '';
+    const isFile = /\.[a-z0-9]{1,8}$/i.test(name);
+    const isScript = /\.(?:php\d?|aspx?|jsp|cgi|pl|do|action)$/i.test(name);
+    return isFile && !isScript ? name : '';
   } catch {
     return '';
   }
@@ -278,30 +288,34 @@ export async function buildMessageRequest(
     );
   } else if (operation === 'sendDocument') {
     endpoint = `/api/sessions/${sessionId}/messages/send-document`;
-    body = { chatId };
-    // A binary item names itself; a URL or base64 source is named by the gateway.
-    // The field used to default to 'document.pdf', which renamed every document.
-    // An empty field takes the binary item's own name, else the file name in a URL's
-    // path, else the old default. Left unnamed, the gateway calls it 'file' with no
-    // extension on Baileys, which is worse than the default it replaced.
-    const source = this.getNodeParameter('documentSource', itemIndex);
+    const media = await resolveMediaSource.call(
+      this,
+      itemIndex,
+      DOCUMENT_MEDIA,
+      'application/octet-stream',
+    );
+    // An empty Filename takes the binary item's own name, else the file name at the
+    // end of a URL's path, else 'document.pdf', the field's old default. Left
+    // unnamed, the gateway calls it 'file' with no extension on Baileys. A derived
+    // name is used only when it fits the gateway's cap, so a long one cannot turn a
+    // send that used to succeed into a 400.
     let filename = asText(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
-    if (!filename && source === 'binary') {
-      const property = this.getNodeParameter('documentBinaryProperty', itemIndex) as string;
-      filename = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
+    if (!filename) {
+      let derived = '';
+      if (typeof media.url === 'string') {
+        derived = fileNameInUrl(media.url);
+      } else if (this.getNodeParameter('documentSource', itemIndex) === 'binary') {
+        const property = this.getNodeParameter('documentBinaryProperty', itemIndex) as string;
+        derived = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
+      }
+      filename = derived && textLength(derived) <= MAX_FILENAME_LENGTH ? derived : 'document.pdf';
     }
-    if (!filename && source === 'url') {
-      filename = fileNameInUrl(asText(this.getNodeParameter('documentUrl', itemIndex, '')));
-    }
-    body.filename = filename || 'document.pdf';
+    body = { chatId, filename };
     const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
     if (caption) {
       body.caption = caption;
     }
-    Object.assign(
-      body,
-      await resolveMediaSource.call(this, itemIndex, DOCUMENT_MEDIA, 'application/octet-stream'),
-    );
+    Object.assign(body, media);
   } else if (operation === 'sendLocation') {
     endpoint = `/api/sessions/${sessionId}/messages/send-location`;
     body = {
@@ -442,9 +456,15 @@ export async function buildMessageRequest(
     applyLinkPreview.call(this, body, itemIndex);
   } else if (operation === 'edit') {
     endpoint = `/api/sessions/${sessionId}/messages/edit`;
-    // Read like Send Text and Reply, untrimmed: the new body's leading and trailing
-    // whitespace is content, and the gateway keeps it.
-    const newBody = messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex);
+    // Text is read like Send Text and Reply, untrimmed: its leading and trailing
+    // whitespace is content, and the gateway keeps it. Anything else is read as the
+    // other text fields read it, so a date or a list of strings still sends the text
+    // it stands for, while a shapeless object is still refused.
+    const rawBody = this.getNodeParameter('message', itemIndex);
+    const newBody =
+      typeof rawBody === 'object' && rawBody !== null
+        ? asText(rawBody, 'Message')
+        : messageBody(this, rawBody, itemIndex);
     if (!newBody.trim()) {
       throw new NodeOperationError(this.getNode(), 'Message cannot be empty', { itemIndex });
     }

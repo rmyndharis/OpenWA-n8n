@@ -31,6 +31,9 @@ async function buildLabelRequest(operation, itemIndex) {
             return { endpoint: `${base}/${labelId}`, method: 'DELETE', body: {} };
         }
         const fields = this.getNodeParameter('labelFields', itemIndex, {});
+        // The write replaces the whole label, so a field with no value would not be left
+        // alone but cleared, and the advice has to say so.
+        (0, params_1.assertFieldsResolved)(this, fields, { labelColor: 'Color', labelName: 'Name' }, 'Give it a value: the write replaces the whole label, so a field left out is cleared.', itemIndex);
         const body = {};
         // Refused rather than dropped when blank: the server marks it non-empty, so a
         // blank cannot mean "clear the name" and dropping it would report success
@@ -41,10 +44,7 @@ async function buildLabelRequest(operation, itemIndex) {
         }
         // 0 is a real colour, so this tests for presence rather than truthiness. The
         // field lives in a collection precisely so "not set" stays distinguishable.
-        // null is excluded with it: an expression resolving to one satisfied the guard
-        // below and then reached a server that reads null as "not set", replacing this
-        // message with a bare 400.
-        if (fields.labelColor !== undefined && fields.labelColor !== null) {
+        if (fields.labelColor !== undefined) {
             body.color = fields.labelColor;
         }
         if (Object.keys(body).length === 0) {
