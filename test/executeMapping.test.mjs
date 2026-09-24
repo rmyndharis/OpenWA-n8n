@@ -31,12 +31,15 @@ function makeCtx({
   // The raw, unresolved parameters as n8n stores them; an expression is a string
   // starting with '='. getNodeParameter above returns the resolved values.
   nodeParameters = {},
+  // The workflow timezone, which n8n exposes through getTimezone().
+  timezone = 'UTC',
 } = {}) {
   const calls = [];
   const prepared = [];
   const ctx = {
     calls,
     prepared,
+    getTimezone: () => timezone,
     getInputData: () => Array.from({ length: items }, () => ({ json: {} })),
     getNodeParameter: (name, _i, fallback) => (name in params ? params[name] : fallback),
     getCredentials: async () => ({ serverUrl: BASE }),
@@ -3441,7 +3444,7 @@ test('apiKey/create refuses an expiry that is already past', async () => {
         keyName: 'ops',
         keyFields: { expiresAt: 1798761600 },
       }),
-    /Expiry date must be in the future/,
+    /Epoch values are milliseconds, not seconds/,
   );
 });
 
@@ -4699,4 +4702,171 @@ test('group/approveMembershipRequests still sends the requesters an expression r
   });
   await new OpenWa().execute.call(ctx);
   assert.deepEqual(singleCall(ctx).options.body, { participants: ['628123456789@c.us'] });
+});
+
+// --- Reading expression values ------------------------------------------------
+
+test('message/edit refuses a list of objects instead of sending its string form', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'edit',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        messageId: 'm1',
+        message: [{ a: 1 }, { b: 2 }],
+      }),
+    /Message must be text/,
+  );
+});
+
+test('status/sendText refuses a Map instead of posting "[object Map]"', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'status',
+        operation: 'sendText',
+        sessionId: 'abc-123',
+        statusText: new Map([['a', 1]]),
+      }),
+    /Status text must be text/,
+  );
+});
+
+test('a list of plain strings still reads as the text it joins to', async () => {
+  const { ctx } = await run({
+    resource: 'status',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    statusText: ['Out', 'for delivery'],
+  });
+  assert.equal(singleCall(ctx).options.body.text, 'Out,for delivery');
+});
+
+const sendToggleCases = [
+  [
+    'message/sendAudio ignores a truthy "false" for Send as Voice Note',
+    {
+      resource: 'message',
+      operation: 'sendAudio',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      audioSource: 'url',
+      audioUrl: 'https://example.com/a.ogg',
+      sendAsVoiceNote: 'false',
+    },
+    { chatId: '1@c.us', url: 'https://example.com/a.ogg' },
+  ],
+  [
+    'message/sendPoll ignores a truthy "false" for Allow Multiple Answers',
+    {
+      resource: 'message',
+      operation: 'sendPoll',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      pollName: 'Lunch?',
+      pollOptions: 'Pizza, Sushi',
+      allowMultipleAnswers: 'false',
+    },
+    { chatId: '1@c.us', name: 'Lunch?', options: ['Pizza', 'Sushi'] },
+  ],
+];
+
+for (const [label, params, expectedBody] of sendToggleCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    assert.deepEqual(singleCall(ctx).options.body, expectedBody);
+  });
+}
+
+test('chat/mute refuses epoch seconds given as a number', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'chat',
+        operation: 'mute',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        muteUntil: 1790244000,
+      }),
+    /milliseconds, not seconds/,
+  );
+});
+
+test('chat/mute refuses a signed number string instead of reading it as a year', async () => {
+  await assert.rejects(
+    () =>
+      run({ resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '-1' }),
+    /not a valid date/,
+  );
+});
+
+test('chat/mute reads a picked date in the workflow timezone, not the process one', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      muteUntil: '2026-10-01T09:00:00',
+    },
+    timezone: 'Asia/Jakarta',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-10-01T02:00:00Z'));
+});
+
+test('a picked date lands on the right instant across a daylight-saving change', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      muteUntil: '2026-11-01T12:00:00',
+    },
+    timezone: 'America/New_York',
+  });
+  await new OpenWa().execute.call(ctx);
+  // 1 November 2026 is after the switch back to EST (UTC-5).
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T17:00:00Z'));
+});
+
+test('a length cap counts an emoji as one character, as the gateway does', async () => {
+  const { ctx } = await run({
+    resource: 'profile',
+    operation: 'setName',
+    sessionId: 'abc-123',
+    profileName: '😀'.repeat(25),
+  });
+  assert.equal(singleCall(ctx).options.body.name, '😀'.repeat(25));
+  await assert.rejects(
+    () => run({ resource: 'profile', operation: 'setName', sessionId: 'abc-123', profileName: '😀'.repeat(26) }),
+    /cannot exceed 25 characters/,
+  );
+});
+
+test('a group description of emoji up to the cap is sent', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'updateDescription',
+    sessionId: 'abc-123',
+    groupId: '1@g.us',
+    groupDescription: '🎉'.repeat(1024),
+  });
+  assert.equal(singleCall(ctx).options.body.description.length, 2048);
+});
+
+test('apiKey/create refuses a millisecond expiry that has already passed', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'apiKey',
+        operation: 'create',
+        keyName: 'ops',
+        keyFields: { expiresAt: Date.now() - 60_000 },
+      }),
+    /Expiry date must be in the future/,
+  );
 });

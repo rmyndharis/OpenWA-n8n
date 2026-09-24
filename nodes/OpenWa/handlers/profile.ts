@@ -2,7 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireText, asText } from './params';
+import { requireText, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 const PICTURE_MEDIA: MediaParamNames = {
@@ -52,7 +52,7 @@ export async function buildProfileRequest(
         );
       }
       const status = asText(rawStatus, 'Status');
-      if (status.length > MAX_STATUS_LENGTH) {
+      if (textLength(status) > MAX_STATUS_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Status cannot exceed ${MAX_STATUS_LENGTH} characters`,

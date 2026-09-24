@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { toStringList, asText } from './params';
+import { toStringList, asText, textLength } from './params';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import type { RequestSpec } from './types';
 
@@ -89,7 +89,7 @@ export async function buildGroupRequest(
     if (!name) {
       throw new NodeOperationError(this.getNode(), 'Group name cannot be empty', { itemIndex });
     }
-    if (name.length > MAX_NAME_LENGTH) {
+    if (textLength(name) > MAX_NAME_LENGTH) {
       throw new NodeOperationError(
         this.getNode(),
         `Group name cannot exceed ${MAX_NAME_LENGTH} characters`,
@@ -237,7 +237,7 @@ export async function buildGroupRequest(
       if (!subject) {
         throw new NodeOperationError(this.getNode(), 'Subject cannot be empty', { itemIndex });
       }
-      if (subject.length > MAX_NAME_LENGTH) {
+      if (textLength(subject) > MAX_NAME_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Subject cannot exceed ${MAX_NAME_LENGTH} characters`,
@@ -263,7 +263,7 @@ export async function buildGroupRequest(
         );
       }
       const description = asText(rawDescription, 'Description');
-      if (description.length > MAX_DESCRIPTION_LENGTH) {
+      if (textLength(description) > MAX_DESCRIPTION_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`,

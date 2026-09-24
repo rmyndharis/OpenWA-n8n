@@ -1,7 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { optionalNonBlank, requireText, asText } from './params';
+import { optionalNonBlank, requireText, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 // Server-side DTO limits.
@@ -36,7 +36,7 @@ export async function buildTemplateRequest(
     const header = asText(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
     const footer = asText(this.getNodeParameter('templateFooter', itemIndex, ''), 'Footer');
     if (header) {
-      if (header.length > MAX_HEADER_FOOTER_LENGTH) {
+      if (textLength(header) > MAX_HEADER_FOOTER_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Header cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`,
@@ -46,7 +46,7 @@ export async function buildTemplateRequest(
       body.header = header;
     }
     if (footer) {
-      if (footer.length > MAX_HEADER_FOOTER_LENGTH) {
+      if (textLength(footer) > MAX_HEADER_FOOTER_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Footer cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`,
@@ -110,7 +110,7 @@ export async function buildTemplateRequest(
         // is undefined, so the cap would pass and the server would answer a 400
         // naming no field. A blank stays blank here, which clears the field.
         const text = asText(value);
-        if (text.length > max) {
+        if (textLength(text) > max) {
           throw new NodeOperationError(
             this.getNode(),
             `Template ${key} cannot exceed ${max} characters`,

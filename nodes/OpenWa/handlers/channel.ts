@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, requireText, toQueryParams, asText } from './params';
+import { requireJid, requireText, toQueryParams, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -49,7 +49,7 @@ export async function buildChannelRequest(
       'Description',
     );
     if (description) {
-      if (description.length > 2048) {
+      if (textLength(description) > 2048) {
         throw new NodeOperationError(
           this.getNode(),
           'Channel description cannot exceed 2048 characters',

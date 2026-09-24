@@ -38,7 +38,7 @@ async function buildProfileRequest(operation, itemIndex) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Status resolved to nothing. To clear the about text, leave the field empty.', { itemIndex });
             }
             const status = (0, params_1.asText)(rawStatus, 'Status');
-            if (status.length > MAX_STATUS_LENGTH) {
+            if ((0, params_1.textLength)(status) > MAX_STATUS_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Status cannot exceed ${MAX_STATUS_LENGTH} characters`, { itemIndex });
             }
             return { endpoint: `${base}/status`, method: 'PUT', body: { status } };

@@ -8,6 +8,13 @@ export declare function requireJid(ctx: IExecuteFunctions, paramName: string, la
  */
 export declare function requireText(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number, maxLength?: number): string;
 /**
+ * Length as the gateway's @MaxLength counts it (validator's isLength): a surrogate
+ * pair, such as most emoji, is one character, and so is a character together with
+ * its emoji or text presentation selector. String.length counts UTF-16 units, which
+ * refused emoji text the gateway accepts.
+ */
+export declare function textLength(text: string): number;
+/**
  * Turns a `collection` parameter into a query object.
  *
  * Only entries the user actually added are present, so anything left undefined,

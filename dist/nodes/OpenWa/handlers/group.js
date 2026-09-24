@@ -68,7 +68,7 @@ async function buildGroupRequest(operation, itemIndex) {
         if (!name) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Group name cannot be empty', { itemIndex });
         }
-        if (name.length > MAX_NAME_LENGTH) {
+        if ((0, params_1.textLength)(name) > MAX_NAME_LENGTH) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Group name cannot exceed ${MAX_NAME_LENGTH} characters`, { itemIndex });
         }
         return {
@@ -183,7 +183,7 @@ async function buildGroupRequest(operation, itemIndex) {
             if (!subject) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Subject cannot be empty', { itemIndex });
             }
-            if (subject.length > MAX_NAME_LENGTH) {
+            if ((0, params_1.textLength)(subject) > MAX_NAME_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Subject cannot exceed ${MAX_NAME_LENGTH} characters`, { itemIndex });
             }
             return { endpoint: `${groupBase}/subject`, method: 'PUT', body: { subject } };
@@ -201,7 +201,7 @@ async function buildGroupRequest(operation, itemIndex) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Description resolved to nothing. To clear the description, leave the field empty.', { itemIndex });
             }
             const description = (0, params_1.asText)(rawDescription, 'Description');
-            if (description.length > MAX_DESCRIPTION_LENGTH) {
+            if ((0, params_1.textLength)(description) > MAX_DESCRIPTION_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`, { itemIndex });
             }
             return {

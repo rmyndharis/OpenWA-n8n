@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.asText = asText;
 exports.requireJid = requireJid;
 exports.requireText = requireText;
+exports.textLength = textLength;
 exports.toQueryParams = toQueryParams;
 exports.toEpochMs = toEpochMs;
 exports.optionalNonBlank = optionalNonBlank;
@@ -48,7 +49,9 @@ function asText(value, label = 'This field') {
             // A null-prototype object has no toString at all, so String() throws.
             text = OPAQUE_OBJECT;
         }
-        if (text === OPAQUE_OBJECT) {
+        // Also caught inside a longer string: a list of two objects stringifies to
+        // "[object Object],[object Object]", and a Map or Set to "[object Map]".
+        if (text.includes('[object ')) {
             throw new Error(`${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`);
         }
         return text.trim();
@@ -72,12 +75,23 @@ function requireText(ctx, paramName, label, itemIndex, maxLength) {
     if (!value) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
-    if (maxLength !== undefined && value.length > maxLength) {
+    if (maxLength !== undefined && textLength(value) > maxLength) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot exceed ${maxLength} characters`, {
             itemIndex,
         });
     }
     return value;
+}
+/**
+ * Length as the gateway's @MaxLength counts it (validator's isLength): a surrogate
+ * pair, such as most emoji, is one character, and so is a character together with
+ * its emoji or text presentation selector. String.length counts UTF-16 units, which
+ * refused emoji text the gateway accepts.
+ */
+function textLength(text) {
+    const selectors = text.match(/[^️︎][️︎]/g)?.length ?? 0;
+    const pairs = text.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0;
+    return text.length - selectors - pairs;
 }
 /**
  * Turns a `collection` parameter into a query object.
@@ -116,14 +130,62 @@ function toQueryParams(options) {
  */
 function toEpochMs(ctx, raw, label, itemIndex) {
     const text = typeof raw === 'string' ? raw.trim() : '';
-    const ms = typeof raw === 'number' ? raw : /^\d{12,}$/.test(text) ? Number(text) : Date.parse(String(raw));
+    // The number form gets the same floor as the twelve-digit rule below. The
+    // gateway's payload timestamps are Unix seconds, so {{ $json.data.timestamp + 86400 }}
+    // arrives as a ten-digit number and read as milliseconds it lands in January 1970,
+    // which the gateway accepts as a mute that has already expired.
+    if (typeof raw === 'number' && Number.isFinite(raw) && Math.abs(raw) < 1e11) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} looks like epoch seconds. Epoch values are milliseconds, not seconds.`, { itemIndex });
+    }
+    const zoned = ZONELESS_DATE_TIME.test(text)
+        ? wallTimeToEpochMs(text, ctx.getTimezone?.())
+        : undefined;
+    const ms = typeof raw === 'number'
+        ? raw
+        : /^\d{12,}$/.test(text)
+            ? Number(text)
+            : (zoned ?? Date.parse(String(raw)));
     // A bare number under four digits is refused rather than parsed. Date.parse reads
     // one as a year, so '0' (what Chat > List reports for an indefinite mute) resolves
-    // to the year 2000 and the gateway accepts a mute that expired decades ago.
-    if (!Number.isFinite(ms) || /^\d{1,3}$/.test(text)) {
+    // to the year 2000 and the gateway accepts a mute that expired decades ago. A
+    // signed one is read as a year the same way ('-1' is 2001).
+    if (!Number.isFinite(ms) || /^\d{1,3}$/.test(text) || /^[+-]\d+$/.test(text)) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
     }
     return ms;
+}
+/** What n8n's date picker stores: a wall-clock time with no zone. */
+const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
+/**
+ * Reads a zone-less wall-clock time in the workflow's timezone. Date.parse reads it
+ * in the n8n process's zone instead, which in a container is usually UTC, so a mute
+ * picked for 09:00 in Jakarta ended seven hours late.
+ */
+function wallTimeToEpochMs(text, timeZone) {
+    if (!timeZone) {
+        return undefined;
+    }
+    const asUtc = Date.parse(`${text}Z`);
+    const format = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+    });
+    // The zone's offset from UTC at an instant, from how that instant reads there.
+    const offsetAt = (instant) => {
+        const part = Object.fromEntries(format.formatToParts(new Date(instant)).map((p) => [p.type, Number(p.value)]));
+        const wall = Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second);
+        return wall - (instant - (((instant % 1000) + 1000) % 1000));
+    };
+    // Two passes, because the offset to subtract is the one in force at the answer,
+    // which differs from the one at the first guess across a daylight-saving change.
+    const guess = asUtc - offsetAt(asUtc);
+    return asUtc - offsetAt(guess);
 }
 /**
  * Reads an optional text field from an update collection, for the fields the server
@@ -144,7 +206,7 @@ function optionalNonBlank(ctx, value, label, itemIndex, maxLength) {
     if (!trimmed) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. Remove it from the fields to leave it unchanged.`, { itemIndex });
     }
-    if (maxLength !== undefined && trimmed.length > maxLength) {
+    if (maxLength !== undefined && textLength(trimmed) > maxLength) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot exceed ${maxLength} characters`, {
             itemIndex,
         });
