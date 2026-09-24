@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { toStringList, asText, textLength } from './params';
+import { toStringList, asText, textLength, inviteCodeFrom } from './params';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import type { RequestSpec } from './types';
 
@@ -106,10 +106,9 @@ export async function buildGroupRequest(
   if (operation === 'join') {
     // Accept a full invite link too — the API wants only the code that follows
     // https://chat.whatsapp.com/, and pasting the whole link is the common slip.
-    const inviteCode = asText(
-      this.getNodeParameter('groupInviteCode', itemIndex),
-      'Invite code',
-    ).replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+    const inviteCode = inviteCodeFrom(
+      asText(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code'),
+    );
     if (!inviteCode) {
       throw new NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
     }
@@ -125,10 +124,9 @@ export async function buildGroupRequest(
 
   if (operation === 'getJoinInfo') {
     // Same link-tolerance as join: pasting the whole invite URL is the common slip.
-    const inviteCode = asText(
-      this.getNodeParameter('groupInviteCode', itemIndex),
-      'Invite code',
-    ).replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+    const inviteCode = inviteCodeFrom(
+      asText(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code'),
+    );
     if (!inviteCode) {
       throw new NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
     }

@@ -845,11 +845,13 @@ export class OpenWa implements INodeType {
         displayName: 'Filename',
         name: 'filename',
         type: 'string',
-        default: 'document.pdf',
+        default: '',
+        placeholder: 'invoice-123.pdf',
         displayOptions: {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
-        description: 'Filename for the document',
+        description:
+          "Name the recipient sees. Leave empty to keep the binary file's own name, or, for a URL or base64 source, the name OpenWA gives it.",
       },
       // Send Audio fields
       {

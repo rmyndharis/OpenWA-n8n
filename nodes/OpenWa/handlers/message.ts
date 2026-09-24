@@ -4,7 +4,7 @@ import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { parseJsonParam } from '../../shared/jsonParam';
 import { parseBulkMessages } from '../bulkMessages';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireJid, requireText, toQueryParams, toStringList, asText } from './params';
+import { requireJid, requireText, toQueryParams, toStringList, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -202,10 +202,7 @@ export async function buildMessageRequest(
   }
 
   if (operation === 'getReactions') {
-    const messageId = asText(this.getNodeParameter('messageId', itemIndex), 'Message ID');
-    if (!messageId) {
-      throw new NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
-    }
+    const messageId = requireText(this, 'messageId', 'Message ID', itemIndex);
     return {
       endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/reactions`,
       method: 'GET',
@@ -214,10 +211,7 @@ export async function buildMessageRequest(
   }
 
   if (operation === 'getMedia') {
-    const messageId = asText(this.getNodeParameter('messageId', itemIndex), 'Message ID');
-    if (!messageId) {
-      throw new NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
-    }
+    const messageId = requireText(this, 'messageId', 'Message ID', itemIndex);
     // Served from the gateway's own archive rather than the engine, so this works
     // while the session is stopped. The only failure is a 404.
     return {
@@ -266,10 +260,17 @@ export async function buildMessageRequest(
     );
   } else if (operation === 'sendDocument') {
     endpoint = `/api/sessions/${sessionId}/messages/send-document`;
-    body = {
-      chatId,
-      filename: this.getNodeParameter('filename', itemIndex, 'document.pdf') as string,
-    };
+    body = { chatId };
+    // A binary item names itself; a URL or base64 source is named by the gateway.
+    // The field used to default to 'document.pdf', which renamed every document.
+    let filename = asText(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
+    if (!filename && this.getNodeParameter('documentSource', itemIndex) === 'binary') {
+      const property = this.getNodeParameter('documentBinaryProperty', itemIndex) as string;
+      filename = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
+    }
+    if (filename) {
+      body.filename = filename;
+    }
     const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
     if (caption) {
       body.caption = caption;
@@ -317,10 +318,7 @@ export async function buildMessageRequest(
     endpoint = `/api/sessions/${sessionId}/messages/reply`;
     body = {
       chatId,
-      quotedMessageId: asText(
-        this.getNodeParameter('quotedMessageId', itemIndex),
-        'Quoted Message ID',
-      ),
+      quotedMessageId: requireText(this, 'quotedMessageId', 'Quoted Message ID', itemIndex),
       text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
     };
   } else if (operation === 'react') {
@@ -328,14 +326,14 @@ export async function buildMessageRequest(
     // An empty emoji removes the existing reaction — the field is intentionally sent.
     body = {
       chatId,
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
       emoji: this.getNodeParameter('emoji', itemIndex, '') as string,
     };
   } else if (operation === 'delete') {
     endpoint = `/api/sessions/${sessionId}/messages/delete`;
     body = {
       chatId,
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
       forEveryone: this.getNodeParameter('forEveryone', itemIndex, true) as boolean,
     };
   } else if (operation === 'sendVideo') {
@@ -422,17 +420,30 @@ export async function buildMessageRequest(
     applyLinkPreview.call(this, body, itemIndex);
   } else if (operation === 'edit') {
     endpoint = `/api/sessions/${sessionId}/messages/edit`;
+    // Read like Send Text and Reply, untrimmed: the new body's leading and trailing
+    // whitespace is content, and the gateway keeps it.
+    const newBody = messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex);
+    if (!newBody.trim()) {
+      throw new NodeOperationError(this.getNode(), 'Message cannot be empty', { itemIndex });
+    }
+    if (textLength(newBody) > MAX_EDIT_BODY_LENGTH) {
+      throw new NodeOperationError(
+        this.getNode(),
+        `Message cannot exceed ${MAX_EDIT_BODY_LENGTH} characters`,
+        { itemIndex },
+      );
+    }
     body = {
       chatId,
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
-      body: requireText(this, 'message', 'Message', itemIndex, MAX_EDIT_BODY_LENGTH),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
+      body: newBody,
     };
   } else if (operation === 'forward') {
     endpoint = `/api/sessions/${sessionId}/messages/forward`;
     body = {
       fromChatId: requireJid(this, 'fromChatId', 'From Chat ID', itemIndex),
       toChatId: requireJid(this, 'toChatId', 'To Chat ID', itemIndex),
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
     };
     // send-catalog has no branch because the route no longer exists at all; the
     // server removed it. The catalog reads live on the Catalog resource.
@@ -440,7 +451,7 @@ export async function buildMessageRequest(
     endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
     body = {
       chatId,
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
     };
     if (operation === 'pin') {
       // UnpinMessageDto does not declare this field, so it must not ride along.
@@ -455,7 +466,7 @@ export async function buildMessageRequest(
     // `star` has no server-side default: omitting it is a 400, so it is always sent.
     body = {
       chatId,
-      messageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
       star: this.getNodeParameter('star', itemIndex, true) as boolean,
     };
   } else if (operation === 'votePoll') {
@@ -471,7 +482,7 @@ export async function buildMessageRequest(
     body = {
       chatId,
       // The wire name is pollMessageId here, not messageId.
-      pollMessageId: asText(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+      pollMessageId: requireText(this, 'messageId', 'Message ID', itemIndex),
       // Always sent, including empty: omitting the key is a 400, and an empty
       // array is how a vote is cleared.
       options: selections,

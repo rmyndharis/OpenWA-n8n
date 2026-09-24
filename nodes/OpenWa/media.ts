@@ -1,4 +1,5 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
+import { asText } from './handlers/params';
 
 /**
  * Names of the per-operation media fields. Every send-* media operation carries
@@ -35,11 +36,13 @@ export async function resolveMediaSource(
       mimetype: binary.mimeType || binaryFallbackMime,
     };
   }
+  // Trimmed and coerced: a URL pasted with a stray space is refused by the gateway
+  // with a 400 that names no field, and an object would be sent as one.
   if (source === 'url') {
-    return { url: this.getNodeParameter(params.url, itemIndex) as string };
+    return { url: asText(this.getNodeParameter(params.url, itemIndex), 'Media URL') };
   }
   return {
-    base64: this.getNodeParameter(params.base64, itemIndex) as string,
+    base64: asText(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),
     mimetype: this.getNodeParameter(params.mimeType, itemIndex) as string,
   };
 }

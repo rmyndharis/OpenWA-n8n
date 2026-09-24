@@ -356,7 +356,7 @@ const mappingCases = [
 
   // ---- message: sendDocument ----
   [
-    'message/sendDocument from URL uses the default filename',
+    'message/sendDocument from URL leaves the name to the gateway',
     {
       resource: 'message',
       operation: 'sendDocument',
@@ -367,7 +367,32 @@ const mappingCases = [
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-document`,
-    { chatId: '1@c.us', filename: 'document.pdf', url: 'https://x/f.pdf' },
+    { chatId: '1@c.us', url: 'https://x/f.pdf' },
+  ],
+  [
+    'message/sendDocument from binary keeps the file its own name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'binary',
+      documentBinaryProperty: 'data',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    {
+      chatId: '1@c.us',
+      filename: 'Q3-report.xlsx',
+      base64: IMG_B64,
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+    {
+      binary: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        fileName: 'Q3-report.xlsx',
+      },
+    },
   ],
   [
     'message/sendDocument from base64 with a custom filename',
@@ -402,7 +427,7 @@ const mappingCases = [
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-document`,
-    { chatId: '1@c.us', filename: 'document.pdf', base64: IMG_B64, mimetype: 'application/octet-stream' },
+    { chatId: '1@c.us', base64: IMG_B64, mimetype: 'application/octet-stream' },
     { binary: { mimeType: '' } },
   ],
 
@@ -4869,4 +4894,134 @@ test('apiKey/create refuses a millisecond expiry that has already passed', async
       }),
     /Expiry date must be in the future/,
   );
+});
+
+// --- Per-operation input handling ---------------------------------------------
+
+const operationInputCases = [
+  [
+    'group/join reduces a current invite link, query string and all, to its code',
+    { resource: 'group', operation: 'join', sessionId: 'abc-123', groupInviteCode: 'https://chat.whatsapp.com/AbCdEf123?mode=gi_t' },
+    { inviteCode: 'AbCdEf123' },
+  ],
+  [
+    'group/join accepts the /invite/ form with a trailing slash and fragment',
+    { resource: 'group', operation: 'join', sessionId: 'abc-123', groupInviteCode: 'chat.whatsapp.com/invite/AbCdEf123/#x' },
+    { inviteCode: 'AbCdEf123' },
+  ],
+  [
+    'channel/subscribe reduces a channel link with tracking parameters to its code',
+    { resource: 'channel', operation: 'subscribe', sessionId: 'abc-123', channelInviteCode: 'https://whatsapp.com/channel/0029VaXyZ?utm_source=share' },
+    { inviteCode: '0029VaXyZ' },
+  ],
+  [
+    'message/edit keeps the leading and trailing whitespace of the new body',
+    { resource: 'message', operation: 'edit', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', message: '\n    total  = 5\n' },
+    { chatId: '1@c.us', messageId: 'm1', body: '\n    total  = 5\n' },
+  ],
+  [
+    'message/sendImage trims a URL pasted with surrounding spaces',
+    { resource: 'message', operation: 'sendImage', sessionId: 'abc-123', chatId: '1@c.us', imageSource: 'url', imageUrl: '  https://x/a.jpg \n' },
+    { chatId: '1@c.us', url: 'https://x/a.jpg' },
+  ],
+  [
+    'apiKey/create keeps the required Name over a leftover Fields > Name',
+    { resource: 'apiKey', operation: 'create', keyName: 'ops-bot', keyFields: { name: 'old', role: 'viewer' } },
+    { name: 'ops-bot', role: 'viewer' },
+  ],
+];
+
+for (const [label, params, expectedBody] of operationInputCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    const { options } = singleCall(ctx);
+    assert.deepEqual(options.body ?? options.qs, expectedBody);
+  });
+}
+
+test('group/getJoinInfo reduces a link with a query string to its code', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'https://chat.whatsapp.com/AbCdEf123?mode=gi_t',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'AbCdEf123' });
+});
+
+const operationGuardCases = [
+  [
+    'message/edit refuses a body that is only whitespace',
+    { resource: 'message', operation: 'edit', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', message: ' \n ' },
+    /Message cannot be empty/,
+  ],
+  [
+    'message/react refuses a blank Message ID',
+    { resource: 'message', operation: 'react', sessionId: 'abc-123', chatId: '1@c.us', messageId: '  ', emoji: '👍' },
+    /Message ID cannot be empty/,
+  ],
+  [
+    'message/reply refuses a blank Quoted Message ID',
+    { resource: 'message', operation: 'reply', sessionId: 'abc-123', chatId: '1@c.us', quotedMessageId: '', message: 'hi' },
+    /Quoted Message ID cannot be empty/,
+  ],
+  [
+    'media/convertVoice refuses Base64 Data that resolved to an object',
+    { resource: 'media', operation: 'convertVoice', sessionId: 'abc-123', mediaConvertSource: 'base64', mediaConvertBase64: { data: 'x' } },
+    /Base64 Data must be text/,
+  ],
+  [
+    'webhook/update refuses Active resolving to nothing',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { active: null } },
+    /Active resolved to nothing/,
+  ],
+  [
+    'webhook/update refuses a blank URL',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { url: '  ' } },
+    /URL cannot be empty/,
+  ],
+  [
+    'automationRule/update refuses Cooldown resolving to nothing',
+    { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { cooldownSeconds: null } },
+    /Cooldown \(Seconds\) resolved to nothing/,
+  ],
+  [
+    'apiKey/update refuses a blank Name instead of dropping it',
+    { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: '  ', role: 'viewer' } },
+    /Name cannot be blank/,
+  ],
+  [
+    'session/create refuses a proxy URL with a port but no host',
+    { resource: 'session', operation: 'create', sessionName: 's1', proxyUrl: 'socks5://:1080' },
+    /Proxy URL must include a host/,
+  ],
+  [
+    'contact/save refuses a last name over 100 characters',
+    { resource: 'contact', operation: 'save', sessionId: 'abc-123', contactId: '1@c.us', contactFirstName: 'Ann', contactLastName: 'x'.repeat(101) },
+    /Last Name cannot exceed 100 characters/,
+  ],
+  [
+    'chat/archive refuses a bare number, which the route cannot take',
+    { resource: 'chat', operation: 'archive', sessionId: 'abc-123', chatId: '628123456789', archive: true },
+    /full WhatsApp ID including its domain/,
+  ],
+];
+
+for (const [label, params, pattern] of operationGuardCases) {
+  test(label, async () => {
+    const ctx = makeCtx({ params });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('webhook/update sends a padded "null" Headers as the empty object the column takes', async () => {
+  const { ctx } = await run({
+    resource: 'webhook',
+    operation: 'update',
+    sessionId: 'abc-123',
+    webhookId: 'w1',
+    updateFields: { headers: ' null\n' },
+  });
+  assert.deepEqual(singleCall(ctx).options.body, { headers: {} });
 });

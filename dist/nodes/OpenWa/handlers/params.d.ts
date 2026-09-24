@@ -2,6 +2,21 @@ import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 export declare function asText(value: unknown, label?: string): string;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
 /**
+ * requireJid for the routes whose DTO requires a domain-qualified ID
+ * (`@Matches(/^[^\s@]+@[^\s@]+$/)`). Checking here lets the message name the field,
+ * where the server's 400 detail is stripped in production. The example is fixed
+ * rather than built from the rejected value, which is not a valid ID.
+ */
+export declare function requireFullJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
+/**
+ * The invite code in a pasted WhatsApp group or channel link, or the text itself when
+ * it is not a link. Current links carry a query string (`?mode=gi_t`), and some a
+ * trailing slash, a fragment or an `/invite/` segment, none of which is part of the
+ * code. The code follows `/channel/` or `/invite/` when either is present and is the
+ * first path segment otherwise; a link that stops before it yields ''.
+ */
+export declare function inviteCodeFrom(text: string): string;
+/**
  * Reads a required free-text parameter, trimmed, optionally length-checked
  * against the server's DTO limit so oversized input fails with a pointed
  * message instead of a generic 400.

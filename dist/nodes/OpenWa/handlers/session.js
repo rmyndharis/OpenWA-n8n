@@ -22,7 +22,8 @@ function assertProxyUrl(proxyUrl, itemIndex) {
     // `socks5://` on its own clears the scheme test but is not a URL; so is a
     // credentials-only form. Take the authority and strip any `user:pass@`.
     const authority = scheme[2].split(/[/?#]/)[0];
-    const host = authority.slice(authority.lastIndexOf('@') + 1);
+    // The port is stripped too: `socks5://:1080` names a port and no host.
+    const host = authority.slice(authority.lastIndexOf('@') + 1).replace(/:\d*$/, '');
     if (!host) {
         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must include a host', { itemIndex });
     }

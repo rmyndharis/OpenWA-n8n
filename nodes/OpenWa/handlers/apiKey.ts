@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { asText, requireText, toEpochMs, toStringList } from './params';
+import { asText, optionalNonBlank, requireText, toEpochMs, toStringList } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -28,17 +28,14 @@ export async function buildApiKeyRequest(
   }
 
   if (operation === 'create') {
+    // Fields > Name is the Update rename. Read here it silently replaced the required
+    // Name, so a copied Update node created its key under the old name.
+    const fields = { ...(this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject) };
+    delete fields.name;
     const body: IDataObject = {
       name: requireText(this, 'keyName', 'API key name', itemIndex),
+      ...collectApiKeyFields.call(this, fields, itemIndex),
     };
-    Object.assign(
-      body,
-      collectApiKeyFields.call(
-        this,
-        this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject,
-        itemIndex,
-      ),
-    );
     return { endpoint: base, method: 'POST', body };
   }
 
@@ -85,8 +82,10 @@ function collectApiKeyFields(
   itemIndex: number,
 ): IDataObject {
   const body: IDataObject = {};
-  const name = asText(fields.name);
-  if (name) {
+  // Refused when blank rather than dropped: dropping it reported a rename that
+  // never happened as a success.
+  const name = optionalNonBlank(this, fields.name as string | undefined, 'Name', itemIndex);
+  if (name !== undefined) {
     body.name = name;
   }
   const role = asText(fields.role);

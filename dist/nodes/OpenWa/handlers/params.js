@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.asText = asText;
 exports.requireJid = requireJid;
+exports.requireFullJid = requireFullJid;
+exports.inviteCodeFrom = inviteCodeFrom;
 exports.requireText = requireText;
 exports.textLength = textLength;
 exports.toQueryParams = toQueryParams;
@@ -64,6 +66,40 @@ function requireJid(ctx, paramName, label, itemIndex) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be empty`, { itemIndex });
     }
     return value;
+}
+/**
+ * requireJid for the routes whose DTO requires a domain-qualified ID
+ * (`@Matches(/^[^\s@]+@[^\s@]+$/)`). Checking here lets the message name the field,
+ * where the server's 400 detail is stripped in production. The example is fixed
+ * rather than built from the rejected value, which is not a valid ID.
+ */
+function requireFullJid(ctx, paramName, label, itemIndex) {
+    const value = requireJid(ctx, paramName, label, itemIndex);
+    if (!/^[^\s@]+@[^\s@]+$/.test(value)) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} must be a full WhatsApp ID including its domain, such as 628123456789@c.us, not a bare number`, { itemIndex });
+    }
+    return value;
+}
+/**
+ * The invite code in a pasted WhatsApp group or channel link, or the text itself when
+ * it is not a link. Current links carry a query string (`?mode=gi_t`), and some a
+ * trailing slash, a fragment or an `/invite/` segment, none of which is part of the
+ * code. The code follows `/channel/` or `/invite/` when either is present and is the
+ * first path segment otherwise; a link that stops before it yields ''.
+ */
+function inviteCodeFrom(text) {
+    if (!text.includes('/')) {
+        return text;
+    }
+    try {
+        const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+        const segments = url.pathname.split('/').filter(Boolean);
+        const marker = segments.findIndex((s) => s === 'channel' || s === 'invite');
+        return (marker >= 0 ? segments[marker + 1] : segments[0]) ?? '';
+    }
+    catch {
+        return text;
+    }
 }
 /**
  * Reads a required free-text parameter, trimmed, optionally length-checked

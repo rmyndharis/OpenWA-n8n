@@ -103,6 +103,11 @@ async function buildContactRequest(operation, itemIndex) {
                     firstName: (0, params_1.requireText)(this, 'contactFirstName', 'First Name', itemIndex, 100),
                 };
                 const lastName = (0, params_1.asText)(this.getNodeParameter('contactLastName', itemIndex, ''), 'Last Name');
+                if ((0, params_1.textLength)(lastName) > 100) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Last Name cannot exceed 100 characters', {
+                        itemIndex,
+                    });
+                }
                 if (lastName) {
                     body.lastName = lastName;
                 }

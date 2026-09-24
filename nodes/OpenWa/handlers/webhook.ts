@@ -2,7 +2,7 @@ import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { webhookSecretProblem } from '../../shared/webhookSecret';
-import { toQueryParams } from './params';
+import { asText, toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -131,10 +131,28 @@ export async function buildWebhookRequest(
     >;
     // Only forward the fields the user set — the server treats the PUT as a partial
     // update, so unspecified fields keep their current value.
+    const labels = { url: 'URL', events: 'Events', active: 'Active', retryCount: 'Retry Count' };
     for (const key of ['url', 'events', 'active', 'retryCount'] as const) {
-      if (updateFields[key] !== undefined) {
-        body[key] = updateFields[key];
+      const value = updateFields[key];
+      if (value === undefined) continue;
+      // All four are NOT NULL columns: a null reaches the database and answers 500
+      // without applying anything, so an expression that resolved to nothing stops here.
+      if (value === null) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `${labels[key]} resolved to nothing. Remove it from the fields to leave it unchanged.`,
+          { itemIndex },
+        );
       }
+      if (key === 'url') {
+        const url = asText(value, 'URL');
+        if (!url) {
+          throw new NodeOperationError(this.getNode(), 'URL cannot be empty', { itemIndex });
+        }
+        body.url = url;
+        continue;
+      }
+      body[key] = value;
     }
     // The server reads an empty secret as "stop signing" (`@ValidateIf(o => o.secret
     // !== '')` skips the 16-character floor for exactly that value). A blank field
@@ -161,14 +179,16 @@ export async function buildWebhookRequest(
     for (const key of ['headers', 'filters'] as const) {
       const raw = updateFields[key];
       if (raw === undefined) continue; // field not added — nothing to send
-      if (key === 'filters' && (raw === null || raw === 'null')) {
+      // Padding included: ' null' parses to null all the same.
+      const isNull = raw === null || (typeof raw === 'string' && raw.trim() === 'null');
+      if (key === 'filters' && isNull) {
         body.filters = null; // explicit null clears existing filters
         continue;
       }
       // Headers are NOT NULL server-side and clear with an empty object, so null
       // would be written straight into the column and fail the constraint. Accept
       // the same gesture the sibling field documents and send what the column takes.
-      if (key === 'headers' && (raw === null || raw === 'null')) {
+      if (key === 'headers' && isNull) {
         body.headers = {};
         continue;
       }
