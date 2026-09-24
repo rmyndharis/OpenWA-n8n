@@ -33,6 +33,8 @@ function makeCtx({
   nodeParameters = {},
   // The workflow timezone, which n8n exposes through getTimezone().
   timezone = 'UTC',
+  // The node's On Error setting; unset on nodes saved before n8n introduced it.
+  onError,
 } = {}) {
   const calls = [];
   const prepared = [];
@@ -51,6 +53,7 @@ function makeCtx({
       typeVersion,
       position: [0, 0],
       parameters: nodeParameters,
+      onError,
     }),
     helpers: {
       httpRequestWithAuthentication: async (credName, options) => {
@@ -4618,30 +4621,64 @@ test('message/cancelBatch encodes the batch ID rather than refusing it', async (
 });
 
 // --- Error output -------------------------------------------------------------
-// n8n routes a kept-going item to the error output only when the item carries
-// `error` or its json has nothing beyond error/message/details. The json here also
-// carries `description`, so without `error` on the item every gateway failure went
-// down the success branch.
+// n8n diverts a kept-going item to the error output when its json holds only
+// error/message/details (n8n-core 2.x) or exactly {error} / {error, message} (1.x).
+// Setting `error` on the item also diverts it, but n8n then rewrites the item's json
+// to {error}, losing the gateway's reason and the paired input fields it otherwise
+// merges in, so the json has to be shaped instead.
 
-test('a failed request under Continue On Fail carries its error for the error output', async () => {
-  const axiosLike = Object.assign(new Error('Request failed with status code 409'), {
+// Both n8n-core rules, as handleNodeErrorOutput applies them.
+const routesToErrorOutput = (item) => {
+  if (item.error) return true;
+  const keys = Object.keys(item.json);
+  const v2 = Boolean(item.json.error) && keys.every((k) => ['error', 'message', 'details'].includes(k));
+  const v1 =
+    Boolean(item.json.error) &&
+    (keys.length === 1 || (keys.length === 2 && Boolean(item.json.message)));
+  return v1 && v2;
+};
+
+const gatewayRefusal = () =>
+  Object.assign(new Error('Request failed with status code 409'), {
     response: { status: 409, data: { message: 'Session is not ready (status: disconnected)' } },
   });
-  const { output } = await run(
-    { resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: '1@c.us', message: 'hi' },
-    { throwErr: axiosLike, continueOnFail: true },
-  );
+const sendText = {
+  resource: 'message',
+  operation: 'sendText',
+  sessionId: 'abc-123',
+  chatId: '1@c.us',
+  message: 'hi',
+};
+
+test('a gateway failure under Continue (using error output) reaches the error output with its reason', async () => {
+  const { output } = await run(sendText, {
+    throwErr: gatewayRefusal(),
+    continueOnFail: true,
+    onError: 'continueErrorOutput',
+  });
   const item = output[0][0];
-  assert.ok(item.error instanceof NodeApiError, 'the item must carry the NodeApiError');
-  assert.match(item.json.description, /Session is not ready/);
+  assert.equal(item.error, undefined, 'item.error makes n8n rewrite the json');
+  assert.match(item.json.message, /Session is not ready/);
+  assert.ok(routesToErrorOutput(item));
 });
 
-test('a parameter mistake under Continue On Fail carries its error too', async () => {
+test('Continue (regular output) keeps the reason under description, as before', async () => {
+  const { output } = await run(sendText, {
+    throwErr: gatewayRefusal(),
+    continueOnFail: true,
+    onError: 'continueRegularOutput',
+  });
+  assert.match(output[0][0].json.description, /Session is not ready/);
+  assert.equal(output[0][0].error, undefined);
+});
+
+test('a parameter mistake under Continue (using error output) still reaches the error output', async () => {
   const { output } = await run(
     { resource: 'session', operation: 'getStatus', sessionId: '  ' },
-    { continueOnFail: true },
+    { continueOnFail: true, onError: 'continueErrorOutput' },
   );
-  assert.equal(output[0][0].error?.constructor.name, 'NodeOperationError');
+  assert.equal(output[0][0].error, undefined);
+  assert.ok(routesToErrorOutput(output[0][0]));
 });
 
 // --- Empty expression results -------------------------------------------------

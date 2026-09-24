@@ -4300,9 +4300,8 @@ export class OpenWa implements INodeType {
           // on the one path built to survive it.
           let message: string;
           let description: string | undefined;
-          let wrapped: NodeApiError | NodeOperationError | undefined;
           try {
-            wrapped =
+            const wrapped =
               error instanceof NodeApiError
                 ? error
                 : new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
@@ -4312,12 +4311,20 @@ export class OpenWa implements INodeType {
           } catch {
             message = String((error as Error | undefined)?.message ?? error);
           }
-          // `error` on the item is what sends it down the error output. n8n otherwise
-          // recognises a failed item only when its json holds nothing beyond
-          // error/message/details, and `description` is outside that set.
+          // n8n diverts an item to the error output only when its json holds nothing
+          // beyond error and message (1.x: exactly those; 2.x: also details), so there
+          // the server's reason goes under `message`. `description` sent every gateway
+          // failure down the success branch. Setting `error` on the item would divert
+          // it too, but n8n then rewrites its json to {error} and drops both the
+          // reason and the input fields it merges in. The regular output keeps
+          // `description`, the shape workflows built on it already read.
+          const reasonKey =
+            this.getNode().onError === 'continueErrorOutput' ? 'message' : 'description';
           returnData.push({
-            json: description === undefined ? { error: message } : { error: message, description },
-            ...(wrapped && { error: wrapped }),
+            json:
+              description === undefined
+                ? { error: message }
+                : { error: message, [reasonKey]: description },
             pairedItem: { item: i },
           });
           continue;
