@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.1.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.0.1...v1.1.0) (2026-09-24)
+
+
+### Features
+
+* synchronize the node with OpenWA 0.23.6 ([#54](https://github.com/rmyndharis/OpenWA-n8n/issues/54)) ([af89530](https://github.com/rmyndharis/OpenWA-n8n/commit/af895304f7dd22b4121a63b50f76251984f57564))
+
+
+### Bug Fixes
+
+* close the input edge cases left in names, media, dates and updates ([#57](https://github.com/rmyndharis/OpenWA-n8n/issues/57)) ([7f5fa74](https://github.com/rmyndharis/OpenWA-n8n/commit/7f5fa74d292c270646baca4581d875d9afcfa0d2))
+* guard request paths, route failed items, and read expression input as meant ([#56](https://github.com/rmyndharis/OpenWA-n8n/issues/56)) ([af9b9a8](https://github.com/rmyndharis/OpenWA-n8n/commit/af9b9a8321c0d27324ca8171c209a2cd99dbc289))
+* keep input fields on the error output and name documents from real file names ([#58](https://github.com/rmyndharis/OpenWA-n8n/issues/58)) ([1d8ccf9](https://github.com/rmyndharis/OpenWA-n8n/commit/1d8ccf96694ef5fb3c1f970cd07cc2431f16edd4))
+* keep saved workflows on the Filename default and null clears of 1.0.1 ([#59](https://github.com/rmyndharis/OpenWA-n8n/issues/59)) ([d2a2371](https://github.com/rmyndharis/OpenWA-n8n/commit/d2a2371bac0add836a363f19937be2a1eae2008f))
+
+
+### Upgrade notes
+
+* With On Error set to Continue (using error output), a failed request now reaches the error output as the input item plus an `error` that ends with the gateway's reason. 1.0.1 sent it to the success output as `{ error, description }`. Continue (regular output) is unchanged.
+* Date fields without a timezone (Chat > Mute Until, Call > Create Link Start Time, API Key Expires At, System > Search Date From and Date To) are read in the workflow timezone. A date with no time is midnight in that zone, not in UTC.
+* Activating an OpenWA Trigger removes any other webhook registration on its session that uses the Trigger's URL.
+* API Key > Create names the key from Name only. Fields > Name now applies to Update.
+* Input that 1.0.1 dropped, altered or left for the server to reject, such as an update field whose expression found nothing, now fails the item with an error that names the field.
+
 ## [1.0.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.0.0...v1.0.1) (2026-09-07)
 
 
