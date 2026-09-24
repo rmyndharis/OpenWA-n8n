@@ -166,6 +166,16 @@ function messageBody(ctx: IExecuteFunctions, raw: unknown, itemIndex: number): s
   return typeof raw === 'string' ? raw : String(raw);
 }
 
+/** The last path segment of a URL when it looks like a file name, else ''. */
+function fileNameInUrl(url: string): string {
+  try {
+    const last = new URL(url).pathname.split('/').pop() ?? '';
+    return last.includes('.') ? decodeURIComponent(last) : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function buildMessageRequest(
   this: IExecuteFunctions,
   operation: string,
@@ -271,14 +281,19 @@ export async function buildMessageRequest(
     body = { chatId };
     // A binary item names itself; a URL or base64 source is named by the gateway.
     // The field used to default to 'document.pdf', which renamed every document.
+    // An empty field takes the binary item's own name, else the file name in a URL's
+    // path, else the old default. Left unnamed, the gateway calls it 'file' with no
+    // extension on Baileys, which is worse than the default it replaced.
+    const source = this.getNodeParameter('documentSource', itemIndex);
     let filename = asText(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
-    if (!filename && this.getNodeParameter('documentSource', itemIndex) === 'binary') {
+    if (!filename && source === 'binary') {
       const property = this.getNodeParameter('documentBinaryProperty', itemIndex) as string;
       filename = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
     }
-    if (filename) {
-      body.filename = filename;
+    if (!filename && source === 'url') {
+      filename = fileNameInUrl(asText(this.getNodeParameter('documentUrl', itemIndex, '')));
     }
+    body.filename = filename || 'document.pdf';
     const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
     if (caption) {
       body.caption = caption;

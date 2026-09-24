@@ -359,18 +359,47 @@ const mappingCases = [
 
   // ---- message: sendDocument ----
   [
-    'message/sendDocument from URL leaves the name to the gateway',
+    'message/sendDocument from URL is named after the file in the URL',
     {
       resource: 'message',
       operation: 'sendDocument',
       sessionId: 'abc-123',
       chatId: '1@c.us',
       documentSource: 'url',
-      documentUrl: 'https://x/f.pdf',
+      documentUrl: 'https://x/files/invoice-123.pdf?sig=abc',
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-document`,
-    { chatId: '1@c.us', url: 'https://x/f.pdf' },
+    { chatId: '1@c.us', filename: 'invoice-123.pdf', url: 'https://x/files/invoice-123.pdf?sig=abc' },
+  ],
+  [
+    'message/sendDocument from a URL with no file name keeps the old default name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'url',
+      documentUrl: 'https://x/download',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    { chatId: '1@c.us', filename: 'document.pdf', url: 'https://x/download' },
+  ],
+  [
+    'message/sendDocument from base64 with no name keeps the old default name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'base64',
+      documentBase64: 'QkFTRTY0',
+      documentMimeType: 'application/pdf',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    { chatId: '1@c.us', filename: 'document.pdf', base64: 'QkFTRTY0', mimetype: 'application/pdf' },
   ],
   [
     'message/sendDocument from binary keeps the file its own name',
@@ -430,7 +459,7 @@ const mappingCases = [
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-document`,
-    { chatId: '1@c.us', base64: IMG_B64, mimetype: 'application/octet-stream' },
+    { chatId: '1@c.us', filename: 'document.pdf', base64: IMG_B64, mimetype: 'application/octet-stream' },
     { binary: { mimeType: '' } },
   ],
 
@@ -5087,4 +5116,74 @@ test('message/sendPoll still reads a "true" string as multiple answers', async (
     allowMultipleAnswers: 'true',
   });
   assert.equal(singleCall(ctx).options.body.allowMultipleAnswers, true);
+});
+
+// Truthiness was the old reading, so every value that used to switch these on still
+// does; only the words that plainly mean off now read as off.
+for (const [value, on] of [
+  [1, true],
+  ['1', true],
+  ['TRUE', true],
+  [' true ', true],
+  ['yes', true],
+  ['FALSE', false],
+  ['0', false],
+  ['no', false],
+  [0, false],
+  ['', false],
+]) {
+  test(`message/sendAudio reads Send as Voice Note ${JSON.stringify(value)} as ${on ? 'on' : 'off'}`, async () => {
+    const { ctx } = await run({
+      resource: 'message',
+      operation: 'sendAudio',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      audioSource: 'url',
+      audioUrl: 'https://example.com/a.ogg',
+      sendAsVoiceNote: value,
+    });
+    assert.equal(singleCall(ctx).options.body.ptt, on ? true : undefined);
+  });
+}
+
+test('a date typed with a space instead of T is also read in the workflow timezone', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-11-01 12:00:00' },
+    timezone: 'America/New_York',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T17:00:00Z'));
+});
+
+test('an unknown workflow timezone falls back instead of throwing a RangeError', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-11-01T12:00:00' },
+    timezone: 'Not/AZone',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T12:00:00'));
+});
+
+test('an impossible picked date is refused by field name', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-13-01T09:00:00' },
+    timezone: 'Asia/Jakarta',
+  });
+  await assert.rejects(() => new OpenWa().execute.call(ctx), /Mute Until is not a valid date/);
+});
+
+test('system/search still sends a Date From of 0, which the gateway reads as no lower bound', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'search',
+    searchQuery: 'invoice',
+    searchFilters: { dateFrom: 0 },
+  });
+  assert.equal(singleCall(ctx).options.qs.dateFrom, 0);
+});
+
+test('API Key > Create does not offer the Update-only Fields > Name', () => {
+  const keyFields = new OpenWa().description.properties.find((p) => p.name === 'keyFields');
+  const name = keyFields.options.find((o) => o.name === 'name');
+  assert.deepEqual(name.displayOptions, { show: { '/operation': ['update'] } });
 });

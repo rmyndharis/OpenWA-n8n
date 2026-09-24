@@ -4101,7 +4101,9 @@ export class OpenWa implements INodeType {
             name: 'name',
             type: 'string',
             default: '',
-            description: 'A friendly name for the key',
+            // Create takes its name from the required Name field above.
+            displayOptions: { show: { '/operation': ['update'] } },
+            description: 'A new friendly name for the key',
           },
           {
             displayName: 'Role',

@@ -64,10 +64,14 @@ function asText(value, label = 'This field') {
 /**
  * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
  * driven by an expression, so it can arrive as text from a sheet, a form or a query
- * string, and the string 'false' is truthy.
+ * string, where 'false' is truthy. Truthiness stays the reading for everything else,
+ * so every value that used to switch a toggle on still does.
  */
 function isOn(value) {
-    return value === true || value === 'true';
+    if (typeof value === 'string') {
+        return !['', 'false', '0', 'no', 'off'].includes(value.trim().toLowerCase());
+    }
+    return Boolean(value);
 }
 function requireJid(ctx, paramName, label, itemIndex) {
     const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);
@@ -179,7 +183,9 @@ function toEpochMs(ctx, raw, label, itemIndex) {
     // gateway's payload timestamps are Unix seconds, so {{ $json.data.timestamp + 86400 }}
     // arrives as a ten-digit number and read as milliseconds it lands in January 1970,
     // which the gateway accepts as a mute that has already expired.
-    if (typeof raw === 'number' && Number.isFinite(raw) && Math.abs(raw) < 1e11) {
+    // 0 is let through: System > Search reads it as "no bound", and a mute of 0 is
+    // still refused by the gateway itself.
+    if (typeof raw === 'number' && raw !== 0 && Number.isFinite(raw) && Math.abs(raw) < 1e11) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} looks like epoch seconds. Epoch values are milliseconds, not seconds.`, { itemIndex });
     }
     const zoned = ZONELESS_DATE_TIME.test(text)
@@ -199,28 +205,40 @@ function toEpochMs(ctx, raw, label, itemIndex) {
     }
     return ms;
 }
-/** What n8n's date picker stores: a wall-clock time with no zone. */
-const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
+/**
+ * What n8n's date picker stores, a wall-clock time with no zone, and the same with a
+ * space for the T, as an expression often builds it.
+ */
+const ZONELESS_DATE_TIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/;
 /**
  * Reads a zone-less wall-clock time in the workflow's timezone. Date.parse reads it
  * in the n8n process's zone instead, which in a container is usually UTC, so a mute
  * picked for 09:00 in Jakarta ended seven hours late.
  */
 function wallTimeToEpochMs(text, timeZone) {
-    if (!timeZone) {
+    // An impossible date (month 13) or a zone Intl does not know falls back to
+    // Date.parse, which refuses the first by field name and reads the second in the
+    // process zone, instead of escaping as a bare RangeError.
+    const asUtc = Date.parse(`${text.replace(' ', 'T')}Z`);
+    if (!timeZone || !Number.isFinite(asUtc)) {
         return undefined;
     }
-    const asUtc = Date.parse(`${text}Z`);
-    const format = new Intl.DateTimeFormat('en-US', {
-        timeZone,
-        hourCycle: 'h23',
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric',
-    });
+    let format;
+    try {
+        format = new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            hourCycle: 'h23',
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+        });
+    }
+    catch {
+        return undefined;
+    }
     // The zone's offset from UTC at an instant, from how that instant reads there.
     const offsetAt = (instant) => {
         const part = Object.fromEntries(format.formatToParts(new Date(instant)).map((p) => [p.type, Number(p.value)]));

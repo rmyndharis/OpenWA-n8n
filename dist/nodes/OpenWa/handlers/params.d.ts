@@ -3,7 +3,8 @@ export declare function asText(value: unknown, label?: string): string;
 /**
  * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
  * driven by an expression, so it can arrive as text from a sheet, a form or a query
- * string, and the string 'false' is truthy.
+ * string, where 'false' is truthy. Truthiness stays the reading for everything else,
+ * so every value that used to switch a toggle on still does.
  */
 export declare function isOn(value: unknown): boolean;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;

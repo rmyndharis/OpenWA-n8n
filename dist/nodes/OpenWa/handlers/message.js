@@ -137,6 +137,16 @@ function messageBody(ctx, raw, itemIndex) {
     }
     return typeof raw === 'string' ? raw : String(raw);
 }
+/** The last path segment of a URL when it looks like a file name, else ''. */
+function fileNameInUrl(url) {
+    try {
+        const last = new URL(url).pathname.split('/').pop() ?? '';
+        return last.includes('.') ? decodeURIComponent(last) : '';
+    }
+    catch {
+        return '';
+    }
+}
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     // Bulk / batch operations are not addressed to a single chat, and Forward and
@@ -223,14 +233,19 @@ async function buildMessageRequest(operation, itemIndex) {
         body = { chatId };
         // A binary item names itself; a URL or base64 source is named by the gateway.
         // The field used to default to 'document.pdf', which renamed every document.
+        // An empty field takes the binary item's own name, else the file name in a URL's
+        // path, else the old default. Left unnamed, the gateway calls it 'file' with no
+        // extension on Baileys, which is worse than the default it replaced.
+        const source = this.getNodeParameter('documentSource', itemIndex);
         let filename = (0, params_1.asText)(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
-        if (!filename && this.getNodeParameter('documentSource', itemIndex) === 'binary') {
+        if (!filename && source === 'binary') {
             const property = this.getNodeParameter('documentBinaryProperty', itemIndex);
             filename = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
         }
-        if (filename) {
-            body.filename = filename;
+        if (!filename && source === 'url') {
+            filename = fileNameInUrl((0, params_1.asText)(this.getNodeParameter('documentUrl', itemIndex, '')));
         }
+        body.filename = filename || 'document.pdf';
         const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
         if (caption) {
             body.caption = caption;
