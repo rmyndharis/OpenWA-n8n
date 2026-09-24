@@ -68,7 +68,9 @@ async function buildSessionRequest(operation, itemIndex) {
     }
     if (operation === 'listAll') {
         const options = this.getNodeParameter('sessionListOptions', itemIndex, {});
-        return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: (0, params_1.toQueryParams)(options) };
+        // Trimmed as Create trims it: the server matches the name exactly.
+        const qs = (0, params_1.toQueryParams)({ ...options, name: (0, params_1.asText)(options.name, 'Name') });
+        return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
     }
     if (operation === 'getStatsOverview') {
         return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };

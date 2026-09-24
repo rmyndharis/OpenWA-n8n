@@ -1665,6 +1665,35 @@ mappingCases.push(
     { chatId: CHAT, messageId: 'm1', star: false },
   ],
   [
+    'message/clickButton leaves the label for the server to resolve',
+    {
+      resource: 'message',
+      operation: 'clickButton',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      buttonId: 'opt-yes',
+    },
+    'POST',
+    `${SESS}/messages/click-button`,
+    { chatId: CHAT, messageId: 'm1', buttonId: 'opt-yes' },
+  ],
+  [
+    'message/clickButton sends a visible label when one is given',
+    {
+      resource: 'message',
+      operation: 'clickButton',
+      ...S,
+      chatId: CHAT,
+      messageId: 'm1',
+      buttonId: 'opt-yes',
+      buttonText: 'Yes',
+    },
+    'POST',
+    `${SESS}/messages/click-button`,
+    { chatId: CHAT, messageId: 'm1', buttonId: 'opt-yes', text: 'Yes' },
+  ],
+  [
     'message/votePoll uses the pollMessageId wire name',
     {
       resource: 'message',
@@ -2478,6 +2507,30 @@ mappingCases.push(
     { name: 'ops', role: 'operator', allowedIps: ['10.0.0.1'] },
   ],
   [
+    'apiKey/create with a chat allowlist',
+    {
+      resource: 'apiKey',
+      operation: 'create',
+      keyName: 'support',
+      keyFields: { allowedChats: '120363000000000000@g.us, 628123456789' },
+    },
+    'POST',
+    `${BASE}/api/auth/api-keys`,
+    { name: 'support', allowedChats: ['120363000000000000@g.us', '628123456789'] },
+  ],
+  [
+    'apiKey/update narrows the chat allowlist',
+    {
+      resource: 'apiKey',
+      operation: 'update',
+      keyId: 'k1',
+      keyFields: { allowedChats: ['628123456789@c.us'] },
+    },
+    'PUT',
+    `${BASE}/api/auth/api-keys/k1`,
+    { allowedChats: ['628123456789@c.us'] },
+  ],
+  [
     'apiKey/update',
     { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { role: 'viewer' } },
     'PUT',
@@ -3014,6 +3067,30 @@ test('message/list forwards its filters', async () => {
     messageListOptions: { chatId: '1@c.us', limit: 10 },
   });
   assert.deepEqual(singleCall(ctx).options.qs, { chatId: '1@c.us', limit: 10 });
+});
+
+test('session/listAll offers the exact-name filter and forwards it', async () => {
+  // The handler forwards the whole collection, so the option is the change: without
+  // it the filter is reachable only by hand-editing workflow JSON.
+  const list = new OpenWa().description.properties.find((p) => p.name === 'sessionListOptions');
+  assert.ok(list.options.some((o) => o.name === 'name'));
+  const { ctx } = await run({
+    resource: 'session',
+    operation: 'listAll',
+    sessionListOptions: { name: 'sales-bot' },
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { name: 'sales-bot' });
+});
+
+test('session/listAll trims the name filter, as Create trims the name', async () => {
+  // The server matches exactly and a session name cannot hold whitespace, so a stray
+  // space would silently match nothing.
+  const { ctx } = await run({
+    resource: 'session',
+    operation: 'listAll',
+    sessionListOptions: { name: ' sales-bot ', limit: 10 },
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { name: 'sales-bot', limit: 10 });
 });
 
 test('message/list forwards the v0.23.4 cursor and the inline-media opt-out', async () => {
@@ -4223,6 +4300,42 @@ const guardCases = [
       customLinkPreview: { previewUrl: 'https://example.com', previewTitle: 'Example' },
     },
     /cannot be combined with Link Preview set to No Preview/,
+  ],
+  [
+    'message/clickButton rejects a blank button id',
+    {
+      resource: 'message',
+      operation: 'clickButton',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'm1',
+      buttonId: '  ',
+    },
+    /Button ID cannot be empty/,
+  ],
+  [
+    'message/clickButton rejects a button id no prompt can offer',
+    {
+      resource: 'message',
+      operation: 'clickButton',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: 'm1',
+      buttonId: 'x'.repeat(257),
+    },
+    /Button ID cannot exceed 256 characters/,
+  ],
+  [
+    'message/clickButton rejects a blank prompt message id',
+    {
+      resource: 'message',
+      operation: 'clickButton',
+      sessionId: 'abc-123',
+      chatId: '628123456789@c.us',
+      messageId: '',
+      buttonId: 'opt-yes',
+    },
+    /Message ID cannot be empty/,
   ],
   [
     'message/sendProduct rejects a blank product id',

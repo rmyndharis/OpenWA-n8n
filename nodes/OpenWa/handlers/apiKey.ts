@@ -75,7 +75,7 @@ export async function buildApiKeyRequest(
 }
 
 /**
- * Maps the shared optional-fields collection onto the DTO. The two list fields
+ * Maps the shared optional-fields collection onto the DTO. The three list fields
  * arrive as n8n `multipleValues` strings and are normalised here; an empty list
  * is dropped rather than sent, so it never silently clears a whitelist.
  */
@@ -128,6 +128,10 @@ function collectApiKeyFields(
   const allowedSessions = toStringList(fields.allowedSessions);
   if (allowedSessions.length > 0) {
     body.allowedSessions = allowedSessions;
+  }
+  const allowedChats = toStringList(fields.allowedChats);
+  if (allowedChats.length > 0) {
+    body.allowedChats = allowedChats;
   }
   return body;
 }

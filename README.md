@@ -67,9 +67,11 @@ Create an **OpenWA API** credential:
 
 The credential is validated with an authenticated `GET /api/sessions` request, so an invalid API key fails the test.
 
-> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations include Session → Get Status / List All / Get Proxy, and Contact → Check Exists / Get Info. Some need **ADMIN**: **Webhook → Get Delivery Failures**, the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**, and every **API Key** operation except **Validate**, which any valid key may call to report its own role. An **ADMIN** key (the first-boot default) works for every operation.
+> **API key role:** send-message and webhook operations require an **OPERATOR**-role key (the default). A read-only **VIEWER** key passes the credential test but returns `403` when sending or managing webhooks. VIEWER-safe operations include Session → Get Status / List All / Get Proxy, and Contact → Check Exists / Get Info. Some need **ADMIN**: **Webhook → Get Delivery Failures**, the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**, and every **API Key** operation except **Validate**, which any valid key not restricted with `allowedChats` may call to report its own role. An **ADMIN** key (the first-boot default) works for every operation.
 
 > **Per-key scoping:** the server enforces each key's `allowedIps` and `allowedSessions`. An IP-whitelisted key must allow the n8n host's IP, and a session-restricted key returns `401` for operations on sessions outside its allow-list. Some surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session → Create**, **Session → Update Proxy**, the **System** reads **Get Settings**, **Get Stats Overview** and **Get Message Stats**, and every **API Key** operation except **Validate**. Configure all of this on the server, not in the node.
+
+> **Chat-restricted keys:** a key created with `allowedChats` (server **≥ 0.23.6**) is default-deny: the server refuses it with `403 API key is restricted to selected chats` on every route not marked chat-aware. The credential test, every dropdown except the chat pickers, the **OpenWA Trigger** and **API Key → Validate** all fail with such a key, as do the **List** operations other than **Chat → List** and the optional **Quoted Message ID** on sends. Give it to workflows that only send to or read from the chats it names, and set the session ID with an expression or a fixed value, since the Session dropdown cannot load.
 
 ---
 
@@ -160,6 +162,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Media**           | Convert to Video            | Convert video into a compatible format               |
 | **Media**           | Convert to Voice Note       | Convert audio into a voice note                      |
 | **Message**         | Cancel Batch                | Cancel a bulk batch                                  |
+| **Message**         | Click Button                | Click a button on a business prompt                  |
 | **Message**         | Delete                      | Delete a message                                     |
 | **Message**         | Edit                        | Edit a sent message                                  |
 | **Message**         | Forward                     | Forward a message to another chat                    |
@@ -239,7 +242,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Webhook**         | Test                        | Send a test delivery to a webhook                    |
 | **Webhook**         | Update                      | Update a webhook                                     |
 
-> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed. Two groups need **ADMIN**: every **API Key** operation except **Validate**, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
+> **Roles:** most reads work with a plain API key, while writes generally need an **OPERATOR** key. A `403` almost always means the credential's role is too low, not that the request was malformed; a key restricted with `allowedChats` is another cause (see **Chat-restricted keys** above). Two groups need **ADMIN**: every **API Key** operation except **Validate**, and the **System** reads **Get Settings**, **Get Stats Overview**, **Get Message Stats** and **Get Audit Log**. The three stats and settings reads additionally need a key that is *not* restricted to specific sessions, because they report across the whole server.
 
 > **List output and node versions:** a list operation (Session > List All, Chat > List, Contact > List, Group > List, Label > List, Webhook > List, and the rest that answer a bare array) emits **one item per row** on node version 2, the version a newly added node gets, so `$json.<field>` reads a row directly and Split Out is not needed. An empty list then yields zero items and the downstream node does not run; enable **Always Output Data** where that matters. A node saved on any release up to and including 1.0.0 stays on version 1 across package upgrades and keeps the whole array on a single item, so an existing workflow reading `$json[0]` is unaffected. A node added while on 1.0.0 got the per-row output without a version of its own, so it returns to the whole array on upgrade; delete and re-add it to move it to version 2. Routes that answer an envelope, such as Message > List and System > Search, keep their shape on both versions because flattening them would drop `total` and the other envelope fields.
 
@@ -247,7 +250,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Not offered:** the server's administration surface, which a workflow has no business driving: the infrastructure, plugin, ingress and integration controllers, plus `/api/metrics`, which authenticates with its own bearer token rather than the API key this credential carries. **Send Catalog** is gone from the server entirely. Settings are environment-derived, and the server publishes no write route for them, so the System resource reads them only. **Search** needs a search provider configured server-side, otherwise it answers `501`, and can answer `502` or `503` when a plugin provider misbehaves or does not respond.
 
-> **Engine split:** several operations exist on one engine only, and the node says so on the field or resource rather than leaving a `501` to explain itself. **Catalog** and **Send Product** are Baileys only, as is **Presence > Subscribe** and both label writes; **Vote Poll**, the **Channel** listing and **Channel > Get Messages** are whatsapp-web.js only, and the label reads with them. Because the channel listing is whatsapp-web.js only, the Channel ID dropdown cannot populate on Baileys: supply the ID (`<digits>@newsletter`) from an expression there.
+> **Engine split:** several operations exist on one engine only, and the node says so on the field or resource rather than leaving a `501` to explain itself. **Catalog**, **Send Product** and **Click Button** are Baileys only, as are **Presence > Subscribe**, **Call > Reject** and both label writes; **Vote Poll**, the **Channel** listing and **Channel > Get Messages** are whatsapp-web.js only, and the label reads with them. Because the channel listing is whatsapp-web.js only, the Channel ID dropdown cannot populate on Baileys: supply the ID (`<digits>@newsletter`) from an expression there.
 
 > **Send Product** returns `{id, timestamp}` where every other send returns `{messageId, timestamp}`. The node passes the response through unchanged rather than normalising it, so the difference stays visible.
 
@@ -255,7 +258,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list and is the only engine that honors it. whatsapp-web.js ignores the list entirely and posts to every contact whether one is supplied or not, so do not rely on it to limit the audience there.
 
-> **Group operations:** reads (List, Get, Get Settings, Get Invite Code) work with a plain API key, but every write — create, join, leave, participant changes, subject/description/settings, and invite-code revoke — needs a key with the **OPERATOR** role, otherwise the server answers `403`. Add/Remove/Promote/Demote report a per-participant outcome in `results[]` and a partial refusal does *not* fail the batch, so check `results[].success` rather than the top-level `success`. **Update Settings** is partial — fields you leave out stay untouched — and `ephemeralSeconds` is Baileys-only (whatsapp-web.js returns `501`).
+> **Group operations:** reads (List, Get, Get Settings) work with a plain API key, while **Get Invite Code** needs **OPERATOR** from server **≥ 0.23.5**, since the code lets anyone join the group. Every write — create, join, leave, participant changes, subject/description/settings, and invite-code revoke — needs a key with the **OPERATOR** role, otherwise the server answers `403`. Add/Remove/Promote/Demote report a per-participant outcome in `results[]` and a partial refusal does *not* fail the batch, so check `results[].success` rather than the top-level `success`. **Update Settings** is partial — fields you leave out stay untouched — and `ephemeralSeconds` is Baileys-only (whatsapp-web.js returns `501`).
 
 > **Base64 media:** when sending an image, document, or audio clip from a **Base64** source, also set the **MIME Type** field (e.g. `image/png`, `application/pdf`, `audio/ogg; codecs=opus`) — OpenWA requires a MIME type for base64 payloads. The **Binary** source fills it in automatically from the binary metadata, and the **URL** source needs nothing extra.
 
@@ -315,7 +318,7 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 | `status.received`       | A contact's Status (Story) received    |
 | `session.reconnect_loop`| Session stuck in a reconnect loop (server **≥ 0.10.0**) |
 | `session.restriction`   | WhatsApp placed or lifted a restriction on the account |
-| `call.received`         | Incoming call detected                 |
+| `call.received`         | Incoming call detected (not reliable on whatsapp-web.js) |
 | `call.accepted`         | Incoming call answered — **Baileys only** |
 | `call.rejected`         | Incoming call declined, including auto-reject — **Baileys only** |
 | `call.missed`           | Incoming call went unanswered — **Baileys only** |
@@ -330,7 +333,7 @@ The Trigger's optional **Filters** field is registered with the webhook, so the 
 { "conditions": [{ "field": "isGroup", "operator": "is", "value": false }] }
 ```
 
-Conditions are ANDed, at most 20. The fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `kind`, `fromMe`, `hasMedia` and `mentions`. `kind` (server >= 0.23.4) names the chat kind, one of `individual`, `group`, `channel`, `status`, `broadcast` or `unknown`; it is the only way to single out or exclude a Channel post, which `isGroup` reports as false along with everything else. Value shape is enforced at registration: the ID, mentions, type and kind fields take a non-empty array, `body` takes a plain string, and the boolean fields take a real boolean.
+Conditions are ANDed, at most 20. The fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `kind`, `chatId`, `fromMe`, `hasMedia` and `mentions`. `kind` (server >= 0.23.4) names the chat kind, one of `individual`, `group`, `channel`, `status`, `broadcast` or `unknown`; it is the only way to single out or exclude a Channel post, which `isGroup` reports as false along with everything else. `chatId` (server >= 0.23.6) scopes to one conversation, a DM or a group such as `120363000000000000@g.us`, where `sender` matches only who wrote the message; like `sender`, an `is` condition on it drops every Message Ack and Message Failed event, which carry no chat ID. Value shape is enforced at registration: the ID, mentions, type and kind fields take a non-empty array, `body` takes a plain string, and the boolean fields take a real boolean.
 
 > Two things are worth knowing before relying on them. Filters only narrow **message** events, so `session.*`, `group.*` and `call.*` events are delivered whatever the filter says. And a filtered-out delivery is silent: from n8n it is indistinguishable from nothing having happened, so an over-strict filter looks like a broken trigger. Changing the filter re-registers the webhook on the next activation.
 
@@ -394,7 +397,7 @@ It is best-effort: workflow static data is saved per execution, so two deliverie
 
 Requires an OpenWA server **≥ 0.16.0**. A floor is set by the newest thing the node needs, and three things move it independently.
 
-The **routes** the action node calls set the badge at v0.16.0: **Call > Create Link** arrived there. Most of the rest of the surface landed in v0.14.0 (message pin/star/vote, chat archive/mute/pin/clear, presence, media conversion, voice statuses, group pictures and join preview, channel administration, label writes and automation rules) with membership requests, the blocklist read and session config in v0.15.0. Two operations sit above the badge: **Session > Get Proxy** and **Session > Update Proxy** need server **≥ 0.23.4**, where the per-session proxy became readable and patchable rather than fixed at creation. Against an older server those specific operations answer `404` and everything else still works.
+The **routes** the action node calls set the badge at v0.16.0: **Call > Create Link** arrived there. Most of the rest of the surface landed in v0.14.0 (message pin/star/vote, chat archive/mute/pin/clear, presence, media conversion, voice statuses, group pictures and join preview, channel administration, label writes and automation rules) with membership requests, the blocklist read and session config in v0.15.0. Three operations sit above the badge: **Session > Get Proxy** and **Session > Update Proxy** need server **≥ 0.23.4**, where the per-session proxy became readable and patchable rather than fixed at creation, and **Message > Click Button** needs server **≥ 0.23.6**. Against an older server those specific operations answer `404` and everything else still works.
 
 The **event catalog** sets 0.15.0. `group.join_request` does not exist in core before v0.15.0, and `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` do not exist before v0.14.0 (a v0.14.x server knows 22 events, not 23), so a Trigger subscribing to any of the six is rejected at registration by the server's own event validation. That is a harder failure than a `404` on one operation.
 
@@ -409,8 +412,11 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | **After Row ID** | Message > List | server **≥ 0.23.4** |
 | **Inline Media** | Message > List | server **≥ 0.23.4** |
 | **`kind` filter field** | Trigger Filters, Webhook > Create / Update | server **≥ 0.23.4** |
+| **Name** | Session > List All | server **≥ 0.23.5** |
+| **Allowed Chats** | API Key > Create / Update | server **≥ 0.23.6** |
+| **`chatId` filter field** | Trigger Filters, Webhook > Create / Update, Automation Rule conditions | server **≥ 0.23.6** |
 
-> Three of those rows fail differently on an older server, because they are not body fields. **After Row ID** and **Inline Media** are query parameters the messages route reads loose, so a pre-0.23.4 server ignores them instead of refusing: a cursor walk silently falls back to offset paging, and the inline-media opt-out silently keeps inlining. The **`kind`** filter field is validated when the webhook is registered, so a condition naming it is refused with a `400` at activation rather than at delivery.
+> Five of those rows fail differently on an older server, because they are not body fields. **After Row ID**, **Inline Media** and **Name** are query parameters their routes read loose, so an older server ignores them instead of refusing: a cursor walk silently falls back to offset paging, the inline-media opt-out silently keeps inlining, and a name lookup returns every session. The **`kind`** and **`chatId`** filter fields are validated when the webhook or rule is saved, so a condition naming one is refused with a `400` then (at activation, for the Trigger) rather than at delivery.
 
 > Everything else in the table above is available at the badge floor. Where an operation exists on only one engine, the node says so on the field or resource rather than leaving a `501` to explain itself.
 

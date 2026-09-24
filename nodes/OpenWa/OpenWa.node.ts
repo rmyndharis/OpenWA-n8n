@@ -337,7 +337,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create'] },
         },
         description:
-          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Proxy URL',
@@ -349,7 +349,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create', 'updateProxy'] },
         },
         description:
-          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys; whatsapp-web.js cannot authenticate a SOCKS proxy. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or the server refuses it (≥ 0.23.6). Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
       },
       {
         displayName: 'Clear Proxy',
@@ -380,7 +380,7 @@ export class OpenWa implements INodeType {
             type: 'boolean',
             default: false,
             description:
-              'Whether to decline every incoming call automatically. Re-read on each call, so it applies immediately.',
+              'Whether to decline every incoming call automatically. Re-read on each call, so it applies immediately. Baileys only: whatsapp-web.js cannot reject a call.',
           },
           {
             displayName: 'Max Reconnect Attempts',
@@ -389,7 +389,7 @@ export class OpenWa implements INodeType {
             typeOptions: { minValue: -1, maxValue: 20 },
             default: -1,
             description:
-              'How many consecutive reconnects to attempt. Use -1 for unlimited, which is the default and the only way back to it once a cap is set. 0 disables reconnection entirely, leaving the session down until it is started by hand. Applies from the next Start, not to a reconnect already under way.',
+              'How many consecutive reconnects the gateway attempts. Use -1 for unlimited, which is the default and the only way back to it once a cap is set. When the cap runs out the session stops in Failed until it is started by hand, and 0 means no gateway reconnect at all. On whatsapp-web.js that covers every reconnect; on Baileys only the one after a logged-out close, since the engine retries a transient drop itself with no cap. Applies from the next Start, not to a reconnect already under way.',
           },
           {
             displayName: 'Reconnect Base Delay (Ms)',
@@ -398,7 +398,7 @@ export class OpenWa implements INodeType {
             typeOptions: { minValue: 1000, maxValue: 300000 },
             default: 5000,
             description:
-              'Base backoff between reconnect attempts, in milliseconds. Applies from the next Start.',
+              "Base backoff between the gateway's reconnect attempts, in milliseconds, with the same engine scope as Max Reconnect Attempts. Applies from the next Start.",
           },
         ],
       },
@@ -409,6 +409,14 @@ export class OpenWa implements INodeType {
         type: 'notice',
         default: '',
         displayOptions: { show: { resource: ['session'], operation: ['logout'] } },
+      },
+      {
+        displayName:
+          'On whatsapp-web.js, request a code only for a number you are prepared to re-link: a request for a number that already has a linked device has been seen to end with WhatsApp unlinking that device, whichever session it belongs to. Link by QR when that device must stay up, and leave Retry On Fail off here, since each retry starts the linking flow again. Baileys was not affected in the same tests.',
+        name: 'sessionPairingNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['session'], operation: ['requestPairingCode'] } },
       },
       {
         displayName: 'Phone Number',
@@ -440,6 +448,14 @@ export class OpenWa implements INodeType {
             typeOptions: { minValue: 1 },
             default: 50,
             description: 'Max number of results to return',
+          },
+          {
+            displayName: 'Name',
+            name: 'name',
+            type: 'string',
+            default: '',
+            description:
+              'Return only the session with exactly this name (case-sensitive). No match returns an empty list, which is no items on node version 2. Requires OpenWA ≥ 0.23.5; an older server ignores it and returns every session.',
           },
           {
             displayName: 'Offset',
@@ -573,6 +589,11 @@ export class OpenWa implements INodeType {
         },
         options: [
           { name: 'Cancel Batch', value: 'cancelBatch', action: 'Cancel a bulk batch' },
+          {
+            name: 'Click Button',
+            value: 'clickButton',
+            action: 'Click a button on a business prompt',
+          },
           { name: 'Delete', value: 'delete', action: 'Delete a message' },
           { name: 'Edit', value: 'edit', action: 'Edit a sent message' },
           { name: 'Forward', value: 'forward', action: 'Forward a message to another chat' },
@@ -666,6 +687,7 @@ export class OpenWa implements INodeType {
               'star',
               'votePoll',
               'sendProduct',
+              'clickButton',
             ],
           },
         },
@@ -1220,11 +1242,39 @@ export class OpenWa implements INodeType {
               'unpin',
               'star',
               'votePoll',
+              'clickButton',
             ],
           },
         },
         description:
-          'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger',
+          'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger. For Click Button, the ID of the prompt that offered the buttons.',
+      },
+      {
+        displayName: 'Button ID',
+        name: 'buttonId',
+        type: 'string',
+        default: '',
+        required: true,
+        displayOptions: { show: { resource: ['message'], operation: ['clickButton'] } },
+        description:
+          'The ID of the choice to tap, taken from the <code>buttons</code> list the prompt carried on the Message Received event. Buttons that open a URL or dial a number cannot be clicked.',
+      },
+      {
+        displayName: 'Button Text',
+        name: 'buttonText',
+        type: 'string',
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['clickButton'] } },
+        description:
+          'Visible label of the choice. Leave empty to have OpenWA read it from the stored prompt.',
+      },
+      {
+        displayName:
+          'Click Button needs OpenWA ≥ 0.23.6 on the Baileys engine; whatsapp-web.js answers 501. It sends a structured reply quoted to the prompt rather than a native tap, so WhatsApp may still treat it differently. The prompt must still be in the engine store: an older or evicted one answers 404.',
+        name: 'messageClickButtonNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['clickButton'] } },
       },
       {
         displayName:
@@ -2233,7 +2283,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on a field a given event does not carry suppresses that event outright: a <code>sender</code> filter alongside a Message Ack subscription drops every ack, because an ack carries no sender. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>chatId</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>chatId</code> (server ≥ 0.23.6) scopes to one conversation, a DM or a group such as <code>120363000000000000@g.us</code>, where <code>sender</code> matches only who wrote the message. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on an ID, type or kind field a given event does not carry suppresses that event outright: a <code>sender</code> or <code>chatId</code> filter alongside a Message Ack subscription drops every ack, because an ack carries neither. A boolean field the event lacks reads as false. Filter narrowly, or register a second webhook for the other events. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
           },
           {
             displayName: 'Headers',
@@ -2249,7 +2299,8 @@ export class OpenWa implements INodeType {
             type: 'number',
             typeOptions: { minValue: 0, maxValue: 5 },
             default: 3,
-            description: 'Maximum delivery attempts (0-5)',
+            description:
+              'Total delivery attempts per event, including the first, from 0 to 5. 0 and 1 both mean a single attempt with no retry.',
           },
         ],
       },
@@ -2339,7 +2390,8 @@ export class OpenWa implements INodeType {
             type: 'number',
             typeOptions: { minValue: 0, maxValue: 5 },
             default: 3,
-            description: 'Maximum delivery attempts (0–5)',
+            description:
+              'Total delivery attempts per event, including the first, from 0 to 5. 0 and 1 both mean a single attempt with no retry.',
           },
           {
             displayName: 'Secret',
@@ -2789,7 +2841,7 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: { show: { resource: ['label'], operation: ['upsert'] } },
         description:
-          'At least one is required. On an existing label, anything left out keeps its current value.',
+          'At least one is required. The write replaces the whole label, so on an existing label a field left out is not preserved: set both to keep both.',
         options: [
           {
             displayName: 'Name',
@@ -3687,7 +3739,8 @@ export class OpenWa implements INodeType {
         default: '',
         required: true,
         displayOptions: { show: { resource: ['call'], operation: ['reject'] } },
-        description: "The ID of the call, as delivered by the Trigger's call events",
+        description:
+          "The ID of the call, as delivered by the Trigger's call events. Baileys only: whatsapp-web.js answers 501 (OpenWA ≥ 0.23.6; older servers reported a rejection that did not stop the call ringing).",
       },
       {
         displayName: 'Call Type',
@@ -3839,7 +3892,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, numberPrecision: 0 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -3847,7 +3900,7 @@ export class OpenWa implements INodeType {
             displayName: 'Offset',
             name: 'offset',
             type: 'number',
-            typeOptions: { minValue: 0 },
+            typeOptions: { minValue: 0, maxValue: 100000, numberPrecision: 0 },
             default: 0,
             description: 'Number of results to skip before collecting the result set',
           },
@@ -4007,6 +4060,15 @@ export class OpenWa implements INodeType {
         description:
           'Optional restrictions. On Update, only the fields you set are changed; an empty list never clears an existing whitelist.',
         options: [
+          {
+            displayName: 'Allowed Chats',
+            name: 'allowedChats',
+            type: 'string',
+            default: '',
+            placeholder: '120363000000000000@g.us, 628123456789',
+            description:
+              'Restrict the key to these chats: groups as <code>...@g.us</code>, contacts as <code>...@c.us</code> or <code>...@lid</code>, or bare phone numbers. Such a key is refused (403) on every route that is not chat-aware, which includes the credential test, every dropdown except the chat pickers, and the OpenWA Trigger, so it suits sending to and reading from those chats only. Requires OpenWA ≥ 0.23.6. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
+          },
           {
             displayName: 'Allowed IPs',
             name: 'allowedIps',
