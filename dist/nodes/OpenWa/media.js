@@ -21,7 +21,7 @@ async function resolveMediaSource(itemIndex, params, binaryFallbackMime) {
         };
     }
     if (source === 'url') {
-        return { url: mediaValue(this.getNodeParameter(params.url, itemIndex), 'Media URL') };
+        return { url: mediaValue(this.getNodeParameter(params.url, itemIndex), params.urlLabel) };
     }
     return {
         base64: mediaValue(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),

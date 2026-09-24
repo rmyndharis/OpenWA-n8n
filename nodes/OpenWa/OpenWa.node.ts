@@ -349,7 +349,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create', 'updateProxy'] },
         },
         description:
-          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or the server refuses it (≥ 0.23.6). Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or OpenWA ≥ 0.23.6 refuses it. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
       },
       {
         displayName: 'Clear Proxy',
@@ -412,7 +412,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'On whatsapp-web.js, request a code only for a number you are prepared to re-link: a request for a number that already has a linked device has been seen to end with WhatsApp unlinking that device, whichever session it belongs to. Link by QR when that device must stay up, and leave Retry On Fail off here, since each retry starts the linking flow again. Baileys was not affected in the same tests.',
+          'On whatsapp-web.js, request a code only for a number you are prepared to re-link: requesting one for a number that already has a linked device can end with WhatsApp unlinking that device, whichever session it belongs to. Link by QR when that device must stay up, and leave Retry On Fail off here, since each retry starts the linking flow again.',
         name: 'sessionPairingNotice',
         type: 'notice',
         default: '',
@@ -845,13 +845,13 @@ export class OpenWa implements INodeType {
         displayName: 'Filename',
         name: 'filename',
         type: 'string',
-        default: '',
+        default: 'document.pdf',
         placeholder: 'invoice-123.pdf',
         displayOptions: {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
         description:
-          "Name the recipient sees. Left empty, a binary source keeps the file's own name and a URL source takes the file name at the end of its path, when either looks like a real file name (a short extension, not a server script); otherwise, and for base64, it is document.pdf.",
+          "File name the recipient sees. Clear the field to use the binary file's own name, or the file name at the end of the URL, when that looks like a real file name; otherwise the document is named document.pdf.",
       },
       // Send Audio fields
       {

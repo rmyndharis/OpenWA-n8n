@@ -13,7 +13,6 @@ import type { RequestSpec } from './types';
 export async function buildObservabilityRequest(
   this: IExecuteFunctions,
   operation: string,
-  _itemIndex: number,
 ): Promise<RequestSpec | null> {
   switch (operation) {
     case 'check':

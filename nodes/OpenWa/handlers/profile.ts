@@ -9,6 +9,7 @@ const PICTURE_MEDIA: MediaParamNames = {
   source: 'profilePictureSource',
   binaryProperty: 'profilePictureBinaryProperty',
   url: 'profilePictureUrl',
+  urlLabel: 'Picture URL',
   base64: 'profilePictureBase64',
   mimeType: 'profilePictureMimeType',
 };
@@ -45,11 +46,11 @@ export async function buildProfileRequest(
       // An expression that resolved to nothing must not read as a deliberate clear.
       // A template expression renders missing fields as '', so one can resolve to
       // whitespace alone, which trims to the same empty string as a deliberate clear.
+      // A real null, such as an empty database column, still clears it, as in 1.0.1.
       const rawStatus = this.getNodeParameter('profileStatus', itemIndex, '');
       const status = asText(rawStatus, 'Status');
       if (
         rawStatus === undefined ||
-        rawStatus === null ||
         (!status && isTemplateExpression(this.getNode().parameters.profileStatus))
       ) {
         throw new NodeOperationError(

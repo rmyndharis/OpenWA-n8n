@@ -102,9 +102,10 @@ async function buildWebhookRequest(operation, itemIndex) {
         // Only forward the fields the user set — the server treats the PUT as a partial
         // update, so unspecified fields keep their current value.
         // A field with no value is refused before anything is read: the four scalar
-        // fields are NOT NULL columns that answer 500 to a null, and a null Filters would
-        // clear the webhook's filters, which only typed "null" should do.
-        (0, params_1.assertFieldsResolved)(this, updateFields, {
+        // fields are NOT NULL columns that answer 500 to a null. Filters and Headers
+        // keep 1.0.1's reading of a real null as a clear, like typed "null"; only
+        // undefined, an expression that found nothing, is refused for them.
+        (0, params_1.assertFieldsResolved)(this, Object.fromEntries(Object.entries(updateFields).filter(([key, value]) => !(value === null && (key === 'filters' || key === 'headers')))), {
             active: 'Active',
             clearSecret: 'Clear Secret',
             events: 'Events',
@@ -151,9 +152,9 @@ async function buildWebhookRequest(operation, itemIndex) {
             const raw = updateFields[key];
             if (raw === undefined)
                 continue; // field not added — nothing to send
-            // Typed "null", padding included: ' null' parses to null all the same. A real
-            // null was refused above.
-            const isNull = typeof raw === 'string' && raw.trim() === 'null';
+            // A real null, or typed "null" with any padding: ' null' parses to null all the
+            // same.
+            const isNull = raw === null || (typeof raw === 'string' && raw.trim() === 'null');
             if (key === 'filters' && isNull) {
                 body.filters = null; // explicit null clears existing filters
                 continue;
@@ -165,8 +166,8 @@ async function buildWebhookRequest(operation, itemIndex) {
                 body.headers = {};
                 continue;
             }
-            if (raw === null || raw === '')
-                continue; // blank value — nothing to send
+            if (raw === '')
+                continue; // blank value: nothing to send
             body[key] = parseJsonObject(this.getNode(), raw, key === 'headers' ? 'Headers' : 'Filters', itemIndex);
         }
         // Every field on this route is optional server-side, so an empty body is a 200
