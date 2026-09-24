@@ -136,7 +136,7 @@ function collectApiKeyFields(
   if (name !== undefined) {
     body.name = name;
   }
-  const role = asText(fields.role);
+  const role = asText(fields.role, 'Role');
   if (role) {
     body.role = role;
   }

@@ -33,8 +33,10 @@ export declare function requireFullJid(ctx: IExecuteFunctions, paramName: string
  * The invite code in a pasted WhatsApp group or channel link, or the text itself when
  * it is not a link. Current links carry a query string (`?mode=gi_t`), and some a
  * trailing slash, a fragment or an `/invite/` segment, none of which is part of the
- * code. The code follows `/channel/` or `/invite/` when either is present and is the
- * first path segment otherwise; a link that stops before it yields ''.
+ * code. The code is a `code` query parameter when there is one (the app's
+ * `whatsapp://chat/?code=` deep link), follows `/channel/` or `/invite/` when either
+ * is present, and is the first path segment otherwise; a link that stops before it
+ * yields ''.
  */
 export declare function inviteCodeFrom(text: string): string;
 /**
@@ -107,7 +109,8 @@ export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: s
  * returned. A value that is present but blank is neither: the server refuses it, so
  * there is no reading under which it means anything. Dropping it silently would
  * report success while leaving the field untouched, so it is refused here with a
- * message that names the field and says how to leave it unchanged.
+ * message that names the field and says what to do instead, which on a whole-record
+ * write is not "leave it out".
  */
-export declare function optionalNonBlank(ctx: IExecuteFunctions, value: string | undefined, label: string, itemIndex: number, maxLength?: number): string | undefined;
+export declare function optionalNonBlank(ctx: IExecuteFunctions, value: string | undefined, label: string, itemIndex: number, maxLength?: number, remedy?: string): string | undefined;
 export declare function toStringList(raw: unknown): string[];

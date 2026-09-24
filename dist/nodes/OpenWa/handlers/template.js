@@ -84,7 +84,7 @@ async function buildTemplateRequest(operation, itemIndex) {
                 // optionalNonBlank: an expression can resolve to a number, whose `.length`
                 // is undefined, so the cap would pass and the server would answer a 400
                 // naming no field. A blank stays blank here, which clears the field.
-                const text = (0, params_1.asText)(value);
+                const text = (0, params_1.asText)(value, `Template ${key}`);
                 if ((0, params_1.textLength)(text) > max) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Template ${key} cannot exceed ${max} characters`, { itemIndex });
                 }

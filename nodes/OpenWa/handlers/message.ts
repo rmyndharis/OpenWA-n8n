@@ -127,13 +127,13 @@ function readCustomLinkPreview(
     previewTitle?: string;
     previewDescription?: string;
   };
-  const url = asText(fields.previewUrl);
-  const title = asText(fields.previewTitle);
+  const url = asText(fields.previewUrl, 'Custom Link Preview URL');
+  const title = asText(fields.previewTitle, 'Custom Link Preview Title');
   if (!url || !title) {
     return undefined;
   }
   const preview: Record<string, string> = { url, title };
-  const description = asText(fields.previewDescription);
+  const description = asText(fields.previewDescription, 'Custom Link Preview Description');
   if (description) {
     preview.description = description;
   }
@@ -168,19 +168,29 @@ function messageBody(ctx: IExecuteFunctions, raw: unknown, itemIndex: number): s
 }
 
 /**
- * The file name at the end of a URL's path, or '' when the last segment does not look
- * like one. It has to end in a short extension that is not a server script, so
- * print.php?id=5 or a token in the path does not become the document's name. The
- * segment is decoded before it is split, so an encoded object path (invoices%2Finv.pdf)
- * yields inv.pdf rather than a name with slashes in it.
+ * A candidate document name, kept only when it looks like a real file: a base name
+ * that ends in a short extension with at least one letter, is not a server handler,
+ * and fits the gateway's cap. Anything else yields ''. Both sources need this: n8n's
+ * HTTP Request names a downloaded binary after the last segment of the URL path when
+ * no Content-Disposition says otherwise, so a binary can be named print.php,
+ * download or a path token just as a URL can.
+ */
+function asFileName(candidate: string): string {
+  const name = candidate.split(/[/\\]/).pop() ?? '';
+  const isFile = /\.(?=[a-z0-9]*[a-z])[a-z0-9]{1,8}$/i.test(name);
+  const isHandler =
+    /\.(?:php\d?|phtml|aspx?|ashx|asmx|axd|jspx?|jsf|cfm|cgi|pl|py|rb|do|action)$/i.test(name);
+  return isFile && !isHandler && textLength(name) <= MAX_FILENAME_LENGTH ? name : '';
+}
+
+/**
+ * The file name at the end of a URL's path, or ''. The segment is decoded before it is
+ * split, so an encoded object path (invoices%2Finv.pdf) yields inv.pdf rather than a
+ * name with slashes in it.
  */
 function fileNameInUrl(url: string): string {
   try {
-    const segment = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
-    const name = segment.split(/[/\\]/).pop() ?? '';
-    const isFile = /\.[a-z0-9]{1,8}$/i.test(name);
-    const isScript = /\.(?:php\d?|aspx?|jsp|cgi|pl|do|action)$/i.test(name);
-    return isFile && !isScript ? name : '';
+    return asFileName(decodeURIComponent(new URL(url).pathname.split('/').pop() ?? ''));
   } catch {
     return '';
   }
@@ -295,10 +305,9 @@ export async function buildMessageRequest(
       'application/octet-stream',
     );
     // An empty Filename takes the binary item's own name, else the file name at the
-    // end of a URL's path, else 'document.pdf', the field's old default. Left
-    // unnamed, the gateway calls it 'file' with no extension on Baileys. A derived
-    // name is used only when it fits the gateway's cap, so a long one cannot turn a
-    // send that used to succeed into a 400.
+    // end of a URL's path, when either is a real file name (asFileName), and
+    // 'document.pdf', the field's old default, otherwise. Left unnamed, the gateway
+    // calls it 'file' with no extension on Baileys.
     let filename = asText(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
     if (!filename) {
       let derived = '';
@@ -306,9 +315,9 @@ export async function buildMessageRequest(
         derived = fileNameInUrl(media.url);
       } else if (this.getNodeParameter('documentSource', itemIndex) === 'binary') {
         const property = this.getNodeParameter('documentBinaryProperty', itemIndex) as string;
-        derived = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
+        derived = asFileName(this.helpers.assertBinaryData(itemIndex, property).fileName ?? '');
       }
-      filename = derived && textLength(derived) <= MAX_FILENAME_LENGTH ? derived : 'document.pdf';
+      filename = derived || 'document.pdf';
     }
     body = { chatId, filename };
     const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');

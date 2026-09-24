@@ -4691,7 +4691,10 @@ test('a gateway failure under Continue (using error output) reaches the error ou
   });
   const item = output[0][0];
   assert.equal(item.error, undefined, 'item.error makes n8n rewrite the json');
-  assert.match(item.json.message, /Session is not ready/);
+  // `error` alone: n8n merges the input item underneath, and a `message` key would
+  // overwrite the input's own `message`, the usual column for the text to send.
+  assert.deepEqual(Object.keys(item.json), ['error']);
+  assert.match(item.json.error, /: Session is not ready/);
   assert.ok(routesToErrorOutput(item));
 });
 
@@ -5456,3 +5459,163 @@ test('apiKey/create refuses a restriction expression that resolved to an empty l
   await assert.rejects(() => new OpenWa().execute.call(ctx), /Allowed Chats resolved to an empty list/);
   assert.equal(ctx.calls.length, 0);
 });
+
+// --- Real file names only -------------------------------------------------------
+
+for (const [label, fileName, expected] of [
+  ['a real file', 'Q3-report.xlsx', 'Q3-report.xlsx'],
+  ['a script name, which HTTP Request takes from the URL path', 'print.php', 'document.pdf'],
+  ['a bare path segment with no extension', 'download', 'document.pdf'],
+  ['a token in the path', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlc2lnbmF0dXJl', 'document.pdf'],
+]) {
+  test(`Send Document from a binary named ${label} is named ${expected}`, async () => {
+    const { ctx } = await run(
+      {
+        resource: 'message',
+        operation: 'sendDocument',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        documentSource: 'binary',
+        documentBinaryProperty: 'data',
+      },
+      { binary: { mimeType: 'application/pdf', fileName } },
+    );
+    assert.equal(singleCall(ctx).options.body.filename, expected);
+  });
+}
+
+for (const [url, expected] of [
+  ['https://portal.example.com/Handlers/FileDownload.ashx?id=5', 'document.pdf'],
+  ['https://x.example.com/getfile.cfm?id=5', 'document.pdf'],
+  ['https://x.example.com/cgi-bin/dl.py?id=5', 'document.pdf'],
+  ['https://api.example.com/files/v1.2', 'document.pdf'],
+  ['https://x.example.com/files/report.v2.pdf', 'report.v2.pdf'],
+]) {
+  test(`Send Document from ${url} is named ${expected}`, async () => {
+    const { ctx } = await run({
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'url',
+      documentUrl: url,
+    });
+    assert.equal(singleCall(ctx).options.body.filename, expected);
+  });
+}
+
+// --- Text that merely mentions an object ------------------------------------------
+
+test('a list of strings that mentions "[object" is still read as text', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'edit',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    messageId: 'm1',
+    message: ['Why do I see [object Object]?'],
+  });
+  assert.equal(singleCall(ctx).options.body.body, 'Why do I see [object Object]?');
+});
+
+test('a list holding an object nested in a list is still refused', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'status',
+        operation: 'sendText',
+        sessionId: 'abc-123',
+        statusText: [['a'], [{ b: 1 }]],
+      }),
+    /Status text must be text/,
+  );
+});
+
+// --- Messages that name the field ---------------------------------------------------
+
+test('session/updateConfig names Max Reconnect Attempts when it cannot be read', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'session',
+        operation: 'updateConfig',
+        sessionId: 'abc-123',
+        sessionConfigFields: { maxReconnectAttempts: new Map() },
+      }),
+    /Max Reconnect Attempts/,
+  );
+});
+
+test('label/upsert blank Name advice fits a whole-label write', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'label',
+        operation: 'upsert',
+        sessionId: 'abc-123',
+        newLabelId: 'l9',
+        labelFields: { labelName: '  ', labelColor: 3 },
+      }),
+    (err) => {
+      assert.match(err.message, /Label name cannot be blank/);
+      assert.doesNotMatch(err.message, /leave it unchanged/);
+      return true;
+    },
+  );
+});
+
+// --- Invite links -----------------------------------------------------------------
+
+test('group/join reads the code from an app deep link', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'join',
+    sessionId: 'abc-123',
+    groupInviteCode: 'whatsapp://chat/?code=AbCdEf123',
+  });
+  assert.deepEqual(singleCall(ctx).options.body, { inviteCode: 'AbCdEf123' });
+});
+
+// --- Guards with one test each before ----------------------------------------------
+
+test('group/updateSettings refuses a setting with no value', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'group',
+        operation: 'updateSettings',
+        sessionId: 'abc-123',
+        groupId: '1@g.us',
+        groupSettings: { announce: true, ephemeralSeconds: null },
+      }),
+    /Disappearing Messages \(Seconds\) has no value/,
+  );
+});
+
+for (const operation of ['delete', 'edit', 'forward', 'pin', 'unpin', 'star', 'votePoll']) {
+  test(`message/${operation} refuses a blank Message ID`, async () => {
+    const ctx = makeCtx({
+      params: {
+        resource: 'message',
+        operation,
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        fromChatId: '1@c.us',
+        toChatId: '2@c.us',
+        messageId: ' ',
+        message: 'x',
+      },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Message ID cannot be empty/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+for (const [label, params] of [
+  ['template/update', { resource: 'template', operation: 'update', sessionId: 'abc-123', templateId: 't1', templateUpdateFields: { name: '❤️'.repeat(51) } }],
+  ['automationRule/update', { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { name: '❤️'.repeat(51) } }],
+]) {
+  test(`${label} refuses a name longer than the varchar(100) column holds`, async () => {
+    await assert.rejects(() => run(params), /cannot exceed 100 characters/);
+  });
+}

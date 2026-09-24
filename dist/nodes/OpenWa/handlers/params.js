@@ -35,6 +35,25 @@ const n8n_workflow_1 = require("n8n-workflow");
  */
 /** What an object with nothing useful to say stringifies to. */
 const OPAQUE_OBJECT = '[object Object]';
+/**
+ * Whether a value stringifies to nothing useful: a plain object, a Map or Set, or a
+ * list holding one, at any depth. Only the entries themselves are looked at, so a
+ * list of strings that merely mentions "[object Object]" is still text.
+ */
+function isOpaque(value) {
+    if (Array.isArray(value)) {
+        return value.some(isOpaque);
+    }
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    try {
+        return String(value).startsWith('[object ');
+    }
+    catch {
+        return true;
+    }
+}
 function asText(value, label = 'This field') {
     if (value === undefined || value === null) {
         return '';
@@ -51,19 +70,19 @@ function asText(value, label = 'This field') {
         // taken. Refusing every object would break that, and a plain Date with it.
         let text;
         try {
-            text = String(value);
+            text = isOpaque(value) ? OPAQUE_OBJECT : String(value);
         }
         catch {
             // A null-prototype object has no toString at all, so String() throws.
             text = OPAQUE_OBJECT;
         }
-        // Also caught inside a longer string: a list of two objects stringifies to
-        // "[object Object],[object Object]", and a Map or Set to "[object Map]".
-        if (text.includes('[object ')) {
+        if (text === OPAQUE_OBJECT) {
             throw new Error(`${label} must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.`);
         }
-        // A Date or Luxon DateTime that failed to parse stringifies to these, which
-        // would otherwise go out as the text itself.
+        // A Date or Luxon DateTime object that failed to parse stringifies to these,
+        // which would otherwise go out as the text itself. n8n turns a DateTime inside a
+        // collection into its text before the node sees it, so there only the date
+        // fields' own parsing catches it.
         if (text === 'Invalid Date' || text === 'Invalid DateTime') {
             throw new Error(`${label} is not a valid date`);
         }
@@ -126,17 +145,24 @@ function requireFullJid(ctx, paramName, label, itemIndex) {
  * The invite code in a pasted WhatsApp group or channel link, or the text itself when
  * it is not a link. Current links carry a query string (`?mode=gi_t`), and some a
  * trailing slash, a fragment or an `/invite/` segment, none of which is part of the
- * code. The code follows `/channel/` or `/invite/` when either is present and is the
- * first path segment otherwise; a link that stops before it yields ''.
+ * code. The code is a `code` query parameter when there is one (the app's
+ * `whatsapp://chat/?code=` deep link), follows `/channel/` or `/invite/` when either
+ * is present, and is the first path segment otherwise; a link that stops before it
+ * yields ''.
  */
 function inviteCodeFrom(text) {
     if (!text.includes('/')) {
         return text;
     }
     try {
-        const url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+        const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
+        // The app's deep link carries the code as a query parameter instead.
+        const code = url.searchParams.get('code');
+        if (code) {
+            return code;
+        }
         const segments = url.pathname.split('/').filter(Boolean);
-        const marker = segments.findIndex((s) => s === 'channel' || s === 'invite');
+        const marker = segments.findIndex((s) => /^(?:channel|invite)$/i.test(s));
         return (marker >= 0 ? segments[marker + 1] : segments[0]) ?? '';
     }
     catch {
@@ -338,15 +364,18 @@ function wallTimeToEpochMs(text, timeZone) {
  * returned. A value that is present but blank is neither: the server refuses it, so
  * there is no reading under which it means anything. Dropping it silently would
  * report success while leaving the field untouched, so it is refused here with a
- * message that names the field and says how to leave it unchanged.
+ * message that names the field and says what to do instead, which on a whole-record
+ * write is not "leave it out".
  */
-function optionalNonBlank(ctx, value, label, itemIndex, maxLength) {
+function optionalNonBlank(ctx, value, label, itemIndex, maxLength, remedy = exports.LEAVE_UNCHANGED) {
     if (value === undefined || value === null) {
         return undefined;
     }
     const trimmed = asText(value, label);
     if (!trimmed) {
-        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. Remove it from the fields to leave it unchanged.`, { itemIndex });
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot be blank. ${remedy}`, {
+            itemIndex,
+        });
     }
     if (maxLength !== undefined && textLength(trimmed) > maxLength) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} cannot exceed ${maxLength} characters`, {
