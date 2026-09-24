@@ -8,6 +8,8 @@ export interface MediaParamNames {
     source: string;
     binaryProperty: string;
     url: string;
+    /** The URL field's display name, which the errors about it quote. */
+    urlLabel: string;
     base64: string;
     mimeType: string;
 }

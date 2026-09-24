@@ -49,6 +49,7 @@ const IMAGE_MEDIA = {
     source: 'imageSource',
     binaryProperty: 'imageBinaryProperty',
     url: 'imageUrl',
+    urlLabel: 'Image URL',
     base64: 'imageBase64',
     mimeType: 'imageMimeType',
 };
@@ -56,6 +57,7 @@ const DOCUMENT_MEDIA = {
     source: 'documentSource',
     binaryProperty: 'documentBinaryProperty',
     url: 'documentUrl',
+    urlLabel: 'Document URL',
     base64: 'documentBase64',
     mimeType: 'documentMimeType',
 };
@@ -63,6 +65,7 @@ const AUDIO_MEDIA = {
     source: 'audioSource',
     binaryProperty: 'audioBinaryProperty',
     url: 'audioUrl',
+    urlLabel: 'Audio URL',
     base64: 'audioBase64',
     mimeType: 'audioMimeType',
 };
@@ -70,6 +73,7 @@ const VIDEO_MEDIA = {
     source: 'videoSource',
     binaryProperty: 'videoBinaryProperty',
     url: 'videoUrl',
+    urlLabel: 'Video URL',
     base64: 'videoBase64',
     mimeType: 'videoMimeType',
 };
@@ -77,6 +81,7 @@ const STICKER_MEDIA = {
     source: 'stickerSource',
     binaryProperty: 'stickerBinaryProperty',
     url: 'stickerUrl',
+    urlLabel: 'Sticker URL',
     base64: 'stickerBase64',
     mimeType: 'stickerMimeType',
 };
@@ -249,10 +254,12 @@ async function buildMessageRequest(operation, itemIndex) {
     else if (operation === 'sendDocument') {
         endpoint = `/api/sessions/${sessionId}/messages/send-document`;
         const media = await media_1.resolveMediaSource.call(this, itemIndex, DOCUMENT_MEDIA, 'application/octet-stream');
-        // An empty Filename takes the binary item's own name, else the file name at the
+        // A cleared Filename takes the binary item's own name, else the file name at the
         // end of a URL's path, when either is a real file name (asFileName), and
-        // 'document.pdf', the field's old default, otherwise. Left unnamed, the gateway
-        // calls it 'file' with no extension on Baileys.
+        // 'document.pdf', the field's default, otherwise. Left unnamed, the gateway
+        // calls it 'file' with no extension on Baileys. The default stays
+        // 'document.pdf' because n8n does not save a default value: a node saved with it
+        // would otherwise start naming its files differently.
         let filename = (0, params_1.asText)(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
         if (!filename) {
             let derived = '';

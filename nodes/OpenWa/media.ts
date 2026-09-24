@@ -10,6 +10,8 @@ export interface MediaParamNames {
   source: string;
   binaryProperty: string;
   url: string;
+  /** The URL field's display name, which the errors about it quote. */
+  urlLabel: string;
   base64: string;
   mimeType: string;
 }
@@ -37,7 +39,7 @@ export async function resolveMediaSource(
     };
   }
   if (source === 'url') {
-    return { url: mediaValue(this.getNodeParameter(params.url, itemIndex), 'Media URL') };
+    return { url: mediaValue(this.getNodeParameter(params.url, itemIndex), params.urlLabel) };
   }
   return {
     base64: mediaValue(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),

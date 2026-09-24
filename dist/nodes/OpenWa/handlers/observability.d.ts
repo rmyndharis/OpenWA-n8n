@@ -9,4 +9,4 @@ import type { RequestSpec } from './types';
  *
  * None of these are scoped to a session, so this resource has no Session ID.
  */
-export declare function buildObservabilityRequest(this: IExecuteFunctions, operation: string, _itemIndex: number): Promise<RequestSpec | null>;
+export declare function buildObservabilityRequest(this: IExecuteFunctions, operation: string): Promise<RequestSpec | null>;

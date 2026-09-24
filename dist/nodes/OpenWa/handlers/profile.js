@@ -9,6 +9,7 @@ const PICTURE_MEDIA = {
     source: 'profilePictureSource',
     binaryProperty: 'profilePictureBinaryProperty',
     url: 'profilePictureUrl',
+    urlLabel: 'Picture URL',
     base64: 'profilePictureBase64',
     mimeType: 'profilePictureMimeType',
 };
@@ -35,10 +36,10 @@ async function buildProfileRequest(operation, itemIndex) {
             // An expression that resolved to nothing must not read as a deliberate clear.
             // A template expression renders missing fields as '', so one can resolve to
             // whitespace alone, which trims to the same empty string as a deliberate clear.
+            // A real null, such as an empty database column, still clears it, as in 1.0.1.
             const rawStatus = this.getNodeParameter('profileStatus', itemIndex, '');
             const status = (0, params_1.asText)(rawStatus, 'Status');
             if (rawStatus === undefined ||
-                rawStatus === null ||
                 (!status && (0, params_1.isTemplateExpression)(this.getNode().parameters.profileStatus))) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Status resolved to nothing. To clear the about text, leave the field empty.', { itemIndex });
             }

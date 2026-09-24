@@ -4772,8 +4772,8 @@ const emptyResolutionCases = [
     /Description resolved to nothing/,
   ],
   [
-    'profile/setStatus refuses a status that resolved to null',
-    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: null },
+    'profile/setStatus refuses a status that resolved to nothing',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: undefined },
     {},
     /Status resolved to nothing/,
   ],
@@ -5209,10 +5209,20 @@ const documentBase = {
 const sentFilename = async (params, opts) =>
   singleCall((await run({ ...documentBase, ...params }, opts)).ctx).options.body.filename;
 
-test('Send Document leaves Filename empty by default, so the file can name itself', () => {
+test('Send Document keeps document.pdf as the Filename default', () => {
+  // n8n does not save a parameter left at its default, so changing it would rename
+  // the files every node saved with the old one sends.
   const field = new OpenWa().description.properties.find((p) => p.name === 'filename');
-  assert.equal(field.default, '');
-  assert.match(field.description, /document\.pdf/);
+  assert.equal(field.default, 'document.pdf');
+  assert.match(field.description, /Clear the field/);
+});
+
+test('Send Document at the default Filename still sends document.pdf for a named binary', async () => {
+  const name = await sentFilename(
+    { documentSource: 'binary', documentBinaryProperty: 'data', filename: 'document.pdf' },
+    { binary: { mimeType: 'application/pdf', fileName: 'Q3-report.xlsx' } },
+  );
+  assert.equal(name, 'document.pdf');
 });
 
 for (const [label, url, expected] of [
@@ -5236,7 +5246,7 @@ test('Send Document from a binary whose name is past the gateway cap keeps the o
 });
 
 test('Send Document names the URL field when an expression hands it an object', async () => {
-  await assert.rejects(() => run({ ...documentBase, documentUrl: { href: 'x' } }), /Media URL must be text/);
+  await assert.rejects(() => run({ ...documentBase, documentUrl: { href: 'x' } }), /Document URL must be text/);
 });
 
 // --- Media sources --------------------------------------------------------------
@@ -5245,21 +5255,45 @@ for (const [label, params, pattern] of [
   [
     'a list of URLs',
     { imageSource: 'url', imageUrl: ['https://a/1.jpg', 'https://b/2.jpg'] },
-    /Media URL must be a single value/,
+    /Image URL must be a single value/,
   ],
   [
     'a list of base64 payloads',
     { imageSource: 'base64', imageBase64: ['QUFB', 'QkJC'], imageMimeType: 'image/png' },
     /Base64 Data must be a single value/,
   ],
-  ['a blank URL', { imageSource: 'url', imageUrl: '  ' }, /Media URL cannot be empty/],
-  ['an unresolved URL', { imageSource: 'url', imageUrl: undefined }, /Media URL cannot be empty/],
+  ['a blank URL', { imageSource: 'url', imageUrl: '  ' }, /Image URL cannot be empty/],
+  ['an unresolved URL', { imageSource: 'url', imageUrl: undefined }, /Image URL cannot be empty/],
 ]) {
   test(`Send Image refuses ${label} instead of sending it`, async () => {
     const ctx = makeCtx({
       params: { resource: 'message', operation: 'sendImage', sessionId: 'abc-123', chatId: '1@c.us', ...params },
     });
     await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+// Every media URL field, found through its source toggle, so a new one is covered too.
+for (const field of new OpenWa().description.properties.filter(
+  (p) => p.name.endsWith('Url') && Object.values(p.displayOptions?.show ?? {}).some((v) => v.includes?.('url')),
+)) {
+  const { resource, operation, ...source } = field.displayOptions.show;
+  test(`${resource[0]}/${operation[0]} names ${field.displayName} when it is blank`, async () => {
+    const params = {
+      resource: resource[0],
+      operation: operation[0],
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      groupId: '1@g.us',
+      ...Object.fromEntries(Object.entries(source).map(([k, v]) => [k, v[0]])),
+      [field.name]: ' ',
+    };
+    const ctx = makeCtx({ params });
+    await assert.rejects(
+      () => new OpenWa().execute.call(ctx),
+      new RegExp(`${field.displayName} cannot be empty`),
+    );
     assert.equal(ctx.calls.length, 0);
   });
 }
@@ -5352,7 +5386,7 @@ for (const [label, params] of [
 
 for (const [label, params] of [
   ['webhook/update URL', { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { url: undefined, active: true } }],
-  ['webhook/update Filters', { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { filters: null, active: true } }],
+  ['webhook/update Filters', { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { filters: undefined, active: true } }],
   ['automationRule/update Enabled', { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { enabled: undefined, name: 'x' } }],
   ['apiKey/update Name', { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: undefined, role: 'viewer' } }],
 ]) {
@@ -5405,6 +5439,36 @@ for (const [label, params, nodeParameters] of [
     await new OpenWa().execute.call(ctx);
     const body = singleCall(ctx).options.body;
     assert.equal(body.description ?? body.status, '');
+  });
+}
+
+// A real null, such as an empty database column, clears these as it did in 1.0.1.
+for (const [label, params, expected] of [
+  [
+    'group/updateDescription',
+    { resource: 'group', operation: 'updateDescription', sessionId: 'abc-123', groupId: '1@g.us', groupDescription: null },
+    { description: '' },
+  ],
+  [
+    'profile/setStatus',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: null },
+    { status: '' },
+  ],
+  [
+    'webhook/update Filters',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { filters: null } },
+    { filters: null },
+  ],
+  [
+    'webhook/update Headers',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { headers: null } },
+    { headers: {} },
+  ],
+]) {
+  test(`${label} clears through an expression that resolves to null`, async () => {
+    const ctx = makeCtx({ params });
+    await new OpenWa().execute.call(ctx);
+    assert.deepEqual(singleCall(ctx).options.body, expected);
   });
 }
 

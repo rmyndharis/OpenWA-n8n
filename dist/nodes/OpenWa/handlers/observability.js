@@ -10,7 +10,7 @@ exports.buildObservabilityRequest = buildObservabilityRequest;
  *
  * None of these are scoped to a session, so this resource has no Session ID.
  */
-async function buildObservabilityRequest(operation, _itemIndex) {
+async function buildObservabilityRequest(operation) {
     switch (operation) {
         case 'check':
             return { endpoint: '/api/health', method: 'GET', body: {} };

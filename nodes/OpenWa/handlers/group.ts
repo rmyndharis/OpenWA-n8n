@@ -61,6 +61,7 @@ const GROUP_PICTURE_MEDIA: MediaParamNames = {
   source: 'groupPictureSource',
   binaryProperty: 'groupPictureBinaryProperty',
   url: 'groupPictureUrl',
+  urlLabel: 'Picture URL',
   base64: 'groupPictureBase64',
   mimeType: 'groupPictureMimeType',
 };
@@ -263,12 +264,12 @@ export async function buildGroupRequest(
       // would reach the server's @IsString as a 400 that names no field.
       // An empty field clears the description, so an expression that resolved to
       // nothing (a missing input field) must not read as one, nor a template
-      // expression whose missing fields rendered to whitespace alone.
+      // expression whose missing fields rendered to whitespace alone. A real null,
+      // such as an empty database column, still clears it, as it did in 1.0.1.
       const rawDescription = this.getNodeParameter('groupDescription', itemIndex, '');
       const description = asText(rawDescription, 'Description');
       if (
         rawDescription === undefined ||
-        rawDescription === null ||
         (!description && isTemplateExpression(this.getNode().parameters.groupDescription))
       ) {
         throw new NodeOperationError(

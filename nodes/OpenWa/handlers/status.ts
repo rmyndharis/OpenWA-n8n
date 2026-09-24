@@ -9,6 +9,7 @@ const STATUS_IMAGE_MEDIA: MediaParamNames = {
   source: 'statusImageSource',
   binaryProperty: 'statusImageBinaryProperty',
   url: 'statusImageUrl',
+  urlLabel: 'Image URL',
   base64: 'statusImageBase64',
   mimeType: 'statusImageMimeType',
 };
@@ -16,6 +17,7 @@ const STATUS_VOICE_MEDIA: MediaParamNames = {
   source: 'statusVoiceSource',
   binaryProperty: 'statusVoiceBinaryProperty',
   url: 'statusVoiceUrl',
+  urlLabel: 'Audio URL',
   base64: 'statusVoiceBase64',
   mimeType: 'statusVoiceMimeType',
 };
@@ -23,6 +25,7 @@ const STATUS_VIDEO_MEDIA: MediaParamNames = {
   source: 'statusVideoSource',
   binaryProperty: 'statusVideoBinaryProperty',
   url: 'statusVideoUrl',
+  urlLabel: 'Video URL',
   base64: 'statusVideoBase64',
   mimeType: 'statusVideoMimeType',
 };
