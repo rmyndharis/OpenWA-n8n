@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenWaTrigger = void 0;
+const node_crypto_1 = require("node:crypto");
 const n8n_workflow_1 = require("n8n-workflow");
 const verifySignature_1 = require("./verifySignature");
 const httpStatus_1 = require("./httpStatus");
@@ -88,7 +89,7 @@ class OpenWaTrigger {
                     name: 'deduplicateDeliveries',
                     type: 'boolean',
                     default: false,
-                    description: "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: static data is saved per execution, so two deliveries arriving at the same moment can both pass.",
+                    description: "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run.",
                 },
                 {
                     displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
@@ -404,14 +405,19 @@ class OpenWaTrigger {
                 // Key name kept from when the ring held delivery ids, so an upgrade does not
                 // strand the previous array in the workflow's stored static data.
                 const seen = staticData.recentDeliveryIds ?? [];
-                if (seen.includes(rawKey)) {
+                // A 16-character fingerprint rather than the key: n8n writes the whole ring
+                // back after every delivery, and 500 keys of 100-150 characters made that
+                // about 68 KB each time. The raw key is still matched, which is how entries
+                // stored by an earlier release look.
+                const fingerprint = (0, node_crypto_1.createHash)('sha256').update(rawKey).digest('base64url').slice(0, 16);
+                if (seen.includes(fingerprint) || seen.includes(rawKey)) {
                     this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${rawKey}`);
                     // Dropping means not running. Returning an empty item set instead would
                     // still register an execution for every replay this option exists to absorb.
                     return {};
                 }
                 // Bound the memory: keep only the most recent 500 keys.
-                seen.push(rawKey);
+                seen.push(fingerprint);
                 if (seen.length > 500) {
                     seen.splice(0, seen.length - 500);
                 }
