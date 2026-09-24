@@ -4,7 +4,15 @@ import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { parseJsonParam } from '../../shared/jsonParam';
 import { parseBulkMessages } from '../bulkMessages';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireJid, requireText, toQueryParams, toStringList, asText, textLength } from './params';
+import {
+  requireJid,
+  requireText,
+  toQueryParams,
+  toStringList,
+  asText,
+  textLength,
+  isOn,
+} from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -310,8 +318,7 @@ export async function buildMessageRequest(
     );
     // Deliver as a true WhatsApp voice note (PTT). Only attach `ptt` when enabled so
     // plain-audio sends stay backward-compatible; the field requires server >= v0.7.17.
-    // Compared strictly: an expression resolving to the string 'false' is truthy.
-    if (this.getNodeParameter('sendAsVoiceNote', itemIndex, false) === true) {
+    if (isOn(this.getNodeParameter('sendAsVoiceNote', itemIndex, false))) {
       body.ptt = true;
     }
   } else if (operation === 'reply') {
@@ -370,7 +377,7 @@ export async function buildMessageRequest(
       name: requireText(this, 'pollName', 'Poll question', itemIndex, MAX_POLL_NAME_LENGTH),
       options: pollOptions,
     };
-    if (this.getNodeParameter('allowMultipleAnswers', itemIndex, false) === true) {
+    if (isOn(this.getNodeParameter('allowMultipleAnswers', itemIndex, false))) {
       body.allowMultipleAnswers = true;
     }
   } else if (operation === 'sendTemplate') {

@@ -1,5 +1,11 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 export declare function asText(value: unknown, label?: string): string;
+/**
+ * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
+ * driven by an expression, so it can arrive as text from a sheet, a form or a query
+ * string, and the string 'false' is truthy.
+ */
+export declare function isOn(value: unknown): boolean;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
 /**
  * requireJid for the routes whose DTO requires a domain-qualified ID

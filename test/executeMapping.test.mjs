@@ -5025,3 +5025,29 @@ test('webhook/update sends a padded "null" Headers as the empty object the colum
   });
   assert.deepEqual(singleCall(ctx).options.body, { headers: {} });
 });
+
+test('message/sendAudio still reads a "true" string as a voice note', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendAudio',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    audioSource: 'url',
+    audioUrl: 'https://example.com/a.ogg',
+    sendAsVoiceNote: 'true',
+  });
+  assert.equal(singleCall(ctx).options.body.ptt, true);
+});
+
+test('message/sendPoll still reads a "true" string as multiple answers', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendPoll',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    pollName: 'Lunch?',
+    pollOptions: 'Pizza, Sushi',
+    allowMultipleAnswers: 'true',
+  });
+  assert.equal(singleCall(ctx).options.body.allowMultipleAnswers, true);
+});

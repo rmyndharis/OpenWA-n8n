@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.asText = asText;
+exports.isOn = isOn;
 exports.requireJid = requireJid;
 exports.requireFullJid = requireFullJid;
 exports.inviteCodeFrom = inviteCodeFrom;
@@ -59,6 +60,14 @@ function asText(value, label = 'This field') {
         return text.trim();
     }
     return typeof value === 'string' ? value.trim() : String(value).trim();
+}
+/**
+ * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
+ * driven by an expression, so it can arrive as text from a sheet, a form or a query
+ * string, and the string 'false' is truthy.
+ */
+function isOn(value) {
+    return value === true || value === 'true';
 }
 function requireJid(ctx, paramName, label, itemIndex) {
     const value = asText(ctx.getNodeParameter(paramName, itemIndex), label);

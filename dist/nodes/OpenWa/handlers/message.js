@@ -263,8 +263,7 @@ async function buildMessageRequest(operation, itemIndex) {
         Object.assign(body, await media_1.resolveMediaSource.call(this, itemIndex, AUDIO_MEDIA, 'audio/ogg; codecs=opus'));
         // Deliver as a true WhatsApp voice note (PTT). Only attach `ptt` when enabled so
         // plain-audio sends stay backward-compatible; the field requires server >= v0.7.17.
-        // Compared strictly: an expression resolving to the string 'false' is truthy.
-        if (this.getNodeParameter('sendAsVoiceNote', itemIndex, false) === true) {
+        if ((0, params_1.isOn)(this.getNodeParameter('sendAsVoiceNote', itemIndex, false))) {
             body.ptt = true;
         }
     }
@@ -319,7 +318,7 @@ async function buildMessageRequest(operation, itemIndex) {
             name: (0, params_1.requireText)(this, 'pollName', 'Poll question', itemIndex, MAX_POLL_NAME_LENGTH),
             options: pollOptions,
         };
-        if (this.getNodeParameter('allowMultipleAnswers', itemIndex, false) === true) {
+        if ((0, params_1.isOn)(this.getNodeParameter('allowMultipleAnswers', itemIndex, false))) {
             body.allowMultipleAnswers = true;
         }
     }

@@ -53,6 +53,15 @@ export function asText(value: unknown, label = 'This field'): string {
   return typeof value === 'string' ? value.trim() : String(value).trim();
 }
 
+/**
+ * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
+ * driven by an expression, so it can arrive as text from a sheet, a form or a query
+ * string, and the string 'false' is truthy.
+ */
+export function isOn(value: unknown): boolean {
+  return value === true || value === 'true';
+}
+
 export function requireJid(
   ctx: IExecuteFunctions,
   paramName: string,
