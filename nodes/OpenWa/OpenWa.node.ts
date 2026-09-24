@@ -445,7 +445,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -1085,7 +1085,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['base64'] },
         },
         description:
-          'MIME type of the base64 sticker. WhatsApp requires image/webp. OpenWA requires this whenever base64 data is sent.',
+          'MIME type of the base64 data as it actually is, such as image/png. OpenWA converts a PNG or JPEG to WebP itself, but on whatsapp-web.js data declared as image/webp skips that conversion, so non-WebP bytes labelled image/webp arrive as a broken sticker.',
       },
       // Send Contact fields
       {
@@ -1602,7 +1602,7 @@ export class OpenWa implements INodeType {
             type: 'boolean',
             default: false,
             description:
-              'Whether to pull older messages from the device instead of only what the server has stored. It raises the Limit ceiling from 100 to 2000 and forces metadata-only, so Include Media is ignored while this is on. A large deep read is slow and raises the risk of WhatsApp rate-limiting the account.',
+              'Whether to allow a deeper read of the history, which is always read live from the device. It raises the Limit ceiling from 100 to 2000 and forces metadata-only, so Include Media is ignored while this is on. A large deep read is slow and raises the risk of WhatsApp rate-limiting the account.',
           },
           {
             displayName: 'Include Media',
@@ -1764,7 +1764,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -2195,7 +2195,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -2223,7 +2223,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -2540,7 +2540,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
