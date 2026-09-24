@@ -523,21 +523,18 @@ export async function buildMessageRequest(
     if (Object.keys(options).length > 0) {
       body.options = options;
     }
-  } else if (operation === 'getBatchStatus') {
-    const batchId = sanitizePathParam(
-      this.getNodeParameter('statusBatchId', itemIndex) as string,
-      'Batch ID',
-    );
-    return {
-      endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}`,
-      method: 'GET',
-      body: {},
-    };
-  } else if (operation === 'cancelBatch') {
-    const batchId = sanitizePathParam(
-      this.getNodeParameter('statusBatchId', itemIndex) as string,
-      'Batch ID',
-    );
+  } else if (operation === 'getBatchStatus' || operation === 'cancelBatch') {
+    // Encoded rather than run through sanitizePathParam: Send Bulk accepts an ID with
+    // '/', '\' or '..' in it, and the gateway routes one once it is percent-encoded,
+    // so refusing those left a running batch impossible to poll or stop.
+    const batchId = encodeURIComponent(requireText(this, 'statusBatchId', 'Batch ID', itemIndex));
+    if (operation === 'getBatchStatus') {
+      return {
+        endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}`,
+        method: 'GET',
+        body: {},
+      };
+    }
     return {
       endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}/cancel`,
       method: 'POST',

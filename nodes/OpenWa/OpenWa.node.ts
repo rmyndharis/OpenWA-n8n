@@ -4152,6 +4152,16 @@ export class OpenWa implements INodeType {
           );
         }
 
+        // encodeURIComponent leaves '.' alone, and the HTTP client resolves a dot
+        // segment before sending, so an ID of '..' walks the request up to its parent
+        // route: Contact > Delete with '..' becomes DELETE /api/sessions/<id>/, which
+        // is Session > Delete. Checked here because every path ID passes through.
+        if (spec.endpoint.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+          throw new NodeOperationError(this.getNode(), "An ID in the path cannot be '.' or '..'", {
+            itemIndex: i,
+          });
+        }
+
         // Make request
         const isText = spec.responseFormat === 'text';
         const isBinary = spec.responseFormat === 'binary';

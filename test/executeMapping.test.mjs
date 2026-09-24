@@ -4522,3 +4522,66 @@ for (const [label, params, pattern] of guardCases) {
     await assert.rejects(() => run(params), pattern);
   });
 }
+
+// --- Path safety --------------------------------------------------------------
+// encodeURIComponent leaves '.' alone, and the HTTP client resolves a '.' or '..'
+// segment before sending, so an ID of '..' walked the request up to its parent
+// route: Contact > Delete with '..' became DELETE /api/sessions/<id>/, which the
+// gateway serves as Session > Delete.
+
+const dotSegmentCases = [
+  ['contact/delete', { resource: 'contact', operation: 'delete', sessionId: 'abc-123', contactId: '..' }],
+  ['contact/delete padded', { resource: 'contact', operation: 'delete', sessionId: 'abc-123', contactId: ' .. ' }],
+  ['session/getStatus', { resource: 'session', operation: 'getStatus', sessionId: '.' }],
+  ['channel/delete', { resource: 'channel', operation: 'delete', sessionId: 'abc-123', channelId: '..' }],
+  [
+    'label/removeFromChat',
+    { resource: 'label', operation: 'removeFromChat', sessionId: 'abc-123', chatId: '..', labelId: 'l1' },
+  ],
+  ['message/getHistory', { resource: 'message', operation: 'getHistory', sessionId: 'abc-123', chatId: '.' }],
+  ['catalog/getProduct', { resource: 'catalog', operation: 'getProduct', sessionId: 'abc-123', productId: '..' }],
+];
+
+for (const [label, params] of dotSegmentCases) {
+  test(`${label} refuses a dot-segment ID instead of rerouting the request`, async () => {
+    const ctx = makeCtx({ params });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /cannot be '\.' or '\.\.'/);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('an ID that only contains dots among other characters is still sent', async () => {
+  const { ctx } = await run({
+    resource: 'contact',
+    operation: 'delete',
+    sessionId: 'abc-123',
+    contactId: 'a..b@c.us',
+  });
+  assert.equal(singleCall(ctx).options.url, `${BASE}/api/sessions/abc-123/contacts/a..b%40c.us`);
+});
+
+test('message/getBatchStatus reaches a batch whose ID Send Bulk accepted with a slash', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'getBatchStatus',
+    sessionId: 'abc-123',
+    statusBatchId: '2026/09/24..run',
+  });
+  assert.equal(
+    singleCall(ctx).options.url,
+    `${BASE}/api/sessions/abc-123/messages/batch/2026%2F09%2F24..run`,
+  );
+});
+
+test('message/cancelBatch encodes the batch ID rather than refusing it', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'cancelBatch',
+    sessionId: 'abc-123',
+    statusBatchId: 'nightly\\eu',
+  });
+  assert.equal(
+    singleCall(ctx).options.url,
+    `${BASE}/api/sessions/abc-123/messages/batch/nightly%5Ceu/cancel`,
+  );
+});
