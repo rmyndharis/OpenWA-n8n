@@ -68,7 +68,7 @@ async function buildGroupRequest(operation, itemIndex) {
         if (!name) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Group name cannot be empty', { itemIndex });
         }
-        if (name.length > MAX_NAME_LENGTH) {
+        if ((0, params_1.textLength)(name) > MAX_NAME_LENGTH) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Group name cannot exceed ${MAX_NAME_LENGTH} characters`, { itemIndex });
         }
         return {
@@ -80,7 +80,7 @@ async function buildGroupRequest(operation, itemIndex) {
     if (operation === 'join') {
         // Accept a full invite link too — the API wants only the code that follows
         // https://chat.whatsapp.com/, and pasting the whole link is the common slip.
-        const inviteCode = (0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code').replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+        const inviteCode = (0, params_1.inviteCodeFrom)((0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code'));
         if (!inviteCode) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
         }
@@ -91,7 +91,7 @@ async function buildGroupRequest(operation, itemIndex) {
     }
     if (operation === 'getJoinInfo') {
         // Same link-tolerance as join: pasting the whole invite URL is the common slip.
-        const inviteCode = (0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code').replace(/^https?:\/\/chat\.whatsapp\.com\//i, '');
+        const inviteCode = (0, params_1.inviteCodeFrom)((0, params_1.asText)(this.getNodeParameter('groupInviteCode', itemIndex), 'Invite code'));
         if (!inviteCode) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
         }
@@ -116,6 +116,13 @@ async function buildGroupRequest(operation, itemIndex) {
         case 'rejectMembershipRequests': {
             const action = operation === 'approveMembershipRequests' ? 'approve' : 'reject';
             const requesters = (0, params_1.toStringList)(this.getNodeParameter('groupRequestParticipants', itemIndex, ''));
+            // Only a field left empty means "every pending request". An expression that
+            // found nobody reads the same after resolution, and acting on everyone then
+            // admits or turns away the whole queue, which cannot be undone.
+            const raw = this.getNode().parameters.groupRequestParticipants;
+            if (requesters.length === 0 && typeof raw === 'string' && raw.startsWith('=')) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.', { itemIndex });
+            }
             if (requesters.length > MAX_PARTICIPANTS) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Requesters cannot exceed ${MAX_PARTICIPANTS} entries (got ${requesters.length})`, { itemIndex });
             }
@@ -176,7 +183,7 @@ async function buildGroupRequest(operation, itemIndex) {
             if (!subject) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Subject cannot be empty', { itemIndex });
             }
-            if (subject.length > MAX_NAME_LENGTH) {
+            if ((0, params_1.textLength)(subject) > MAX_NAME_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Subject cannot exceed ${MAX_NAME_LENGTH} characters`, { itemIndex });
             }
             return { endpoint: `${groupBase}/subject`, method: 'PUT', body: { subject } };
@@ -187,8 +194,14 @@ async function buildGroupRequest(operation, itemIndex) {
             // Coerced rather than cast: an expression can resolve to a number or null, and
             // `.length` on one is undefined, so the cap below would pass and a non-string
             // would reach the server's @IsString as a 400 that names no field.
-            const description = (0, params_1.asText)(this.getNodeParameter('groupDescription', itemIndex, ''), 'Description');
-            if (description.length > MAX_DESCRIPTION_LENGTH) {
+            // An empty field clears the description, so an expression that resolved to
+            // nothing (a missing input field) must not read as one.
+            const rawDescription = this.getNodeParameter('groupDescription', itemIndex, '');
+            if (rawDescription === undefined || rawDescription === null) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Description resolved to nothing. To clear the description, leave the field empty.', { itemIndex });
+            }
+            const description = (0, params_1.asText)(rawDescription, 'Description');
+            if ((0, params_1.textLength)(description) > MAX_DESCRIPTION_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`, { itemIndex });
             }
             return {

@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+
+// What the de-duplication ring stores for a key: a short fingerprint, not the key.
+const fingerprint = (key) => createHash('sha256').update(key).digest('base64url').slice(0, 16);
 
 // Imports the compiled output, so run `npm run build` before this test.
 import * as triggerModule from '../dist/nodes/OpenWaTrigger/OpenWaTrigger.node.js';
@@ -150,7 +153,26 @@ test('dedup enabled: the first delivery runs and is recorded', async () => {
   const { ctx, staticData } = makeCtx({ deduplicate: true });
   const result = await deliver(ctx);
   assert.deepEqual(result.workflowData[0][0].json, BODY);
-  assert.deepEqual(staticData.recentDeliveryIds, ['d1']);
+  assert.deepEqual(staticData.recentDeliveryIds, [fingerprint('d1')]);
+});
+
+test('dedup enabled: a key recorded by this node is recognised on the next delivery', async () => {
+  const staticData = {};
+  await deliver(makeCtx({ deduplicate: true, staticData }).ctx);
+  const result = await deliver(makeCtx({ deduplicate: true, staticData }).ctx);
+  assert.equal(result.workflowData, undefined);
+});
+
+test('dedup enabled: a full ring stays small, since n8n rewrites it on every delivery', async () => {
+  // Idempotency keys run to 100-150 characters, and a ring of 500 of them was about
+  // 68 KB of static data written back after each delivery.
+  const staticData = {};
+  for (let n = 0; n < 500; n++) {
+    const body = { event: 'message.received', idempotencyKey: `${'k'.repeat(120)}-${n}`, data: {} };
+    await deliver(makeCtx({ deduplicate: true, staticData, body }).ctx);
+  }
+  assert.equal(staticData.recentDeliveryIds.length, 500);
+  assert.ok(JSON.stringify(staticData).length < 12_000);
 });
 
 test('dedup enabled: a repeated deliveryId is dropped without running or 401', async () => {
@@ -175,7 +197,7 @@ test('dedup enabled: the idempotencyKey is what gets recorded, not the deliveryI
   const body = { event: 'message.received', idempotencyKey: 'evt-7', deliveryId: 'd1', data: {} };
   const { ctx, staticData } = makeCtx({ deduplicate: true, body });
   await deliver(ctx);
-  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7']);
+  assert.deepEqual(staticData.recentDeliveryIds, [fingerprint('evt-7')]);
 });
 
 test('dedup enabled: a crash replay (same idempotencyKey, NEW deliveryId) is dropped', async () => {
@@ -198,7 +220,8 @@ test('dedup enabled: a different event with its own idempotencyKey still runs', 
   const { ctx } = makeCtx({ deduplicate: true, staticData, body });
   const result = await deliver(ctx);
   assert.deepEqual(result.workflowData[0][0].json, body);
-  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7', 'evt-8']);
+  // 'evt-7' is a key stored whole by an earlier release, which must still match.
+  assert.deepEqual(staticData.recentDeliveryIds, ['evt-7', fingerprint('evt-8')]);
 });
 
 test('dedup enabled: falls back to deliveryId when the envelope carries no idempotencyKey', async () => {
@@ -239,6 +262,6 @@ test('dedup state is bounded to the 500 most recent ids', async () => {
   const { ctx } = makeCtx({ deduplicate: true, staticData });
   await deliver(ctx);
   assert.equal(staticData.recentDeliveryIds.length, 500);
-  assert.ok(staticData.recentDeliveryIds.includes('d1'));
+  assert.ok(staticData.recentDeliveryIds.includes(fingerprint('d1')));
   assert.ok(!staticData.recentDeliveryIds.includes('old-0'));
 });

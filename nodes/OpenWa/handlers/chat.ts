@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, toEpochMs, toQueryParams, toStringList } from './params';
+import { requireFullJid, requireJid, toEpochMs, toQueryParams, toStringList } from './params';
 import type { RequestSpec } from './types';
 
 /** Server-side cap on MarkChatReadDto.messageIds. */
@@ -40,7 +40,11 @@ export async function buildChatRequest(
   }
 
   // Every remaining operation posts the target chat in the body rather than the path.
-  const chatId = requireJid(this, 'chatId', 'Chat ID', itemIndex);
+  // Set State's DTO takes a bare number; the other six require the domain.
+  const chatId =
+    operation === 'setState'
+      ? requireJid(this, 'chatId', 'Chat ID', itemIndex)
+      : requireFullJid(this, 'chatId', 'Chat ID', itemIndex);
 
   switch (operation) {
     case 'markRead': {

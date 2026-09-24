@@ -1,6 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
+import { asText } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -40,13 +41,16 @@ export async function buildMediaRequest(
   const source = this.getNodeParameter('mediaConvertSource', itemIndex, 'binary') as string;
   let body: Record<string, unknown>;
   if (source === 'url') {
-    const url = String(this.getNodeParameter('mediaConvertUrl', itemIndex, '') ?? '').trim();
+    const url = asText(this.getNodeParameter('mediaConvertUrl', itemIndex, ''), 'Media URL');
     if (!url) {
       throw new NodeOperationError(this.getNode(), 'Media URL cannot be empty', { itemIndex });
     }
     body = { url };
   } else if (source === 'base64') {
-    const base64 = String(this.getNodeParameter('mediaConvertBase64', itemIndex, '') ?? '').trim();
+    const base64 = asText(
+      this.getNodeParameter('mediaConvertBase64', itemIndex, ''),
+      'Base64 Data',
+    );
     if (!base64) {
       throw new NodeOperationError(this.getNode(), 'Base64 data cannot be empty', { itemIndex });
     }

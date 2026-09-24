@@ -75,11 +75,18 @@ async function buildAutomationRuleRequest(operation, itemIndex) {
             if (conditions !== undefined) {
                 body.conditions = conditions;
             }
-            if (fields.cooldownSeconds !== undefined) {
-                body.cooldownSeconds = fields.cooldownSeconds;
-            }
-            if (fields.enabled !== undefined) {
-                body.enabled = fields.enabled;
+            // A null here is written into a NOT NULL column and answers 500, so an
+            // expression that resolved to nothing stops before the request.
+            for (const [key, label] of [
+                ['cooldownSeconds', 'Cooldown (Seconds)'],
+                ['enabled', 'Enabled'],
+            ]) {
+                if (fields[key] === null) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} resolved to nothing. Remove it from the fields to leave it unchanged.`, { itemIndex });
+                }
+                if (fields[key] !== undefined) {
+                    body[key] = fields[key];
+                }
             }
             if (Object.keys(body).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one field must be provided to update', { itemIndex });

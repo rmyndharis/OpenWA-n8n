@@ -246,6 +246,8 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **List output and node versions:** a list operation (Session > List All, Chat > List, Contact > List, Group > List, Label > List, Webhook > List, and the rest that answer a bare array) emits **one item per row** on node version 2, the version a newly added node gets, so `$json.<field>` reads a row directly and Split Out is not needed. An empty list then yields zero items and the downstream node does not run; enable **Always Output Data** where that matters. A node saved on any release up to and including 1.0.0 stays on version 1 across package upgrades and keeps the whole array on a single item, so an existing workflow reading `$json[0]` is unaffected. A node added while on 1.0.0 got the per-row output without a version of its own, so it returns to the whole array on upgrade; delete and re-add it to move it to version 2. Routes that answer an envelope, such as Message > List and System > Search, keep their shape on both versions because flattening them would drop `total` and the other envelope fields.
 
+> **Failed items:** with **On Error** set to *Continue (using error output)*, a failed item reaches the error output with the input item's fields, `error`, and the gateway's own reason under `message`. With *Continue (regular output)* it stays on the main output as `error` plus that reason under `description`.
+
 > **Observability:** **Check** / **Check Liveness** / **Check Readiness** return the server's health JSON as-is, so a workflow can alert on availability. **Check Readiness** is the one that also probes the database connections. `/api/metrics` is deliberately not offered — it authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here.
 
 > **Not offered:** the server's administration surface, which a workflow has no business driving: the infrastructure, plugin, ingress and integration controllers, plus `/api/metrics`, which authenticates with its own bearer token rather than the API key this credential carries. **Send Catalog** is gone from the server entirely. Settings are environment-derived, and the server publishes no write route for them, so the System resource reads them only. **Search** needs a search provider configured server-side, otherwise it answers `501`, and can answer `502` or `503` when a plugin provider misbehaves or does not respond.
@@ -379,7 +381,7 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 OpenWA guarantees at-least-once delivery: it retries a failed POST, and it replays any delivery stranded by a gateway crash. Both carry the same `idempotencyKey`, so the same event can reach n8n twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent idempotency keys (kept in workflow static data), falling back to `deliveryId` on a gateway too old to send one.
 
-It is best-effort: workflow static data is saved per execution, so two deliveries arriving at the exact same moment can both pass. Enable it when downstream actions are not idempotent.
+It is best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run. Enable it when downstream actions are not idempotent.
 
 ---
 

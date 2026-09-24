@@ -21,10 +21,14 @@ async function buildApiKeyRequest(operation, itemIndex) {
         return { endpoint: base, method: 'GET', body: {} };
     }
     if (operation === 'create') {
+        // Fields > Name is the Update rename. Read here it silently replaced the required
+        // Name, so a copied Update node created its key under the old name.
+        const fields = { ...this.getNodeParameter('keyFields', itemIndex, {}) };
+        delete fields.name;
         const body = {
             name: (0, params_1.requireText)(this, 'keyName', 'API key name', itemIndex),
+            ...collectApiKeyFields.call(this, fields, itemIndex),
         };
-        Object.assign(body, collectApiKeyFields.call(this, this.getNodeParameter('keyFields', itemIndex, {}), itemIndex));
         return { endpoint: base, method: 'POST', body };
     }
     const apiKeyId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('keyId', itemIndex), 'API key ID');
@@ -53,8 +57,10 @@ async function buildApiKeyRequest(operation, itemIndex) {
  */
 function collectApiKeyFields(fields, itemIndex) {
     const body = {};
-    const name = (0, params_1.asText)(fields.name);
-    if (name) {
+    // Refused when blank rather than dropped: dropping it reported a rename that
+    // never happened as a success.
+    const name = (0, params_1.optionalNonBlank)(this, fields.name, 'Name', itemIndex);
+    if (name !== undefined) {
         body.name = name;
     }
     const role = (0, params_1.asText)(fields.role);

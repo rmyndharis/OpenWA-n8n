@@ -29,7 +29,10 @@ async function buildChatRequest(operation, itemIndex) {
         };
     }
     // Every remaining operation posts the target chat in the body rather than the path.
-    const chatId = (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex);
+    // Set State's DTO takes a bare number; the other six require the domain.
+    const chatId = operation === 'setState'
+        ? (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex)
+        : (0, params_1.requireFullJid)(this, 'chatId', 'Chat ID', itemIndex);
     switch (operation) {
         case 'markRead': {
             const body = { chatId };

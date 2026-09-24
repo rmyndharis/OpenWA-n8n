@@ -2,7 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireJid, requireText, toStringList, asText } from './params';
+import { requireJid, requireText, toStringList, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 const STATUS_IMAGE_MEDIA: MediaParamNames = {
@@ -61,7 +61,7 @@ function getCaption(ctx: IExecuteFunctions, itemIndex: number): string | undefin
   if (!caption) {
     return undefined;
   }
-  if (caption.length > MAX_CAPTION_LENGTH) {
+  if (textLength(caption) > MAX_CAPTION_LENGTH) {
     throw new NodeOperationError(
       ctx.getNode(),
       `Caption cannot exceed ${MAX_CAPTION_LENGTH} characters`,

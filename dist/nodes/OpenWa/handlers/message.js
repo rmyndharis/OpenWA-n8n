@@ -137,6 +137,16 @@ function messageBody(ctx, raw, itemIndex) {
     }
     return typeof raw === 'string' ? raw : String(raw);
 }
+/** The last path segment of a URL when it looks like a file name, else ''. */
+function fileNameInUrl(url) {
+    try {
+        const last = new URL(url).pathname.split('/').pop() ?? '';
+        return last.includes('.') ? decodeURIComponent(last) : '';
+    }
+    catch {
+        return '';
+    }
+}
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     // Bulk / batch operations are not addressed to a single chat, and Forward and
@@ -170,10 +180,7 @@ async function buildMessageRequest(operation, itemIndex) {
         };
     }
     if (operation === 'getReactions') {
-        const messageId = (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID');
-        if (!messageId) {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
-        }
+        const messageId = (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex);
         return {
             endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/reactions`,
             method: 'GET',
@@ -181,10 +188,7 @@ async function buildMessageRequest(operation, itemIndex) {
         };
     }
     if (operation === 'getMedia') {
-        const messageId = (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID');
-        if (!messageId) {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message ID cannot be empty', { itemIndex });
-        }
+        const messageId = (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex);
         // Served from the gateway's own archive rather than the engine, so this works
         // while the session is stopped. The only failure is a 404.
         return {
@@ -226,10 +230,22 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     else if (operation === 'sendDocument') {
         endpoint = `/api/sessions/${sessionId}/messages/send-document`;
-        body = {
-            chatId,
-            filename: this.getNodeParameter('filename', itemIndex, 'document.pdf'),
-        };
+        body = { chatId };
+        // A binary item names itself; a URL or base64 source is named by the gateway.
+        // The field used to default to 'document.pdf', which renamed every document.
+        // An empty field takes the binary item's own name, else the file name in a URL's
+        // path, else the old default. Left unnamed, the gateway calls it 'file' with no
+        // extension on Baileys, which is worse than the default it replaced.
+        const source = this.getNodeParameter('documentSource', itemIndex);
+        let filename = (0, params_1.asText)(this.getNodeParameter('filename', itemIndex, ''), 'Filename');
+        if (!filename && source === 'binary') {
+            const property = this.getNodeParameter('documentBinaryProperty', itemIndex);
+            filename = this.helpers.assertBinaryData(itemIndex, property).fileName ?? '';
+        }
+        if (!filename && source === 'url') {
+            filename = fileNameInUrl((0, params_1.asText)(this.getNodeParameter('documentUrl', itemIndex, '')));
+        }
+        body.filename = filename || 'document.pdf';
         const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
         if (caption) {
             body.caption = caption;
@@ -262,7 +278,7 @@ async function buildMessageRequest(operation, itemIndex) {
         Object.assign(body, await media_1.resolveMediaSource.call(this, itemIndex, AUDIO_MEDIA, 'audio/ogg; codecs=opus'));
         // Deliver as a true WhatsApp voice note (PTT). Only attach `ptt` when enabled so
         // plain-audio sends stay backward-compatible; the field requires server >= v0.7.17.
-        if (this.getNodeParameter('sendAsVoiceNote', itemIndex, false)) {
+        if ((0, params_1.isOn)(this.getNodeParameter('sendAsVoiceNote', itemIndex, false))) {
             body.ptt = true;
         }
     }
@@ -270,7 +286,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/reply`;
         body = {
             chatId,
-            quotedMessageId: (0, params_1.asText)(this.getNodeParameter('quotedMessageId', itemIndex), 'Quoted Message ID'),
+            quotedMessageId: (0, params_1.requireText)(this, 'quotedMessageId', 'Quoted Message ID', itemIndex),
             text: messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex),
         };
     }
@@ -279,7 +295,7 @@ async function buildMessageRequest(operation, itemIndex) {
         // An empty emoji removes the existing reaction — the field is intentionally sent.
         body = {
             chatId,
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
             emoji: this.getNodeParameter('emoji', itemIndex, ''),
         };
     }
@@ -287,7 +303,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/delete`;
         body = {
             chatId,
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
             forEveryone: this.getNodeParameter('forEveryone', itemIndex, true),
         };
     }
@@ -317,7 +333,7 @@ async function buildMessageRequest(operation, itemIndex) {
             name: (0, params_1.requireText)(this, 'pollName', 'Poll question', itemIndex, MAX_POLL_NAME_LENGTH),
             options: pollOptions,
         };
-        if (this.getNodeParameter('allowMultipleAnswers', itemIndex, false)) {
+        if ((0, params_1.isOn)(this.getNodeParameter('allowMultipleAnswers', itemIndex, false))) {
             body.allowMultipleAnswers = true;
         }
     }
@@ -357,10 +373,19 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     else if (operation === 'edit') {
         endpoint = `/api/sessions/${sessionId}/messages/edit`;
+        // Read like Send Text and Reply, untrimmed: the new body's leading and trailing
+        // whitespace is content, and the gateway keeps it.
+        const newBody = messageBody(this, this.getNodeParameter('message', itemIndex), itemIndex);
+        if (!newBody.trim()) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message cannot be empty', { itemIndex });
+        }
+        if ((0, params_1.textLength)(newBody) > MAX_EDIT_BODY_LENGTH) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Message cannot exceed ${MAX_EDIT_BODY_LENGTH} characters`, { itemIndex });
+        }
         body = {
             chatId,
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
-            body: (0, params_1.requireText)(this, 'message', 'Message', itemIndex, MAX_EDIT_BODY_LENGTH),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
+            body: newBody,
         };
     }
     else if (operation === 'forward') {
@@ -368,7 +393,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             fromChatId: (0, params_1.requireJid)(this, 'fromChatId', 'From Chat ID', itemIndex),
             toChatId: (0, params_1.requireJid)(this, 'toChatId', 'To Chat ID', itemIndex),
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
         };
         // send-catalog has no branch because the route no longer exists at all; the
         // server removed it. The catalog reads live on the Catalog resource.
@@ -377,7 +402,7 @@ async function buildMessageRequest(operation, itemIndex) {
         endpoint = `/api/sessions/${sessionId}/messages/${operation}`;
         body = {
             chatId,
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
         };
         if (operation === 'pin') {
             // UnpinMessageDto does not declare this field, so it must not ride along.
@@ -389,7 +414,7 @@ async function buildMessageRequest(operation, itemIndex) {
         // `star` has no server-side default: omitting it is a 400, so it is always sent.
         body = {
             chatId,
-            messageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
             star: this.getNodeParameter('star', itemIndex, true),
         };
     }
@@ -402,7 +427,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             chatId,
             // The wire name is pollMessageId here, not messageId.
-            pollMessageId: (0, params_1.asText)(this.getNodeParameter('messageId', itemIndex), 'Message ID'),
+            pollMessageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
             // Always sent, including empty: omitting the key is a 400, and an empty
             // array is how a vote is cleared.
             options: selections,
@@ -461,16 +486,18 @@ async function buildMessageRequest(operation, itemIndex) {
             body.options = options;
         }
     }
-    else if (operation === 'getBatchStatus') {
-        const batchId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('statusBatchId', itemIndex), 'Batch ID');
-        return {
-            endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}`,
-            method: 'GET',
-            body: {},
-        };
-    }
-    else if (operation === 'cancelBatch') {
-        const batchId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('statusBatchId', itemIndex), 'Batch ID');
+    else if (operation === 'getBatchStatus' || operation === 'cancelBatch') {
+        // Encoded rather than run through sanitizePathParam: Send Bulk accepts an ID with
+        // '/', '\' or '..' in it, and the gateway routes one once it is percent-encoded,
+        // so refusing those left a running batch impossible to poll or stop.
+        const batchId = encodeURIComponent((0, params_1.requireText)(this, 'statusBatchId', 'Batch ID', itemIndex));
+        if (operation === 'getBatchStatus') {
+            return {
+                endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}`,
+                method: 'GET',
+                body: {},
+            };
+        }
         return {
             endpoint: `/api/sessions/${sessionId}/messages/batch/${batchId}/cancel`,
             method: 'POST',

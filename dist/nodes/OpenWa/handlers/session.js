@@ -22,7 +22,8 @@ function assertProxyUrl(proxyUrl, itemIndex) {
     // `socks5://` on its own clears the scheme test but is not a URL; so is a
     // credentials-only form. Take the authority and strip any `user:pass@`.
     const authority = scheme[2].split(/[/?#]/)[0];
-    const host = authority.slice(authority.lastIndexOf('@') + 1);
+    // The port is stripped too: `socks5://:1080` names a port and no host.
+    const host = authority.slice(authority.lastIndexOf('@') + 1).replace(/:\d*$/, '');
     if (!host) {
         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Proxy URL must include a host', { itemIndex });
     }
@@ -68,8 +69,17 @@ async function buildSessionRequest(operation, itemIndex) {
     }
     if (operation === 'listAll') {
         const options = this.getNodeParameter('sessionListOptions', itemIndex, {});
-        // Trimmed as Create trims it: the server matches the name exactly.
-        const qs = (0, params_1.toQueryParams)({ ...options, name: (0, params_1.asText)(options.name, 'Name') });
+        const qs = (0, params_1.toQueryParams)(options);
+        if ('name' in options) {
+            // Trimmed as Create trims it: the server matches the name exactly. A blank one
+            // is refused, as the server refuses ?name=, because dropping it lists every
+            // session, and a downstream Stop or Delete then acts on all of them.
+            const name = (0, params_1.asText)(options.name, 'Name');
+            if (!name) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Name filter is empty. Remove the option to list every session.', { itemIndex });
+            }
+            qs.name = name;
+        }
         return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
     }
     if (operation === 'getStatsOverview') {

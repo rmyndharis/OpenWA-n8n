@@ -19,7 +19,7 @@ async function buildChannelRequest(operation, itemIndex) {
     if (operation === 'subscribe') {
         // Accept a full channel link too — the API wants only the invite code, and
         // pasting the whole link is the common slip.
-        const inviteCode = (0, params_1.requireText)(this, 'channelInviteCode', 'Invite code', itemIndex).replace(/^https?:\/\/(?:www\.)?whatsapp\.com\/channel\//i, '');
+        const inviteCode = (0, params_1.inviteCodeFrom)((0, params_1.requireText)(this, 'channelInviteCode', 'Invite code', itemIndex));
         if (!inviteCode) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
         }
@@ -33,7 +33,7 @@ async function buildChannelRequest(operation, itemIndex) {
         // real empty description rather than "no description".
         const description = (0, params_1.asText)(this.getNodeParameter('channelDescription', itemIndex, ''), 'Description');
         if (description) {
-            if (description.length > 2048) {
+            if ((0, params_1.textLength)(description) > 2048) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Channel description cannot exceed 2048 characters', { itemIndex });
             }
             body.description = description;

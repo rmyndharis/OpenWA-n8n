@@ -9,6 +9,7 @@ import type {
   IWebhookResponseData,
   JsonObject,
 } from 'n8n-workflow';
+import { createHash } from 'node:crypto';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { verifyOpenWaSignature } from './verifySignature';
 import { httpStatusFromError } from './httpStatus';
@@ -100,7 +101,7 @@ export class OpenWaTrigger implements INodeType {
         type: 'boolean',
         default: false,
         description:
-          "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: static data is saved per execution, so two deliveries arriving at the same moment can both pass.",
+          "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run.",
       },
       {
         displayName:
@@ -291,6 +292,31 @@ export class OpenWaTrigger implements INodeType {
           body.filters = parsedFilters;
         }
 
+        // n8n saves this node's static data only after every trigger in the workflow
+        // has registered, so an activation that fails later leaves a registration
+        // whose id was never saved: delete() cannot find it, and each retry used to
+        // add another, every one delivering each event again. This node's URL is
+        // unique to it, so a registration carrying it is one of those leftovers.
+        const existing = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+          method: 'GET',
+          url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
+          json: true,
+        });
+        for (const stale of Array.isArray(existing) ? (existing as IDataObject[]) : []) {
+          if (stale.url !== webhookUrl || stale.id === undefined) continue;
+          try {
+            await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
+              method: 'DELETE',
+              url: `${baseUrl}/api/sessions/${sessionId}/webhooks/${encodeURIComponent(String(stale.id))}`,
+              json: true,
+            });
+          } catch (error) {
+            if (httpStatusFromError(error) !== 404) {
+              throw new NodeApiError(this.getNode(), error as JsonObject);
+            }
+          }
+        }
+
         const response = await this.helpers.httpRequestWithAuthentication.call(this, 'openWaApi', {
           method: 'POST',
           url: `${baseUrl}/api/sessions/${sessionId}/webhooks`,
@@ -426,14 +452,19 @@ export class OpenWaTrigger implements INodeType {
         // Key name kept from when the ring held delivery ids, so an upgrade does not
         // strand the previous array in the workflow's stored static data.
         const seen = (staticData.recentDeliveryIds as string[] | undefined) ?? [];
-        if (seen.includes(rawKey)) {
+        // A 16-character fingerprint rather than the key: n8n writes the whole ring
+        // back after every delivery, and 500 keys of 100-150 characters made that
+        // about 68 KB each time. The raw key is still matched, which is how entries
+        // stored by an earlier release look.
+        const fingerprint = createHash('sha256').update(rawKey).digest('base64url').slice(0, 16);
+        if (seen.includes(fingerprint) || seen.includes(rawKey)) {
           this.logger.debug(`OpenWA Trigger: dropping duplicate delivery ${rawKey}`);
           // Dropping means not running. Returning an empty item set instead would
           // still register an execution for every replay this option exists to absorb.
           return {};
         }
         // Bound the memory: keep only the most recent 500 keys.
-        seen.push(rawKey);
+        seen.push(fingerprint);
         if (seen.length > 500) {
           seen.splice(0, seen.length - 500);
         }

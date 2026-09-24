@@ -26,13 +26,13 @@ async function buildTemplateRequest(operation, itemIndex) {
         const header = (0, params_1.asText)(this.getNodeParameter('templateHeader', itemIndex, ''), 'Header');
         const footer = (0, params_1.asText)(this.getNodeParameter('templateFooter', itemIndex, ''), 'Footer');
         if (header) {
-            if (header.length > MAX_HEADER_FOOTER_LENGTH) {
+            if ((0, params_1.textLength)(header) > MAX_HEADER_FOOTER_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Header cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`, { itemIndex });
             }
             body.header = header;
         }
         if (footer) {
-            if (footer.length > MAX_HEADER_FOOTER_LENGTH) {
+            if ((0, params_1.textLength)(footer) > MAX_HEADER_FOOTER_LENGTH) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Footer cannot exceed ${MAX_HEADER_FOOTER_LENGTH} characters`, { itemIndex });
             }
             body.footer = footer;
@@ -82,7 +82,7 @@ async function buildTemplateRequest(operation, itemIndex) {
                 // is undefined, so the cap would pass and the server would answer a 400
                 // naming no field. A blank stays blank here, which clears the field.
                 const text = (0, params_1.asText)(value);
-                if (text.length > max) {
+                if ((0, params_1.textLength)(text) > max) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Template ${key} cannot exceed ${max} characters`, { itemIndex });
                 }
                 body[key] = text;

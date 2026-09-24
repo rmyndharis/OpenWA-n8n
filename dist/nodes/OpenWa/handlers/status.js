@@ -54,7 +54,7 @@ function getCaption(ctx, itemIndex) {
     if (!caption) {
         return undefined;
     }
-    if (caption.length > MAX_CAPTION_LENGTH) {
+    if ((0, params_1.textLength)(caption) > MAX_CAPTION_LENGTH) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `Caption cannot exceed ${MAX_CAPTION_LENGTH} characters`, { itemIndex });
     }
     return caption;

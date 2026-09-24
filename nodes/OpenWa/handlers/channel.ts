@@ -1,7 +1,14 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireJid, requireText, toQueryParams, asText } from './params';
+import {
+  requireJid,
+  requireText,
+  toQueryParams,
+  asText,
+  textLength,
+  inviteCodeFrom,
+} from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -28,9 +35,8 @@ export async function buildChannelRequest(
   if (operation === 'subscribe') {
     // Accept a full channel link too — the API wants only the invite code, and
     // pasting the whole link is the common slip.
-    const inviteCode = requireText(this, 'channelInviteCode', 'Invite code', itemIndex).replace(
-      /^https?:\/\/(?:www\.)?whatsapp\.com\/channel\//i,
-      '',
+    const inviteCode = inviteCodeFrom(
+      requireText(this, 'channelInviteCode', 'Invite code', itemIndex),
     );
     if (!inviteCode) {
       throw new NodeOperationError(this.getNode(), 'Invite code cannot be empty', { itemIndex });
@@ -49,7 +55,7 @@ export async function buildChannelRequest(
       'Description',
     );
     if (description) {
-      if (description.length > 2048) {
+      if (textLength(description) > 2048) {
         throw new NodeOperationError(
           this.getNode(),
           'Channel description cannot exceed 2048 characters',

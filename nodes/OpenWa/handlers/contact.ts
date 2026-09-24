@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText, toQueryParams, toStringList, asText } from './params';
+import { requireText, toQueryParams, toStringList, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 // The bulk profile-picture route documents "max 50 used" — beyond that the
@@ -132,6 +132,11 @@ export async function buildContactRequest(
           this.getNodeParameter('contactLastName', itemIndex, ''),
           'Last Name',
         );
+        if (textLength(lastName) > 100) {
+          throw new NodeOperationError(this.getNode(), 'Last Name cannot exceed 100 characters', {
+            itemIndex,
+          });
+        }
         if (lastName) {
           body.lastName = lastName;
         }

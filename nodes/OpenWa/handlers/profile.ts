@@ -2,7 +2,7 @@ import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { resolveMediaSource, type MediaParamNames } from '../media';
-import { requireText, asText } from './params';
+import { requireText, asText, textLength } from './params';
 import type { RequestSpec } from './types';
 
 const PICTURE_MEDIA: MediaParamNames = {
@@ -42,8 +42,17 @@ export async function buildProfileRequest(
     case 'setStatus': {
       // An empty string is valid here: it clears the about text. Send it as-is
       // rather than dropping the field, which the API would reject as missing.
-      const status = asText(this.getNodeParameter('profileStatus', itemIndex, ''), 'Status');
-      if (status.length > MAX_STATUS_LENGTH) {
+      // An expression that resolved to nothing must not read as a deliberate clear.
+      const rawStatus = this.getNodeParameter('profileStatus', itemIndex, '');
+      if (rawStatus === undefined || rawStatus === null) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Status resolved to nothing. To clear the about text, leave the field empty.',
+          { itemIndex },
+        );
+      }
+      const status = asText(rawStatus, 'Status');
+      if (textLength(status) > MAX_STATUS_LENGTH) {
         throw new NodeOperationError(
           this.getNode(),
           `Status cannot exceed ${MAX_STATUS_LENGTH} characters`,

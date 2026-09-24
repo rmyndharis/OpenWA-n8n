@@ -28,12 +28,20 @@ function makeCtx({
   continueOnFail = false,
   binary = null,
   typeVersion = 2,
+  // The raw, unresolved parameters as n8n stores them; an expression is a string
+  // starting with '='. getNodeParameter above returns the resolved values.
+  nodeParameters = {},
+  // The workflow timezone, which n8n exposes through getTimezone().
+  timezone = 'UTC',
+  // The node's On Error setting; unset on nodes saved before n8n introduced it.
+  onError,
 } = {}) {
   const calls = [];
   const prepared = [];
   const ctx = {
     calls,
     prepared,
+    getTimezone: () => timezone,
     getInputData: () => Array.from({ length: items }, () => ({ json: {} })),
     getNodeParameter: (name, _i, fallback) => (name in params ? params[name] : fallback),
     getCredentials: async () => ({ serverUrl: BASE }),
@@ -44,7 +52,8 @@ function makeCtx({
       type: 'n8n-nodes-openwa.openWa',
       typeVersion,
       position: [0, 0],
-      parameters: {},
+      parameters: nodeParameters,
+      onError,
     }),
     helpers: {
       httpRequestWithAuthentication: async (credName, options) => {
@@ -350,18 +359,72 @@ const mappingCases = [
 
   // ---- message: sendDocument ----
   [
-    'message/sendDocument from URL uses the default filename',
+    'message/sendDocument from URL is named after the file in the URL',
     {
       resource: 'message',
       operation: 'sendDocument',
       sessionId: 'abc-123',
       chatId: '1@c.us',
       documentSource: 'url',
-      documentUrl: 'https://x/f.pdf',
+      documentUrl: 'https://x/files/invoice-123.pdf?sig=abc',
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-document`,
-    { chatId: '1@c.us', filename: 'document.pdf', url: 'https://x/f.pdf' },
+    { chatId: '1@c.us', filename: 'invoice-123.pdf', url: 'https://x/files/invoice-123.pdf?sig=abc' },
+  ],
+  [
+    'message/sendDocument from a URL with no file name keeps the old default name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'url',
+      documentUrl: 'https://x/download',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    { chatId: '1@c.us', filename: 'document.pdf', url: 'https://x/download' },
+  ],
+  [
+    'message/sendDocument from base64 with no name keeps the old default name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'base64',
+      documentBase64: 'QkFTRTY0',
+      documentMimeType: 'application/pdf',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    { chatId: '1@c.us', filename: 'document.pdf', base64: 'QkFTRTY0', mimetype: 'application/pdf' },
+  ],
+  [
+    'message/sendDocument from binary keeps the file its own name',
+    {
+      resource: 'message',
+      operation: 'sendDocument',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      documentSource: 'binary',
+      documentBinaryProperty: 'data',
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/messages/send-document`,
+    {
+      chatId: '1@c.us',
+      filename: 'Q3-report.xlsx',
+      base64: IMG_B64,
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+    {
+      binary: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        fileName: 'Q3-report.xlsx',
+      },
+    },
   ],
   [
     'message/sendDocument from base64 with a custom filename',
@@ -3438,7 +3501,7 @@ test('apiKey/create refuses an expiry that is already past', async () => {
         keyName: 'ops',
         keyFields: { expiresAt: 1798761600 },
       }),
-    /Expiry date must be in the future/,
+    /Epoch values are milliseconds, not seconds/,
   );
 });
 
@@ -4522,3 +4585,605 @@ for (const [label, params, pattern] of guardCases) {
     await assert.rejects(() => run(params), pattern);
   });
 }
+
+// --- Path safety --------------------------------------------------------------
+// encodeURIComponent leaves '.' alone, and the HTTP client resolves a '.' or '..'
+// segment before sending, so an ID of '..' walked the request up to its parent
+// route: Contact > Delete with '..' became DELETE /api/sessions/<id>/, which the
+// gateway serves as Session > Delete.
+
+const dotSegmentCases = [
+  ['contact/delete', { resource: 'contact', operation: 'delete', sessionId: 'abc-123', contactId: '..' }],
+  ['contact/delete padded', { resource: 'contact', operation: 'delete', sessionId: 'abc-123', contactId: ' .. ' }],
+  ['session/getStatus', { resource: 'session', operation: 'getStatus', sessionId: '.' }],
+  ['channel/delete', { resource: 'channel', operation: 'delete', sessionId: 'abc-123', channelId: '..' }],
+  [
+    'label/removeFromChat',
+    { resource: 'label', operation: 'removeFromChat', sessionId: 'abc-123', chatId: '..', labelId: 'l1' },
+  ],
+  ['message/getHistory', { resource: 'message', operation: 'getHistory', sessionId: 'abc-123', chatId: '.' }],
+  ['catalog/getProduct', { resource: 'catalog', operation: 'getProduct', sessionId: 'abc-123', productId: '..' }],
+];
+
+for (const [label, params] of dotSegmentCases) {
+  test(`${label} refuses a dot-segment ID instead of rerouting the request`, async () => {
+    const ctx = makeCtx({ params });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /cannot be '\.' or '\.\.'/);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('an ID that only contains dots among other characters is still sent', async () => {
+  const { ctx } = await run({
+    resource: 'contact',
+    operation: 'delete',
+    sessionId: 'abc-123',
+    contactId: 'a..b@c.us',
+  });
+  assert.equal(singleCall(ctx).options.url, `${BASE}/api/sessions/abc-123/contacts/a..b%40c.us`);
+});
+
+test('message/getBatchStatus reaches a batch whose ID Send Bulk accepted with a slash', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'getBatchStatus',
+    sessionId: 'abc-123',
+    statusBatchId: '2026/09/24..run',
+  });
+  assert.equal(
+    singleCall(ctx).options.url,
+    `${BASE}/api/sessions/abc-123/messages/batch/2026%2F09%2F24..run`,
+  );
+});
+
+test('message/cancelBatch encodes the batch ID rather than refusing it', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'cancelBatch',
+    sessionId: 'abc-123',
+    statusBatchId: 'nightly\\eu',
+  });
+  assert.equal(
+    singleCall(ctx).options.url,
+    `${BASE}/api/sessions/abc-123/messages/batch/nightly%5Ceu/cancel`,
+  );
+});
+
+// --- Error output -------------------------------------------------------------
+// n8n diverts a kept-going item to the error output when its json holds only
+// error/message/details (n8n-core 2.x) or exactly {error} / {error, message} (1.x).
+// Setting `error` on the item also diverts it, but n8n then rewrites the item's json
+// to {error}, losing the gateway's reason and the paired input fields it otherwise
+// merges in, so the json has to be shaped instead.
+
+// Both n8n-core rules, as handleNodeErrorOutput applies them.
+const routesToErrorOutput = (item) => {
+  if (item.error) return true;
+  const keys = Object.keys(item.json);
+  const v2 = Boolean(item.json.error) && keys.every((k) => ['error', 'message', 'details'].includes(k));
+  const v1 =
+    Boolean(item.json.error) &&
+    (keys.length === 1 || (keys.length === 2 && Boolean(item.json.message)));
+  return v1 && v2;
+};
+
+const gatewayRefusal = () =>
+  Object.assign(new Error('Request failed with status code 409'), {
+    response: { status: 409, data: { message: 'Session is not ready (status: disconnected)' } },
+  });
+const sendText = {
+  resource: 'message',
+  operation: 'sendText',
+  sessionId: 'abc-123',
+  chatId: '1@c.us',
+  message: 'hi',
+};
+
+test('a gateway failure under Continue (using error output) reaches the error output with its reason', async () => {
+  const { output } = await run(sendText, {
+    throwErr: gatewayRefusal(),
+    continueOnFail: true,
+    onError: 'continueErrorOutput',
+  });
+  const item = output[0][0];
+  assert.equal(item.error, undefined, 'item.error makes n8n rewrite the json');
+  assert.match(item.json.message, /Session is not ready/);
+  assert.ok(routesToErrorOutput(item));
+});
+
+test('Continue (regular output) keeps the reason under description, as before', async () => {
+  const { output } = await run(sendText, {
+    throwErr: gatewayRefusal(),
+    continueOnFail: true,
+    onError: 'continueRegularOutput',
+  });
+  assert.match(output[0][0].json.description, /Session is not ready/);
+  assert.equal(output[0][0].error, undefined);
+});
+
+test('a parameter mistake under Continue (using error output) still reaches the error output', async () => {
+  const { output } = await run(
+    { resource: 'session', operation: 'getStatus', sessionId: '  ' },
+    { continueOnFail: true, onError: 'continueErrorOutput' },
+  );
+  assert.equal(output[0][0].error, undefined);
+  assert.ok(routesToErrorOutput(output[0][0]));
+});
+
+// --- Empty expression results -------------------------------------------------
+// A field left empty on purpose and an expression that resolved to nothing used to
+// read the same. On these operations the empty reading acts on everything or erases
+// stored data, so an expression that finds nothing is refused instead.
+
+const emptyResolutionCases = [
+  [
+    'group/rejectMembershipRequests refuses an expression that resolved to no requesters',
+    {
+      resource: 'group',
+      operation: 'rejectMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: [],
+    },
+    { groupRequestParticipants: '={{ $json.toReject }}' },
+    /Requesters resolved to an empty list/,
+  ],
+  [
+    'group/approveMembershipRequests refuses an expression that resolved to blank text',
+    {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: '',
+    },
+    { groupRequestParticipants: "={{ $json.ids.join(',') }}" },
+    /Requesters resolved to an empty list/,
+  ],
+  [
+    'session/listAll refuses a Name filter that was added but left blank',
+    { resource: 'session', operation: 'listAll', sessionListOptions: { name: '  ' } },
+    {},
+    /Name filter is empty/,
+  ],
+  [
+    'session/listAll refuses a Name filter whose expression resolved to nothing',
+    { resource: 'session', operation: 'listAll', sessionListOptions: { name: undefined } },
+    {},
+    /Name filter is empty/,
+  ],
+  [
+    'group/updateDescription refuses a description that resolved to nothing',
+    {
+      resource: 'group',
+      operation: 'updateDescription',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupDescription: undefined,
+    },
+    {},
+    /Description resolved to nothing/,
+  ],
+  [
+    'profile/setStatus refuses a status that resolved to null',
+    { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: null },
+    {},
+    /Status resolved to nothing/,
+  ],
+];
+
+for (const [label, params, nodeParameters, pattern] of emptyResolutionCases) {
+  test(label, async () => {
+    const ctx = makeCtx({ params, nodeParameters });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('group/approveMembershipRequests still sends the requesters an expression resolved to', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'group',
+      operation: 'approveMembershipRequests',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupRequestParticipants: ['628123456789@c.us'],
+    },
+    nodeParameters: { groupRequestParticipants: '={{ $json.ids }}' },
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.deepEqual(singleCall(ctx).options.body, { participants: ['628123456789@c.us'] });
+});
+
+// --- Reading expression values ------------------------------------------------
+
+test('message/edit refuses a list of objects instead of sending its string form', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'edit',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        messageId: 'm1',
+        message: [{ a: 1 }, { b: 2 }],
+      }),
+    /Message must be text/,
+  );
+});
+
+test('status/sendText refuses a Map instead of posting "[object Map]"', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'status',
+        operation: 'sendText',
+        sessionId: 'abc-123',
+        statusText: new Map([['a', 1]]),
+      }),
+    /Status text must be text/,
+  );
+});
+
+test('a list of plain strings still reads as the text it joins to', async () => {
+  const { ctx } = await run({
+    resource: 'status',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    statusText: ['Out', 'for delivery'],
+  });
+  assert.equal(singleCall(ctx).options.body.text, 'Out,for delivery');
+});
+
+const sendToggleCases = [
+  [
+    'message/sendAudio ignores a truthy "false" for Send as Voice Note',
+    {
+      resource: 'message',
+      operation: 'sendAudio',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      audioSource: 'url',
+      audioUrl: 'https://example.com/a.ogg',
+      sendAsVoiceNote: 'false',
+    },
+    { chatId: '1@c.us', url: 'https://example.com/a.ogg' },
+  ],
+  [
+    'message/sendPoll ignores a truthy "false" for Allow Multiple Answers',
+    {
+      resource: 'message',
+      operation: 'sendPoll',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      pollName: 'Lunch?',
+      pollOptions: 'Pizza, Sushi',
+      allowMultipleAnswers: 'false',
+    },
+    { chatId: '1@c.us', name: 'Lunch?', options: ['Pizza', 'Sushi'] },
+  ],
+];
+
+for (const [label, params, expectedBody] of sendToggleCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    assert.deepEqual(singleCall(ctx).options.body, expectedBody);
+  });
+}
+
+test('chat/mute refuses epoch seconds given as a number', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'chat',
+        operation: 'mute',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        muteUntil: 1790244000,
+      }),
+    /milliseconds, not seconds/,
+  );
+});
+
+test('chat/mute refuses a signed number string instead of reading it as a year', async () => {
+  await assert.rejects(
+    () =>
+      run({ resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '-1' }),
+    /not a valid date/,
+  );
+});
+
+test('chat/mute reads a picked date in the workflow timezone, not the process one', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      muteUntil: '2026-10-01T09:00:00',
+    },
+    timezone: 'Asia/Jakarta',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-10-01T02:00:00Z'));
+});
+
+test('a picked date lands on the right instant across a daylight-saving change', async () => {
+  const ctx = makeCtx({
+    params: {
+      resource: 'chat',
+      operation: 'mute',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      muteUntil: '2026-11-01T12:00:00',
+    },
+    timezone: 'America/New_York',
+  });
+  await new OpenWa().execute.call(ctx);
+  // 1 November 2026 is after the switch back to EST (UTC-5).
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T17:00:00Z'));
+});
+
+test('a length cap counts an emoji as one character, as the gateway does', async () => {
+  const { ctx } = await run({
+    resource: 'profile',
+    operation: 'setName',
+    sessionId: 'abc-123',
+    profileName: '😀'.repeat(25),
+  });
+  assert.equal(singleCall(ctx).options.body.name, '😀'.repeat(25));
+  await assert.rejects(
+    () => run({ resource: 'profile', operation: 'setName', sessionId: 'abc-123', profileName: '😀'.repeat(26) }),
+    /cannot exceed 25 characters/,
+  );
+});
+
+test('a group description of emoji up to the cap is sent', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'updateDescription',
+    sessionId: 'abc-123',
+    groupId: '1@g.us',
+    groupDescription: '🎉'.repeat(1024),
+  });
+  assert.equal(singleCall(ctx).options.body.description.length, 2048);
+});
+
+test('apiKey/create refuses a millisecond expiry that has already passed', async () => {
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'apiKey',
+        operation: 'create',
+        keyName: 'ops',
+        keyFields: { expiresAt: Date.now() - 60_000 },
+      }),
+    /Expiry date must be in the future/,
+  );
+});
+
+// --- Per-operation input handling ---------------------------------------------
+
+const operationInputCases = [
+  [
+    'group/join reduces a current invite link, query string and all, to its code',
+    { resource: 'group', operation: 'join', sessionId: 'abc-123', groupInviteCode: 'https://chat.whatsapp.com/AbCdEf123?mode=gi_t' },
+    { inviteCode: 'AbCdEf123' },
+  ],
+  [
+    'group/join accepts the /invite/ form with a trailing slash and fragment',
+    { resource: 'group', operation: 'join', sessionId: 'abc-123', groupInviteCode: 'chat.whatsapp.com/invite/AbCdEf123/#x' },
+    { inviteCode: 'AbCdEf123' },
+  ],
+  [
+    'channel/subscribe reduces a channel link with tracking parameters to its code',
+    { resource: 'channel', operation: 'subscribe', sessionId: 'abc-123', channelInviteCode: 'https://whatsapp.com/channel/0029VaXyZ?utm_source=share' },
+    { inviteCode: '0029VaXyZ' },
+  ],
+  [
+    'message/edit keeps the leading and trailing whitespace of the new body',
+    { resource: 'message', operation: 'edit', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', message: '\n    total  = 5\n' },
+    { chatId: '1@c.us', messageId: 'm1', body: '\n    total  = 5\n' },
+  ],
+  [
+    'message/sendImage trims a URL pasted with surrounding spaces',
+    { resource: 'message', operation: 'sendImage', sessionId: 'abc-123', chatId: '1@c.us', imageSource: 'url', imageUrl: '  https://x/a.jpg \n' },
+    { chatId: '1@c.us', url: 'https://x/a.jpg' },
+  ],
+  [
+    'apiKey/create keeps the required Name over a leftover Fields > Name',
+    { resource: 'apiKey', operation: 'create', keyName: 'ops-bot', keyFields: { name: 'old', role: 'viewer' } },
+    { name: 'ops-bot', role: 'viewer' },
+  ],
+];
+
+for (const [label, params, expectedBody] of operationInputCases) {
+  test(label, async () => {
+    const { ctx } = await run(params);
+    const { options } = singleCall(ctx);
+    assert.deepEqual(options.body ?? options.qs, expectedBody);
+  });
+}
+
+test('group/getJoinInfo reduces a link with a query string to its code', async () => {
+  const { ctx } = await run({
+    resource: 'group',
+    operation: 'getJoinInfo',
+    sessionId: 'abc-123',
+    groupInviteCode: 'https://chat.whatsapp.com/AbCdEf123?mode=gi_t',
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { code: 'AbCdEf123' });
+});
+
+const operationGuardCases = [
+  [
+    'message/edit refuses a body that is only whitespace',
+    { resource: 'message', operation: 'edit', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', message: ' \n ' },
+    /Message cannot be empty/,
+  ],
+  [
+    'message/react refuses a blank Message ID',
+    { resource: 'message', operation: 'react', sessionId: 'abc-123', chatId: '1@c.us', messageId: '  ', emoji: '👍' },
+    /Message ID cannot be empty/,
+  ],
+  [
+    'message/reply refuses a blank Quoted Message ID',
+    { resource: 'message', operation: 'reply', sessionId: 'abc-123', chatId: '1@c.us', quotedMessageId: '', message: 'hi' },
+    /Quoted Message ID cannot be empty/,
+  ],
+  [
+    'media/convertVoice refuses Base64 Data that resolved to an object',
+    { resource: 'media', operation: 'convertVoice', sessionId: 'abc-123', mediaConvertSource: 'base64', mediaConvertBase64: { data: 'x' } },
+    /Base64 Data must be text/,
+  ],
+  [
+    'webhook/update refuses Active resolving to nothing',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { active: null } },
+    /Active resolved to nothing/,
+  ],
+  [
+    'webhook/update refuses a blank URL',
+    { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1', updateFields: { url: '  ' } },
+    /URL cannot be empty/,
+  ],
+  [
+    'automationRule/update refuses Cooldown resolving to nothing',
+    { resource: 'automationRule', operation: 'update', sessionId: 'abc-123', ruleId: 'r1', ruleUpdateFields: { cooldownSeconds: null } },
+    /Cooldown \(Seconds\) resolved to nothing/,
+  ],
+  [
+    'apiKey/update refuses a blank Name instead of dropping it',
+    { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: '  ', role: 'viewer' } },
+    /Name cannot be blank/,
+  ],
+  [
+    'session/create refuses a proxy URL with a port but no host',
+    { resource: 'session', operation: 'create', sessionName: 's1', proxyUrl: 'socks5://:1080' },
+    /Proxy URL must include a host/,
+  ],
+  [
+    'contact/save refuses a last name over 100 characters',
+    { resource: 'contact', operation: 'save', sessionId: 'abc-123', contactId: '1@c.us', contactFirstName: 'Ann', contactLastName: 'x'.repeat(101) },
+    /Last Name cannot exceed 100 characters/,
+  ],
+  [
+    'chat/archive refuses a bare number, which the route cannot take',
+    { resource: 'chat', operation: 'archive', sessionId: 'abc-123', chatId: '628123456789', archive: true },
+    /full WhatsApp ID including its domain/,
+  ],
+];
+
+for (const [label, params, pattern] of operationGuardCases) {
+  test(label, async () => {
+    const ctx = makeCtx({ params });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), pattern);
+    assert.equal(ctx.calls.length, 0, 'nothing may reach the wire');
+  });
+}
+
+test('webhook/update sends a padded "null" Headers as the empty object the column takes', async () => {
+  const { ctx } = await run({
+    resource: 'webhook',
+    operation: 'update',
+    sessionId: 'abc-123',
+    webhookId: 'w1',
+    updateFields: { headers: ' null\n' },
+  });
+  assert.deepEqual(singleCall(ctx).options.body, { headers: {} });
+});
+
+test('message/sendAudio still reads a "true" string as a voice note', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendAudio',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    audioSource: 'url',
+    audioUrl: 'https://example.com/a.ogg',
+    sendAsVoiceNote: 'true',
+  });
+  assert.equal(singleCall(ctx).options.body.ptt, true);
+});
+
+test('message/sendPoll still reads a "true" string as multiple answers', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'sendPoll',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    pollName: 'Lunch?',
+    pollOptions: 'Pizza, Sushi',
+    allowMultipleAnswers: 'true',
+  });
+  assert.equal(singleCall(ctx).options.body.allowMultipleAnswers, true);
+});
+
+// Truthiness was the old reading, so every value that used to switch these on still
+// does; only the words that plainly mean off now read as off.
+for (const [value, on] of [
+  [1, true],
+  ['1', true],
+  ['TRUE', true],
+  [' true ', true],
+  ['yes', true],
+  ['FALSE', false],
+  ['0', false],
+  ['no', false],
+  [0, false],
+  ['', false],
+]) {
+  test(`message/sendAudio reads Send as Voice Note ${JSON.stringify(value)} as ${on ? 'on' : 'off'}`, async () => {
+    const { ctx } = await run({
+      resource: 'message',
+      operation: 'sendAudio',
+      sessionId: 'abc-123',
+      chatId: '1@c.us',
+      audioSource: 'url',
+      audioUrl: 'https://example.com/a.ogg',
+      sendAsVoiceNote: value,
+    });
+    assert.equal(singleCall(ctx).options.body.ptt, on ? true : undefined);
+  });
+}
+
+test('a date typed with a space instead of T is also read in the workflow timezone', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-11-01 12:00:00' },
+    timezone: 'America/New_York',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T17:00:00Z'));
+});
+
+test('an unknown workflow timezone falls back instead of throwing a RangeError', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-11-01T12:00:00' },
+    timezone: 'Not/AZone',
+  });
+  await new OpenWa().execute.call(ctx);
+  assert.equal(singleCall(ctx).options.body.muteUntil, Date.parse('2026-11-01T12:00:00'));
+});
+
+test('an impossible picked date is refused by field name', async () => {
+  const ctx = makeCtx({
+    params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: '2026-13-01T09:00:00' },
+    timezone: 'Asia/Jakarta',
+  });
+  await assert.rejects(() => new OpenWa().execute.call(ctx), /Mute Until is not a valid date/);
+});
+
+test('system/search still sends a Date From of 0, which the gateway reads as no lower bound', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'search',
+    searchQuery: 'invoice',
+    searchFilters: { dateFrom: 0 },
+  });
+  assert.equal(singleCall(ctx).options.qs.dateFrom, 0);
+});
+
+test('API Key > Create does not offer the Update-only Fields > Name', () => {
+  const keyFields = new OpenWa().description.properties.find((p) => p.name === 'keyFields');
+  const name = keyFields.options.find((o) => o.name === 'name');
+  assert.deepEqual(name.displayOptions, { show: { '/operation': ['update'] } });
+});

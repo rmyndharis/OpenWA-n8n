@@ -1,12 +1,41 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 export declare function asText(value: unknown, label?: string): string;
+/**
+ * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
+ * driven by an expression, so it can arrive as text from a sheet, a form or a query
+ * string, where 'false' is truthy. Truthiness stays the reading for everything else,
+ * so every value that used to switch a toggle on still does.
+ */
+export declare function isOn(value: unknown): boolean;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
+/**
+ * requireJid for the routes whose DTO requires a domain-qualified ID
+ * (`@Matches(/^[^\s@]+@[^\s@]+$/)`). Checking here lets the message name the field,
+ * where the server's 400 detail is stripped in production. The example is fixed
+ * rather than built from the rejected value, which is not a valid ID.
+ */
+export declare function requireFullJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
+/**
+ * The invite code in a pasted WhatsApp group or channel link, or the text itself when
+ * it is not a link. Current links carry a query string (`?mode=gi_t`), and some a
+ * trailing slash, a fragment or an `/invite/` segment, none of which is part of the
+ * code. The code follows `/channel/` or `/invite/` when either is present and is the
+ * first path segment otherwise; a link that stops before it yields ''.
+ */
+export declare function inviteCodeFrom(text: string): string;
 /**
  * Reads a required free-text parameter, trimmed, optionally length-checked
  * against the server's DTO limit so oversized input fails with a pointed
  * message instead of a generic 400.
  */
 export declare function requireText(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number, maxLength?: number): string;
+/**
+ * Length as the gateway's @MaxLength counts it (validator's isLength): a surrogate
+ * pair, such as most emoji, is one character, and so is a character together with
+ * its emoji or text presentation selector. String.length counts UTF-16 units, which
+ * refused emoji text the gateway accepts.
+ */
+export declare function textLength(text: string): number;
 /**
  * Turns a `collection` parameter into a query object.
  *

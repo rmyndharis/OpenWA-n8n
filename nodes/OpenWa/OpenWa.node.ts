@@ -445,7 +445,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -845,11 +845,13 @@ export class OpenWa implements INodeType {
         displayName: 'Filename',
         name: 'filename',
         type: 'string',
-        default: 'document.pdf',
+        default: '',
+        placeholder: 'invoice-123.pdf',
         displayOptions: {
           show: { resource: ['message'], operation: ['sendDocument'] },
         },
-        description: 'Filename for the document',
+        description:
+          "Name the recipient sees. Leave empty to keep the binary file's own name, or, for a URL or base64 source, the name OpenWA gives it.",
       },
       // Send Audio fields
       {
@@ -1083,7 +1085,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendSticker'], stickerSource: ['base64'] },
         },
         description:
-          'MIME type of the base64 sticker. WhatsApp requires image/webp. OpenWA requires this whenever base64 data is sent.',
+          'MIME type of the base64 data as it actually is, such as image/png. OpenWA converts a PNG or JPEG to WebP itself, but on whatsapp-web.js data declared as image/webp skips that conversion, so non-WebP bytes labelled image/webp arrive as a broken sticker.',
       },
       // Send Contact fields
       {
@@ -1600,7 +1602,7 @@ export class OpenWa implements INodeType {
             type: 'boolean',
             default: false,
             description:
-              'Whether to pull older messages from the device instead of only what the server has stored. It raises the Limit ceiling from 100 to 2000 and forces metadata-only, so Include Media is ignored while this is on. A large deep read is slow and raises the risk of WhatsApp rate-limiting the account.',
+              'Whether to allow a deeper read of the history, which is always read live from the device. It raises the Limit ceiling from 100 to 2000 and forces metadata-only, so Include Media is ignored while this is on. A large deep read is slow and raises the risk of WhatsApp rate-limiting the account.',
           },
           {
             displayName: 'Include Media',
@@ -1762,7 +1764,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -1993,7 +1995,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'Which pending requests to act on, at most 256. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Leave empty to act on every pending request.',
+          'Which pending requests to act on, at most 256. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. Leave empty to act on every pending request; an expression that resolves to an empty list is refused rather than read that way.',
       },
       {
         displayName: 'Picture Source',
@@ -2193,7 +2195,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -2221,7 +2223,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -2538,7 +2540,7 @@ export class OpenWa implements INodeType {
             displayName: 'Limit',
             name: 'limit',
             type: 'number',
-            typeOptions: { minValue: 1 },
+            typeOptions: { minValue: 1, maxValue: 1000 },
             default: 50,
             description: 'Max number of results to return',
           },
@@ -4099,7 +4101,9 @@ export class OpenWa implements INodeType {
             name: 'name',
             type: 'string',
             default: '',
-            description: 'A friendly name for the key',
+            // Create takes its name from the required Name field above.
+            displayOptions: { show: { '/operation': ['update'] } },
+            description: 'A new friendly name for the key',
           },
           {
             displayName: 'Role',
@@ -4150,6 +4154,16 @@ export class OpenWa implements INodeType {
             `Unsupported resource/operation: ${resource}/${operation}`,
             { itemIndex: i },
           );
+        }
+
+        // encodeURIComponent leaves '.' alone, and the HTTP client resolves a dot
+        // segment before sending, so an ID of '..' walks the request up to its parent
+        // route: Contact > Delete with '..' becomes DELETE /api/sessions/<id>/, which
+        // is Session > Delete. Checked here because every path ID passes through.
+        if (spec.endpoint.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+          throw new NodeOperationError(this.getNode(), "An ID in the path cannot be '.' or '..'", {
+            itemIndex: i,
+          });
         }
 
         // Make request
@@ -4299,8 +4313,20 @@ export class OpenWa implements INodeType {
           } catch {
             message = String((error as Error | undefined)?.message ?? error);
           }
+          // n8n diverts an item to the error output only when its json holds nothing
+          // beyond error and message (1.x: exactly those; 2.x: also details), so there
+          // the server's reason goes under `message`. `description` sent every gateway
+          // failure down the success branch. Setting `error` on the item would divert
+          // it too, but n8n then rewrites its json to {error} and drops both the
+          // reason and the input fields it merges in. The regular output keeps
+          // `description`, the shape workflows built on it already read.
+          const reasonKey =
+            this.getNode().onError === 'continueErrorOutput' ? 'message' : 'description';
           returnData.push({
-            json: description === undefined ? { error: message } : { error: message, description },
+            json:
+              description === undefined
+                ? { error: message }
+                : { error: message, [reasonKey]: description },
             pairedItem: { item: i },
           });
           continue;
