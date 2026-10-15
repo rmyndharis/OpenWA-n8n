@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable release tag matching the current package version
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,6 +17,7 @@ permissions:
 
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -23,31 +30,54 @@ jobs:
 
   publish-npm:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: >-
+      ${{ always() && !cancelled() && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'workflow_dispatch' ||
+           (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true')) }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # required to mint the OIDC token for the npm provenance attestation
+      id-token: write # npm trusted publishing and provenance
+    env:
+      RELEASE_TAG: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
     steps:
+      - name: Validate release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Expected a stable release tag such as v1.2.0'
+            exit 1
+          fi
+          release_status=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')
+          test "$release_status" = false
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
       - run: npm ci
-      # Lint and tests stay: they cost a few seconds and they are the last chance to
-      # stop a broken tarball reaching npm, which cannot be unpublished after 72
-      # hours. The CI workflow runs on the push to main for this same commit, but it
-      # is a separate workflow triggered by the same event, so nothing orders it
-      # before this job. The Creator Portal scan is deliberately not repeated here:
-      # it gates portal acceptance rather than correctness, and it installs a
-      # scanner whose failures are unrelated to what is being published.
+      # Repeat lint and tests because publication runs independently of CI.
+      # The Creator Portal scanner remains in CI.
       - run: npm run lint
       - run: npm run build
       - run: node --test test/*.test.mjs
-      # --provenance attaches a signed build attestation, required for n8n community-node
-      # verification since May 2026. Works with NPM_TOKEN below; for OIDC trusted publishing,
-      # remove NPM_TOKEN and configure a Trusted Publisher on npm (no long-lived secret).
+      - name: Verify release contents
+        run: |
+          git fetch --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          git diff --exit-code "refs/tags/$RELEASE_TAG" HEAD -- . ':!.github/workflows/release.yml'
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const version = require('./package.json').version;
+          const lock = require('./package-lock.json');
+          assert.equal(`v${version}`, process.env.RELEASE_TAG);
+          assert.equal(lock.version, version);
+          assert.equal(lock.packages[''].version, version);
+          assert.equal(require('./.release-please-manifest.json')['.'], version);
+          NODE
+          dist_status=$(git status --porcelain -- dist)
+          test -z "$dist_status"
+      # npm exchanges the workflow's OIDC identity for a short-lived publish token.
       - run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
