@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.1.0...v1.2.0) (2026-10-15)
+
+
+### Features
+
+* synchronize the node with OpenWA 0.25.0 ([234c691](https://github.com/rmyndharis/OpenWA-n8n/commit/234c691fe0e083a215bdc2b0b7db7df1fdc78932))
+
 ## [1.1.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.0.1...v1.1.0) (2026-09-24)
 
 
