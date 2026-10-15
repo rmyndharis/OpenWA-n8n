@@ -51,6 +51,8 @@ jobs:
           fi
       - run: npm run lint
       - run: npm run format:check
+      - name: Verify the pinned OpenWA API contract
+        run: npm run check:openwa
       # Run the same lint gate the n8n Creator Portal enforces, against the local
       # source, so a rule violation fails CI before publishing instead of after the
       # portal rejects the release. The scanner's toolchain (TypeScript 7, ESLint 9)

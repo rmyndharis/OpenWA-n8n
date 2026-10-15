@@ -2,7 +2,14 @@ import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { webhookSecretProblem } from '../../shared/webhookSecret';
-import { asText, assertFieldsResolved, LEAVE_UNCHANGED, toQueryParams } from './params';
+import {
+  asText,
+  assertFieldsResolved,
+  LEAVE_UNCHANGED,
+  optionalNonBlank,
+  toQueryParams,
+  toStringList,
+} from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -29,7 +36,7 @@ export async function buildWebhookRequest(
   operation: string,
   itemIndex: number,
 ): Promise<RequestSpec | null> {
-  // These two span every session, so they are resolved before the Session ID
+  // These operations span sessions, so they are resolved before the Session ID
   // field is read — it is not shown for them.
   if (operation === 'listAll') {
     const options = this.getNodeParameter('webhookListOptions', itemIndex, {}) as IDataObject;
@@ -46,6 +53,48 @@ export async function buildWebhookRequest(
       body: {},
       qs: toQueryParams(options),
     };
+  }
+
+  if (operation === 'redriveDeliveryFailures') {
+    const fields = this.getNodeParameter('redriveOptions', itemIndex, {}) as IDataObject;
+    assertFieldsResolved(
+      this,
+      fields,
+      { sessionId: 'Session ID', webhookId: 'Webhook ID', ids: 'Failure IDs', limit: 'Limit' },
+      'Remove the option to leave the selection unrestricted.',
+      itemIndex,
+    );
+    const body: Record<string, unknown> = {};
+    for (const key of ['sessionId', 'webhookId'] as const) {
+      const value = optionalNonBlank(this, fields[key] as string | undefined, key, itemIndex, 128);
+      if (value !== undefined) body[key] = value;
+    }
+    if (fields.ids !== undefined) {
+      const ids = toStringList(fields.ids);
+      if (ids.length > 500 || ids.some((id) => [...id].length > 128)) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Failure IDs accepts at most 500 IDs of at most 128 characters each',
+          { itemIndex },
+        );
+      }
+      body.ids = ids;
+    }
+    if (fields.limit !== undefined) {
+      const limit = Number(fields.limit);
+      if (
+        !['number', 'string'].includes(typeof fields.limit) ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > 500
+      ) {
+        throw new NodeOperationError(this.getNode(), 'Limit must be an integer between 1 and 500', {
+          itemIndex,
+        });
+      }
+      body.limit = limit;
+    }
+    return { endpoint: '/api/webhooks/delivery-failures/redrive', method: 'POST', body };
   }
 
   const sessionId = sanitizePathParam(

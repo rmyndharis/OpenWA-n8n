@@ -45,6 +45,20 @@ const QUOTABLE_SENDS = new Set([
     'sendContact',
     'sendPoll',
 ]);
+const IDEMPOTENT_SENDS = new Set([
+    'sendText',
+    'sendTemplate',
+    'sendImage',
+    'sendVideo',
+    'sendAudio',
+    'sendDocument',
+    'sendSticker',
+    'sendLocation',
+    'sendContact',
+    'sendPoll',
+    'reply',
+    'forward',
+]);
 const IMAGE_MEDIA = {
     source: 'imageSource',
     binaryProperty: 'imageBinaryProperty',
@@ -186,11 +200,37 @@ async function buildMessageRequest(operation, itemIndex) {
     // --- Reads -----------------------------------------------------------------
     if (operation === 'list') {
         const options = this.getNodeParameter('messageListOptions', itemIndex, {});
+        for (const key of ['since', 'until', 'direction', 'orderBy', 'type', 'messageId']) {
+            if (!(key in options))
+                continue;
+            const value = options[key];
+            if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${key} has no value. Remove the option to leave the selection unrestricted.`, { itemIndex });
+            }
+        }
+        const qs = (0, params_1.toQueryParams)(options);
+        for (const key of ['since', 'until']) {
+            if (!(key in options))
+                continue;
+            const value = options[key];
+            const numeric = typeof value === 'number' ||
+                (typeof value === 'string' && /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value.trim()));
+            const ms = numeric ? Number(value) : (0, params_1.toEpochMs)(this, value, key, itemIndex);
+            if (!Number.isFinite(ms) || ms < 0 || ms > Number.MAX_SAFE_INTEGER) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${key} must be a non-negative epoch millisecond value`, { itemIndex });
+            }
+            qs[key] = ms;
+        }
+        if (qs.since !== undefined && qs.until !== undefined && Number(qs.since) >= Number(qs.until)) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Since must be earlier than Until (exclusive)', {
+                itemIndex,
+            });
+        }
         return {
             endpoint: `/api/sessions/${sessionId}/messages`,
             method: 'GET',
             body: {},
-            qs: (0, params_1.toQueryParams)(options),
+            qs,
         };
     }
     if (operation === 'getHistory') {
@@ -571,5 +611,15 @@ async function buildMessageRequest(operation, itemIndex) {
             body.mentions = mentions;
         }
     }
-    return { endpoint, method: 'POST', body };
+    const spec = { endpoint, method: 'POST', body };
+    if (IDEMPOTENT_SENDS.has(operation)) {
+        const key = this.getNodeParameter('idempotencyKey', itemIndex, '');
+        if (key !== '') {
+            if (typeof key !== 'string' || !/^[\x21-\x7E]{1,255}$/.test(key)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Idempotency Key must contain 1-255 visible ASCII characters without spaces', { itemIndex });
+            }
+            spec.headers = { 'Idempotency-Key': key };
+        }
+    }
+    return spec;
 }

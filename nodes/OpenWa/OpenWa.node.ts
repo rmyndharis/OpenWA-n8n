@@ -337,7 +337,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create'] },
         },
         description:
-          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. A proxy belongs in the Proxy URL field, not here. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.25.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Proxy URL',
@@ -349,7 +349,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create', 'updateProxy'] },
         },
         description:
-          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or OpenWA ≥ 0.23.6 refuses it. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. An unreachable proxy does not fail fast: no QR is ever delivered and Start times out after about 30 seconds.',
+          'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or OpenWA ≥ 0.23.6 refuses it. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. Setting a proxy at creation or through Update Proxy requires an ADMIN key; session-scoped keys cannot create sessions or update proxies. An unreachable proxy prevents the QR: whatsapp-web.js Start times out after about 30 seconds, while Baileys Start may succeed and keep retrying.',
       },
       {
         displayName: 'Clear Proxy',
@@ -695,6 +695,33 @@ export class OpenWa implements INodeType {
           'The recipient chat ID (e.g., 628123456789@c.us for personal, or ...@g.us for groups). Only the first 1000 are listed; use an expression for anything beyond that. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
       },
       // Send Text fields
+      {
+        displayName: 'Idempotency Key',
+        name: 'idempotencyKey',
+        type: 'string',
+        default: '',
+        displayOptions: {
+          show: {
+            resource: ['message'],
+            operation: [
+              'sendText',
+              'sendTemplate',
+              'sendImage',
+              'sendVideo',
+              'sendAudio',
+              'sendDocument',
+              'sendSticker',
+              'sendLocation',
+              'sendContact',
+              'sendPoll',
+              'reply',
+              'forward',
+            ],
+          },
+        },
+        description:
+          'Optional key of 1-255 visible ASCII characters without spaces. On OpenWA 0.25.0 or later, retrying the same request with the same key within 24 hours returns the first result without sending again. Keys are unique per session: use an expression with a distinct key for each intended message, and reuse it only for retries of that message. A different body or route with the same key returns 422; an in-progress or uncertain send returns 409. Older servers ignore the header.',
+      },
       {
         displayName: 'Message',
         name: 'message',
@@ -1547,6 +1574,17 @@ export class OpenWa implements INodeType {
               'Only return messages from this chat. Only the first 1000 are listed; use an expression for anything beyond that. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
+            displayName: 'Direction',
+            name: 'direction',
+            type: 'options',
+            options: [
+              { name: 'Incoming', value: 'incoming' },
+              { name: 'Outgoing', value: 'outgoing' },
+            ],
+            default: 'incoming',
+            description: 'Only return messages in this direction. Requires OpenWA 0.25.0 or later.',
+          },
+          {
             displayName: 'From',
             name: 'from',
             type: 'string',
@@ -1570,6 +1608,14 @@ export class OpenWa implements INodeType {
             description: 'Max number of results to return',
           },
           {
+            displayName: 'Message ID',
+            name: 'messageId',
+            type: 'string',
+            default: '',
+            description:
+              'Exact WhatsApp message reference, at most 200 characters without whitespace. This is not the stored row ID used by After Row ID. Requires OpenWA 0.25.0 or later.',
+          },
+          {
             displayName: 'Offset',
             name: 'offset',
             type: 'number',
@@ -1577,6 +1623,42 @@ export class OpenWa implements INodeType {
             default: 0,
             description:
               'Number of messages to skip before collecting the result set. Ignored when After Row ID is set, and prone to drift on a live chat: a message arriving between pages shifts every later offset.',
+          },
+          {
+            displayName: 'Order By',
+            name: 'orderBy',
+            type: 'options',
+            options: [
+              { name: 'Created At', value: 'createdAt' },
+              { name: 'Message Timestamp', value: 'timestamp' },
+            ],
+            default: 'createdAt',
+            description:
+              'Newest first by ingestion time or WhatsApp message time. Timestamp order excludes messages without a known timestamp. Keep the same filters and ordering when using After Row ID. Requires OpenWA 0.25.0 or later.',
+          },
+          {
+            displayName: 'Since',
+            name: 'since',
+            type: 'dateTime',
+            default: '',
+            description:
+              'Inclusive lower bound on WhatsApp message time, converted to epoch milliseconds in the workflow timezone. Requires OpenWA 0.25.0 or later.',
+          },
+          {
+            displayName: 'Type',
+            name: 'type',
+            type: 'string',
+            default: '',
+            description:
+              'Exact stored message type, such as text, image, voice or poll. Requires OpenWA 0.25.0 or later.',
+          },
+          {
+            displayName: 'Until',
+            name: 'until',
+            type: 'dateTime',
+            default: '',
+            description:
+              'Exclusive upper bound on WhatsApp message time, converted to epoch milliseconds in the workflow timezone. Must be later than Since. Requires OpenWA 0.25.0 or later.',
           },
         ],
       },
@@ -2156,6 +2238,11 @@ export class OpenWa implements INodeType {
           },
           { name: 'List', value: 'list', action: 'List the webhooks of a session' },
           { name: 'List All', value: 'listAll', action: 'List webhooks across all sessions' },
+          {
+            name: 'Redrive Delivery Failures',
+            value: 'redriveDeliveryFailures',
+            action: 'Replay failed webhook deliveries',
+          },
           { name: 'Test', value: 'test', action: 'Send a test delivery to a webhook' },
           { name: 'Update', value: 'update', action: 'Update a webhook' },
         ],
@@ -2172,10 +2259,52 @@ export class OpenWa implements INodeType {
         required: true,
         displayOptions: {
           show: { resource: ['webhook'] },
-          hide: { operation: ['listAll', 'getDeliveryFailures'] },
+          hide: { operation: ['listAll', 'getDeliveryFailures', 'redriveDeliveryFailures'] },
         },
         description:
           'The ID of the session. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+      },
+      {
+        displayName: 'Options',
+        name: 'redriveOptions',
+        type: 'collection',
+        placeholder: 'Add Option',
+        default: {},
+        displayOptions: { show: { resource: ['webhook'], operation: ['redriveDeliveryFailures'] } },
+        description:
+          'Replay one bounded batch using an ADMIN key on OpenWA 0.25.0 or later. Requires WEBHOOK_FAILURE_PAYLOAD_RETENTION_HOURS to be enabled on the server. Only replayable terminal failures with retained payloads are eligible; session restrictions still apply. Each replay keeps its original idempotency key. With no options, the server selects up to 100 eligible rows.',
+        options: [
+          {
+            displayName: 'Failure IDs',
+            name: 'ids',
+            type: 'string',
+            default: '',
+            description:
+              'Failure row IDs from Get Delivery Failures, as a comma-separated list or JSON array (at most 500). An explicit empty list replays nothing.',
+          },
+          {
+            displayName: 'Limit',
+            name: 'limit',
+            type: 'number',
+            typeOptions: { minValue: 1, maxValue: 500, numberPrecision: 0 },
+            default: 50,
+            description: 'Max number of results to return',
+          },
+          {
+            displayName: 'Session ID',
+            name: 'sessionId',
+            type: 'string',
+            default: '',
+            description: 'Only replay failures for this session (at most 128 characters)',
+          },
+          {
+            displayName: 'Webhook ID',
+            name: 'webhookId',
+            type: 'string',
+            default: '',
+            description: 'Only replay failures for this webhook (at most 128 characters)',
+          },
+        ],
       },
       {
         // Two collections rather than one shared between List All and Get
@@ -2285,7 +2414,7 @@ export class OpenWa implements INodeType {
             type: 'json',
             default: '',
             description:
-              'Server-side filters as JSON, in the form <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>chatId</code>, <code>fromMe</code>, <code>hasMedia</code>, <code>mentions</code>. <code>chatId</code> (server ≥ 0.23.6) scopes to one conversation, a DM or a group such as <code>120363000000000000@g.us</code>, where <code>sender</code> matches only who wrote the message. <code>kind</code> (server ≥ 0.23.4) names the chat kind, one of <code>individual</code>, <code>group</code>, <code>channel</code>, <code>status</code>, <code>broadcast</code> or <code>unknown</code>, and is the only way to single out or exclude a Channel post, which <code>isGroup</code> reports as false along with everything else. Value shape is enforced: the ID, mentions, type and kind fields take a non-empty array, <code>body</code> takes a plain string, and the boolean fields take a real boolean. Filters narrow only message events, so session, group and call events are delivered regardless. Within the message family, an <code>is</code> condition on an ID, type or kind field a given event does not carry suppresses that event outright: a <code>sender</code> or <code>chatId</code> filter alongside a Message Ack subscription drops every ack, because an ack carries neither. A boolean field the event lacks reads as false. Filter narrowly, or register a second webhook for the other events, at a URL of its own: an OpenWA Trigger removes any other registration using its URL when it activates. A suppressed delivery is silent and looks the same from n8n as nothing having happened.',
+              'Server-side filters as JSON: <code>{"conditions":[{"field":"type","operator":"is","value":["text"]}]}</code>. Conditions are ANDed, at most 20. Fields: <code>sender</code>, <code>recipient</code>, <code>body</code>, <code>type</code>, <code>isGroup</code>, <code>kind</code>, <code>chatId</code>, <code>fromMe</code>, <code>hasMedia</code> and <code>mentions</code>. ID, mentions, type and kind values are non-empty arrays; body is text and boolean values are real booleans. <code>chatId</code> scopes a conversation (server 0.23.6 or later); on 0.25.0 or later it also scopes Message Ack and Message Failed when their payload carries the chat. <code>sender</code> still suppresses acks without a sender. An <code>is</code> condition on a missing ID, type or kind suppresses that event; a missing boolean reads as false. <code>kind</code> (server 0.23.4 or later) is individual, group, channel, status, broadcast or unknown; use it to distinguish channel posts from other non-group messages. Filters narrow message events; session, group, call and event.response events arrive regardless. A filtered-out delivery is silent. Each Trigger registers its own webhook (16 per session by default). Give each filter set its own Trigger and URL: activation removes other registrations using the same URL, and filter changes re-register on activation.',
           },
           {
             displayName: 'Headers',
@@ -4069,7 +4198,7 @@ export class OpenWa implements INodeType {
             default: '',
             placeholder: '120363000000000000@g.us, 628123456789',
             description:
-              'Restrict the key to these chats: groups as <code>...@g.us</code>, contacts as <code>...@c.us</code> or <code>...@lid</code>, or bare phone numbers. Such a key is refused (403) on every route that is not chat-aware, which includes the credential test, every dropdown except the chat pickers, and the OpenWA Trigger, so it suits sending to and reading from those chats only. Requires OpenWA ≥ 0.23.6. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
+              'Restrict the key to these chats: groups as <code>...@g.us</code>, contacts as <code>...@c.us</code> or <code>...@lid</code>, or bare phone numbers. Such a key is refused (403) on every route that is not chat-aware, which includes the credential test, the Session dropdown, and the OpenWA Trigger. On OpenWA 0.25.0, Chat and Group lists, allowed group reads and settings, Message List with a Chat ID, and built-in search honor the chat allowlist; plugin search is refused, so it suits sending to and reading from those chats only. Requires OpenWA ≥ 0.23.6. Accepts a comma-separated list, a JSON array, or an expression resolving to an array.',
           },
           {
             displayName: 'Allowed IPs',
@@ -4174,6 +4303,7 @@ export class OpenWa implements INodeType {
           url: `${baseUrl}${spec.endpoint}`,
           headers: {
             'Content-Type': 'application/json',
+            ...spec.headers,
           },
           // A route that answers with text or raw bytes must not be parsed as JSON.
           json: !isText && !isBinary,

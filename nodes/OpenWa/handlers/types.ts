@@ -9,6 +9,7 @@ export interface RequestSpec {
   endpoint: string;
   method: IHttpRequestMethods;
   body: Record<string, unknown>;
+  headers?: Record<string, string>;
   /**
    * Optional query string. Only set by operations that paginate or filter;
    * omitted entirely when empty so GET URLs stay unchanged for every existing
