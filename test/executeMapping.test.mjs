@@ -8,7 +8,7 @@ import * as nodeModule from '../dist/nodes/OpenWa/OpenWa.node.js';
 // n8n-workflow ships a broken ESM build (extensionless internal imports), so the
 // CJS entry is the only one that loads here. The node itself is compiled to CJS
 // and resolves it the same way.
-const { NodeApiError } = createRequire(import.meta.url)('n8n-workflow');
+const { NodeApiError, Workflow } = createRequire(import.meta.url)('n8n-workflow');
 
 const { OpenWa } = nodeModule;
 
@@ -94,6 +94,158 @@ function singleCall(ctx) {
   assert.equal(ctx.calls.length, 1, 'expected exactly one outgoing request');
   return ctx.calls[0];
 }
+
+const IDEMPOTENT_SEND_CASES = [
+  ['sendText', { message: 'hello' }],
+  ['sendTemplate', { sendTemplateId: 'template-1' }],
+  ['sendImage', { imageSource: 'url', imageUrl: 'https://example.test/image.png' }],
+  ['sendVideo', { videoSource: 'url', videoUrl: 'https://example.test/video.mp4' }],
+  ['sendAudio', { audioSource: 'url', audioUrl: 'https://example.test/audio.ogg' }],
+  ['sendDocument', { documentSource: 'url', documentUrl: 'https://example.test/doc.pdf' }],
+  ['sendSticker', { stickerSource: 'url', stickerUrl: 'https://example.test/sticker.webp' }],
+  ['sendLocation', { latitude: 1, longitude: 2 }],
+  ['sendContact', { contactName: 'Ada', contactNumber: '628123456789' }],
+  ['sendPoll', { pollName: 'Lunch?', pollOptions: ['A', 'B'] }],
+  ['reply', { message: 'hello', quotedMessageId: 'wa-ref-1' }],
+  ['forward', { fromChatId: '628123456789@c.us', toChatId: '628999999999@c.us', messageId: 'wa-ref-1' }],
+];
+
+for (const [operation, fields] of IDEMPOTENT_SEND_CASES) {
+  test(`${operation} passes the caller's idempotency key as a header`, async () => {
+    const { ctx } = await run({ resource: 'message', operation, sessionId: 'abc-123', chatId: '628123456789@c.us', ...fields, idempotencyKey: 'order-42:send' });
+    const { options } = singleCall(ctx);
+    assert.equal(options.headers['Idempotency-Key'], 'order-42:send');
+    assert.equal(options.headers['Content-Type'], 'application/json');
+    assert.equal(options.body.idempotencyKey, undefined);
+  });
+}
+
+test('send retries keep the supplied key and sends without a key keep the existing request', async () => {
+  const params = { resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: '628123456789@c.us', message: 'hello' };
+  const { ctx } = await run({ ...params, idempotencyKey: 'order-42' }, { items: 2 });
+  assert.deepEqual(ctx.calls.map(c => c.options.headers['Idempotency-Key']), ['order-42', 'order-42']);
+  assert.equal(singleCall((await run(params)).ctx).options.headers['Idempotency-Key'], undefined);
+});
+
+test('send headers stay isolated between input items', async () => {
+  const ctx = makeCtx({ params: { resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: '628123456789@c.us', message: 'hello' }, items: 3 });
+  const getParameter = ctx.getNodeParameter;
+  ctx.getNodeParameter = (name, i, fallback) => name === 'idempotencyKey' ? ['first', '', 'third'][i] : getParameter(name, i, fallback);
+  await new OpenWa().execute.call(ctx);
+  assert.deepEqual(ctx.calls.map(c => c.options.headers['Idempotency-Key']), ['first', undefined, 'third']);
+});
+
+for (const key of [' ', 'has space', ' padded', 'trailing ', 'line\nbreak', 'tab\tkey', 'del\x7f', 'non-ascii-é', 'x'.repeat(256), null, undefined, 42]) {
+  test(`invalid idempotency key ${JSON.stringify(key)} is refused before a send`, async () => {
+    const ctx = makeCtx({ params: { resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: '628123456789@c.us', message: 'hello', idempotencyKey: key } });
+    await assert.rejects(new OpenWa().execute.call(ctx), /Idempotency Key/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('the maximum idempotency key is accepted and hidden keys do not affect message actions', async () => {
+  const params = { resource: 'message', sessionId: 'abc-123', chatId: '628123456789@c.us' };
+  assert.equal(singleCall((await run({ ...params, operation: 'sendText', message: 'hello', idempotencyKey: 'x'.repeat(255) })).ctx).options.headers['Idempotency-Key'], 'x'.repeat(255));
+  assert.equal(singleCall((await run({ ...params, operation: 'react', messageId: 'wa-ref-1', emoji: '', idempotencyKey: 'order-42' })).ctx).options.headers['Idempotency-Key'], undefined);
+});
+
+test('message list converts time bounds in the workflow timezone and preserves every new filter', async () => {
+  const { ctx } = await run({ resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: '2026-10-01T09:00:00', until: '2026-10-02T09:00:00Z', direction: 'incoming', orderBy: 'timestamp', type: 'poll', messageId: 'wa-ref-1', inlineMedia: false, offset: 0 } }, { timezone: 'Asia/Jakarta' });
+  assert.deepEqual(singleCall(ctx).options.qs, { since: 1790820000000, until: 1790931600000, direction: 'incoming', orderBy: 'timestamp', type: 'poll', messageId: 'wa-ref-1', inlineMedia: false, offset: 0 });
+});
+
+for (const options of [{ since: 'broken' }, { since: 1800000000000, until: 1700000000000 }, { since: 1700000000000, until: 1700000000000 }, { since: -1700000000000 }, { since: null }, { until: undefined }]) {
+  test(`invalid message time window ${JSON.stringify(options)} makes no request`, async () => {
+    const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: options } });
+    await assert.rejects(new OpenWa().execute.call(ctx));
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('message list accepts epoch zero as an inclusive lower bound', async () => {
+  const { ctx } = await run({ resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: 0 } });
+  assert.deepEqual(singleCall(ctx).options.qs, { since: 0 });
+});
+
+for (const key of ['since', 'until', 'direction', 'orderBy', 'type', 'messageId']) {
+  for (const value of [undefined, null, '', '   ']) {
+    test(`message list refuses an empty ${key} selector (${JSON.stringify(value)})`, async () => {
+      const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { [key]: value } } });
+      await assert.rejects(new OpenWa().execute.call(ctx), new RegExp(key));
+      assert.equal(ctx.calls.length, 0);
+    });
+  }
+}
+
+for (const typeVersion of [1, 2]) {
+  test(`message list v${typeVersion} refuses missing expression values without broadening the query`, async () => {
+    for (const key of ['direction', 'orderBy', 'type', 'messageId']) {
+      const ctx = makeCtx({ typeVersion });
+      const node = ctx.getNode();
+      node.parameters = { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { [key]: '={{ $json.missing }}' } };
+      const workflow = new Workflow({ nodes: [node], connections: {}, active: false, nodeTypes: { getByNameAndVersion: () => new OpenWa() } });
+      ctx.getNodeParameter = (name, _i, fallback) => workflow.expression.getParameterValue(node.parameters[name] ?? fallback, null, 0, 0, node.name, [{ json: {} }], 'manual', {});
+      assert.deepEqual(ctx.getNodeParameter('messageListOptions'), { [key]: undefined });
+      await assert.rejects(new OpenWa().execute.call(ctx), new RegExp(key));
+      assert.equal(ctx.calls.length, 0);
+    }
+  });
+}
+
+for (const value of [0, '0', 1, '1', 1234, '1234', 1.5, '1.5', '1.7e12', '1E+3', Number.MAX_SAFE_INTEGER]) {
+  test(`message list accepts numeric millisecond boundary ${JSON.stringify(value)}`, async () => {
+    const { ctx } = await run({ resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: value } });
+    assert.deepEqual(singleCall(ctx).options.qs, { since: Number(value) });
+  });
+}
+
+for (const value of [-1, '-1', Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, '1e999', '0x10']) {
+  test(`message list refuses invalid numeric millisecond boundary ${String(value)}`, async () => {
+    const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: value } } });
+    await assert.rejects(new OpenWa().execute.call(ctx));
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('an invalid message selector keeps its input index and allows later items to continue', async () => {
+  const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123' }, items: 2, continueOnFail: true });
+  const getParameter = ctx.getNodeParameter;
+  ctx.getNodeParameter = (name, i, fallback) => name === 'messageListOptions' ? { messageId: i === 0 ? undefined : 'wa-ref-1' } : getParameter(name, i, fallback);
+  const output = await new OpenWa().execute.call(ctx);
+  assert.match(output[0][0].json.error, /messageId/);
+  assert.deepEqual(output[0].map(item => item.pairedItem), [{ item: 0 }, { item: 1 }]);
+  assert.deepEqual(singleCall(ctx).options.qs, { messageId: 'wa-ref-1' });
+});
+
+test('redrive posts a bounded selection without reading the shared session field', async () => {
+  const { ctx, output } = await run({ resource: 'webhook', operation: 'redriveDeliveryFailures', redriveOptions: { sessionId: ' session-1 ', webhookId: ' webhook-1 ', ids: '["failure-1","failure-2"]', limit: 500 } }, { response: { redriven: 2, delivered: 2, enqueued: 0, failed: 0, skipped: 0, remaining: 0 } });
+  const { options } = singleCall(ctx);
+  assert.equal(options.method, 'POST');
+  assert.equal(options.url, `${BASE}/api/webhooks/delivery-failures/redrive`);
+  assert.deepEqual(options.body, { sessionId: 'session-1', webhookId: 'webhook-1', ids: ['failure-1', 'failure-2'], limit: 500 });
+  assert.equal(options.qs, undefined);
+  assert.equal(output[0][0].json.redriven, 2);
+});
+
+test('redrive defaults leave the batch bound to the server and an explicit empty ID selection replays nothing', async () => {
+  const params = { resource: 'webhook', operation: 'redriveDeliveryFailures' };
+  assert.equal(singleCall((await run(params)).ctx).options.body, undefined);
+  assert.deepEqual(singleCall((await run({ ...params, redriveOptions: { ids: [] } })).ctx).options.body, { ids: [] });
+});
+
+for (const fields of [{ limit: 0 }, { limit: 501 }, { limit: 1.5 }, { limit: null }, { limit: true }, { sessionId: '' }, { sessionId: undefined }, { webhookId: 'x'.repeat(129) }, { ids: ['x'.repeat(129)] }, { ids: Array.from({ length: 501 }, (_, i) => `failure-${i}`) }]) {
+  test(`invalid redrive selection ${JSON.stringify(fields).slice(0, 80)} makes no request`, async () => {
+    const ctx = makeCtx({ params: { resource: 'webhook', operation: 'redriveDeliveryFailures', redriveOptions: fields } });
+    await assert.rejects(new OpenWa().execute.call(ctx));
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('redrive accepts 500 failure IDs of 128 characters and a numeric string limit', async () => {
+  const ids = Array.from({ length: 500 }, (_, i) => `${i}`.padEnd(128, 'x'));
+  const { ctx } = await run({ resource: 'webhook', operation: 'redriveDeliveryFailures', redriveOptions: { ids, limit: '1' } });
+  assert.deepEqual(singleCall(ctx).options.body, { ids, limit: 1 });
+});
 
 // --- Happy-path mapping: one entry per operation variant -------------------
 // [label, params, expectedMethod, expectedUrl, expectedBody]
@@ -215,11 +367,11 @@ const mappingCases = [
       sessionId: 'abc-123',
       chatId: '1@c.us',
       message: 'hi @628',
-      mentions: [' 628@c.us ', ''],
+      mentions: [' 628123456789@c.us ', ''],
     },
     'POST',
     `${BASE}/api/sessions/abc-123/messages/send-text`,
-    { chatId: '1@c.us', text: 'hi @628', mentions: ['628@c.us'] },
+    { chatId: '1@c.us', text: 'hi @628', mentions: ['628123456789@c.us'] },
   ],
   [
     'message/sendText ignores an all-blank mentions list',
@@ -3340,6 +3492,11 @@ const coercionCases = [
     'status/sendText coerces a numeric Background Color',
     { resource: 'status', operation: 'sendText', sessionId: 'abc-123', statusText: 'hi', statusBackgroundColor: 123456 },
     (body) => assert.equal(body.backgroundColor, '123456'),
+  ],
+  [
+    'status/sendText preserves a valid hex Background Color',
+    { resource: 'status', operation: 'sendText', sessionId: 'abc-123', statusText: 'hi', statusBackgroundColor: '#123456' },
+    (body) => assert.equal(body.backgroundColor, '#123456'),
   ],
   [
     'group/updateDescription coerces a numeric description',

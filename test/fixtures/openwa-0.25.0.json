@@ -1,0 +1,79 @@
+{
+  "version": "0.25.0",
+  "commit": "f045dde1f9f8b623668ab02971009228296d60e4",
+  "repository": "rmyndharis/OpenWA",
+  "contract": {
+    "webhookEvents": [
+      "call.accepted",
+      "call.missed",
+      "call.received",
+      "call.rejected",
+      "event.response",
+      "group.join",
+      "group.join_request",
+      "group.leave",
+      "group.update",
+      "message.ack",
+      "message.edited",
+      "message.failed",
+      "message.reaction",
+      "message.received",
+      "message.revoked",
+      "message.sent",
+      "presence.update",
+      "session.authenticated",
+      "session.disconnected",
+      "session.qr",
+      "session.reconnect_loop",
+      "session.restriction",
+      "session.status",
+      "status.received"
+    ],
+    "messageListPath": "sessions/:sessionId/messages",
+    "messageListQueries": [
+      "after",
+      "chatId",
+      "direction",
+      "from",
+      "inlineMedia",
+      "limit",
+      "messageId",
+      "offset",
+      "orderBy",
+      "since",
+      "type",
+      "until"
+    ],
+    "idempotentSendPaths": [
+      "forward",
+      "reply",
+      "send-audio",
+      "send-contact",
+      "send-document",
+      "send-image",
+      "send-location",
+      "send-poll",
+      "send-sticker",
+      "send-template",
+      "send-text",
+      "send-video"
+    ],
+    "redrive": {
+      "method": "POST",
+      "path": "webhooks/delivery-failures/redrive",
+      "role": "ApiKeyRole.ADMIN",
+      "fields": {
+        "sessionId": { "IsOptional": [], "IsString": [], "MaxLength": [128] },
+        "webhookId": { "IsOptional": [], "IsString": [], "MaxLength": [128] },
+        "ids": {
+          "IsOptional": [],
+          "IsArray": [],
+          "ArrayMaxSize": [500],
+          "IsString": [{ "each": true }],
+          "MaxLength": [128, { "each": true }]
+        },
+        "limit": { "IsOptional": [], "IsInt": [], "Min": [1], "Max": [500] }
+      }
+    }
+  }
+}

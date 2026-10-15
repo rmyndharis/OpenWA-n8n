@@ -11,42 +11,9 @@ import * as triggerModule from '../dist/nodes/OpenWaTrigger/OpenWaTrigger.node.j
 const { OpenWa } = actionModule;
 const { OpenWaTrigger } = triggerModule;
 
-// A SNAPSHOT of core's WEBHOOK_EVENTS, copied by hand — this repo ships as its own npm package and
-// cannot import from the gateway at test time. Treat it as data with a provenance, not as a live
-// mirror: nothing here can detect that core has moved.
-//
-//   source: src/modules/webhook/dto/webhook.dto.ts in rmyndharis/OpenWA
-//   taken at: v0.19.0 (2026-08-15); re-verified unchanged at v0.23.6 (2026-09-24).
-//   count: 23
-//
-// The previous copy claimed to "mirror" core and had drifted to 17 while asserting the node matched
-// it — so both sides were wrong together and this file stayed green. When core adds an event, update
-// this snapshot AND the provenance line above, then add it to nodes/shared/webhookEvents.ts.
-const CORE_WEBHOOK_EVENTS_SNAPSHOT = [
-  'call.accepted',
-  'call.missed',
-  'call.received',
-  'call.rejected',
-  'group.join',
-  'group.join_request',
-  'group.leave',
-  'group.update',
-  'message.ack',
-  'message.edited',
-  'message.failed',
-  'message.reaction',
-  'message.received',
-  'message.revoked',
-  'message.sent',
-  'presence.update',
-  'session.authenticated',
-  'session.disconnected',
-  'session.qr',
-  'session.reconnect_loop',
-  'session.restriction',
-  'session.status',
-  'status.received',
-];
+// Independently checked against the pinned release by npm run check:openwa.
+const { contract } = JSON.parse(readFileSync(new URL('./fixtures/openwa-0.25.0.json', import.meta.url)));
+const CORE_WEBHOOK_EVENTS_SNAPSHOT = contract.webhookEvents;
 
 // Collect every `events` multiOptions parameter's value list from a node's
 // full properties tree (including nested updateFields collections).
@@ -71,8 +38,8 @@ function collectEventValues(properties) {
 test('the snapshot is the size the provenance comment claims', () => {
   // Cheap tripwire for the failure this file already had once: a copy that lost entries while every
   // other assertion kept passing, because they all compare against the copy.
-  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 23);
-  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 23, 'snapshot has duplicates');
+  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 24);
+  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 24, 'snapshot has duplicates');
 });
 
 test('the shared WEBHOOK_EVENT_VALUES list matches the core catalog snapshot', () => {

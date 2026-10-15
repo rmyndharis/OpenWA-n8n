@@ -42,6 +42,12 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
       'Triggers when an incoming call is declined, including by auto-reject. Baileys only — whatsapp-web.js sees the ring but never its outcome.',
   },
   {
+    name: 'Event Response',
+    value: 'event.response',
+    description:
+      'Triggers when someone responds to a WhatsApp event invitation. Baileys only; requires OpenWA 0.25.0 or later.',
+  },
+  {
     name: 'Group Join',
     value: 'group.join',
     description: 'Triggers when a participant joins a group the session belongs to',

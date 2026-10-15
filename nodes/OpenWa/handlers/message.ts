@@ -12,6 +12,7 @@ import {
   asText,
   textLength,
   isOn,
+  toEpochMs,
 } from './params';
 import type { RequestSpec } from './types';
 
@@ -54,6 +55,21 @@ const QUOTABLE_SENDS = new Set([
   'sendLocation',
   'sendContact',
   'sendPoll',
+]);
+
+const IDEMPOTENT_SENDS = new Set([
+  'sendText',
+  'sendTemplate',
+  'sendImage',
+  'sendVideo',
+  'sendAudio',
+  'sendDocument',
+  'sendSticker',
+  'sendLocation',
+  'sendContact',
+  'sendPoll',
+  'reply',
+  'forward',
 ]);
 
 const IMAGE_MEDIA: MediaParamNames = {
@@ -226,11 +242,44 @@ export async function buildMessageRequest(
 
   if (operation === 'list') {
     const options = this.getNodeParameter('messageListOptions', itemIndex, {}) as IDataObject;
+    for (const key of ['since', 'until', 'direction', 'orderBy', 'type', 'messageId']) {
+      if (!(key in options)) continue;
+      const value = options[key];
+      if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `${key} has no value. Remove the option to leave the selection unrestricted.`,
+          { itemIndex },
+        );
+      }
+    }
+    const qs = toQueryParams(options);
+    for (const key of ['since', 'until'] as const) {
+      if (!(key in options)) continue;
+      const value = options[key];
+      const numeric =
+        typeof value === 'number' ||
+        (typeof value === 'string' && /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value.trim()));
+      const ms = numeric ? Number(value) : toEpochMs(this, value, key, itemIndex);
+      if (!Number.isFinite(ms) || ms < 0 || ms > Number.MAX_SAFE_INTEGER) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `${key} must be a non-negative epoch millisecond value`,
+          { itemIndex },
+        );
+      }
+      qs[key] = ms;
+    }
+    if (qs.since !== undefined && qs.until !== undefined && Number(qs.since) >= Number(qs.until)) {
+      throw new NodeOperationError(this.getNode(), 'Since must be earlier than Until (exclusive)', {
+        itemIndex,
+      });
+    }
     return {
       endpoint: `/api/sessions/${sessionId}/messages`,
       method: 'GET',
       body: {},
-      qs: toQueryParams(options),
+      qs,
     };
   }
 
@@ -653,5 +702,19 @@ export async function buildMessageRequest(
     }
   }
 
-  return { endpoint, method: 'POST', body };
+  const spec: RequestSpec = { endpoint, method: 'POST', body };
+  if (IDEMPOTENT_SENDS.has(operation)) {
+    const key = this.getNodeParameter('idempotencyKey', itemIndex, '');
+    if (key !== '') {
+      if (typeof key !== 'string' || !/^[\x21-\x7E]{1,255}$/.test(key)) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Idempotency Key must contain 1-255 visible ASCII characters without spaces',
+          { itemIndex },
+        );
+      }
+      spec.headers = { 'Idempotency-Key': key };
+    }
+  }
+  return spec;
 }

@@ -24,7 +24,7 @@ function assertSecretLength(node, secret, itemIndex) {
     }
 }
 async function buildWebhookRequest(operation, itemIndex) {
-    // These two span every session, so they are resolved before the Session ID
+    // These operations span sessions, so they are resolved before the Session ID
     // field is read — it is not shown for them.
     if (operation === 'listAll') {
         const options = this.getNodeParameter('webhookListOptions', itemIndex, {});
@@ -40,6 +40,36 @@ async function buildWebhookRequest(operation, itemIndex) {
             body: {},
             qs: (0, params_1.toQueryParams)(options),
         };
+    }
+    if (operation === 'redriveDeliveryFailures') {
+        const fields = this.getNodeParameter('redriveOptions', itemIndex, {});
+        (0, params_1.assertFieldsResolved)(this, fields, { sessionId: 'Session ID', webhookId: 'Webhook ID', ids: 'Failure IDs', limit: 'Limit' }, 'Remove the option to leave the selection unrestricted.', itemIndex);
+        const body = {};
+        for (const key of ['sessionId', 'webhookId']) {
+            const value = (0, params_1.optionalNonBlank)(this, fields[key], key, itemIndex, 128);
+            if (value !== undefined)
+                body[key] = value;
+        }
+        if (fields.ids !== undefined) {
+            const ids = (0, params_1.toStringList)(fields.ids);
+            if (ids.length > 500 || ids.some((id) => [...id].length > 128)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Failure IDs accepts at most 500 IDs of at most 128 characters each', { itemIndex });
+            }
+            body.ids = ids;
+        }
+        if (fields.limit !== undefined) {
+            const limit = Number(fields.limit);
+            if (!['number', 'string'].includes(typeof fields.limit) ||
+                !Number.isInteger(limit) ||
+                limit < 1 ||
+                limit > 500) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Limit must be an integer between 1 and 500', {
+                    itemIndex,
+                });
+            }
+            body.limit = limit;
+        }
+        return { endpoint: '/api/webhooks/delivery-failures/redrive', method: 'POST', body };
     }
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
     if (operation === 'list') {

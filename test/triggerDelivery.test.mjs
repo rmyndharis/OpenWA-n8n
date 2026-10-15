@@ -84,6 +84,17 @@ test('a valid signature over the raw body passes the payload through', async () 
   assert.deepEqual(result.workflowData[0][0].json, BODY);
 });
 
+test('event responses preserve the signed payload and deduplicate a replay by its event key', async () => {
+  const body = { event: 'event.response', idempotencyKey: 'event-rsvp-1', data: { eventMessageId: 'wa-event-1', chatId: '120363000000000000@g.us', responderId: '628123456789@s.whatsapp.net', fromMe: false, response: 'going', responseMessageId: 'wa-response-1', timestamp: 1790931600, extraGuestCount: 1 } };
+  const rawBody = JSON.stringify(body);
+  const signatureHeader = 'sha256=' + createHmac('sha256', SECRET).update(rawBody).digest('hex');
+  const staticData = {};
+  const options = { secret: SECRET, body, rawBody, signatureHeader, deduplicate: true, staticData };
+  const result = await deliver(makeCtx(options).ctx);
+  assert.deepEqual(result.workflowData[0][0].json, body);
+  assert.equal((await deliver(makeCtx(options).ctx)).workflowData, undefined);
+});
+
 test('a failed signature rejects with 401 and does not run the workflow', async () => {
   const { ctx, responseCalls } = makeCtx({
     secret: SECRET,

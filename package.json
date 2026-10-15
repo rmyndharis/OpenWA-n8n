@@ -29,6 +29,7 @@
     "format": "prettier --write \"credentials/**/*.ts\" \"nodes/**/*.ts\" \"index.ts\"",
     "format:check": "prettier --check \"credentials/**/*.ts\" \"nodes/**/*.ts\" \"index.ts\"",
     "lint": "eslint credentials nodes index.ts --ext .ts",
+    "check:openwa": "node scripts/check-openwa-contract.mjs",
     "test": "npm run build && node --test test/*.test.mjs",
     "prepublishOnly": "npm run build"
   },
