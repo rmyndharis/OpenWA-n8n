@@ -157,7 +157,7 @@ test('message list converts time bounds in the workflow timezone and preserves e
 for (const options of [{ since: 'broken' }, { since: 1800000000000, until: 1700000000000 }, { since: 1700000000000, until: 1700000000000 }, { since: -1700000000000 }, { since: null }, { until: undefined }]) {
   test(`invalid message time window ${JSON.stringify(options)} makes no request`, async () => {
     const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: options } });
-    await assert.rejects(new OpenWa().execute.call(ctx));
+    await assert.rejects(new OpenWa().execute.call(ctx), /since|until/i);
     assert.equal(ctx.calls.length, 0);
   });
 }
@@ -202,7 +202,7 @@ for (const value of [0, '0', 1, '1', 1234, '1234', 1.5, '1.5', '1.7e12', '1E+3',
 for (const value of [-1, '-1', Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, '1e999', '0x10']) {
   test(`message list refuses invalid numeric millisecond boundary ${String(value)}`, async () => {
     const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: value } } });
-    await assert.rejects(new OpenWa().execute.call(ctx));
+    await assert.rejects(new OpenWa().execute.call(ctx), /since/i);
     assert.equal(ctx.calls.length, 0);
   });
 }
@@ -233,10 +233,13 @@ test('redrive defaults leave the batch bound to the server and an explicit empty
   assert.deepEqual(singleCall((await run({ ...params, redriveOptions: { ids: [] } })).ctx).options.body, { ids: [] });
 });
 
+// The refusal must be about the field that was wrong, not merely a refusal.
+const REDRIVE_FIELD_NAME = { limit: /limit/i, sessionId: /session/i, webhookId: /webhook/i, ids: /\bids?\b/i };
+
 for (const fields of [{ limit: 0 }, { limit: 501 }, { limit: 1.5 }, { limit: null }, { limit: true }, { sessionId: '' }, { sessionId: undefined }, { webhookId: 'x'.repeat(129) }, { ids: ['x'.repeat(129)] }, { ids: Array.from({ length: 501 }, (_, i) => `failure-${i}`) }]) {
   test(`invalid redrive selection ${JSON.stringify(fields).slice(0, 80)} makes no request`, async () => {
     const ctx = makeCtx({ params: { resource: 'webhook', operation: 'redriveDeliveryFailures', redriveOptions: fields } });
-    await assert.rejects(new OpenWa().execute.call(ctx));
+    await assert.rejects(new OpenWa().execute.call(ctx), REDRIVE_FIELD_NAME[Object.keys(fields)[0]]);
     assert.equal(ctx.calls.length, 0);
   });
 }
@@ -3055,8 +3058,7 @@ test('message/getMedia surfaces the server explanation behind a 404, not just th
     (thrown) => {
       // The decode happens in place, so the original error now carries readable JSON.
       assert.deepEqual(err.response.body, explanation, 'error body should be decoded JSON');
-      assert.ok(/no downloadable media/.test(JSON.stringify(thrown.message ?? thrown)) ||
-        /no downloadable media/.test(JSON.stringify(err.response.body)));
+      assert.match(String(thrown.description), /no downloadable media/);
       return true;
     },
   );
@@ -3064,8 +3066,9 @@ test('message/getMedia surfaces the server explanation behind a 404, not just th
 
 test('a non-binary failure is passed through untouched', async () => {
   const err = { statusCode: 400, response: { status: 400, body: { message: 'bad chat id' } } };
-  await assert.rejects(() =>
-    run({ resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: 'x@c.us', message: 'hi' }, { throwErr: err }),
+  await assert.rejects(
+    () => run({ resource: 'message', operation: 'sendText', sessionId: 'abc-123', chatId: 'x@c.us', message: 'hi' }, { throwErr: err }),
+    (thrown) => thrown.name === 'NodeApiError' && String(thrown.httpCode) === '400',
   );
   assert.deepEqual(err.response.body, { message: 'bad chat id' }, 'untouched');
 });

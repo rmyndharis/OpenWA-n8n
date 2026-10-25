@@ -77,6 +77,15 @@ function makeCtx({
 
 const hooks = () => new OpenWaTrigger().webhookMethods.default;
 
+// A failure that must surface has to surface as the gateway's own error with its status, not
+// merely as some rejection: a TypeError from inside the hook would otherwise pass too.
+const rejectsAsApiError = (promise, status) =>
+  assert.rejects(promise, (error) => {
+    assert.equal(error.name, 'NodeApiError');
+    assert.equal(String(error.httpCode), String(status));
+    return true;
+  });
+
 // --- httpStatusFromError shape coverage ---
 test('httpStatusFromError reads a numeric statusCode', () => {
   assert.equal(httpStatusFromError({ statusCode: 404 }), 404);
@@ -123,7 +132,7 @@ test('delete: an already-gone webhook (404) is swallowed and the id cleared', as
 
 test('delete: a non-404 error is rethrown', async () => {
   const { ctx } = makeCtx({ throwErr: { statusCode: 500 } });
-  await assert.rejects(() => hooks().delete.call(ctx));
+  await rejectsAsApiError(() => hooks().delete.call(ctx), 500);
 });
 
 test('delete: clears the stored session id and config hash too', async () => {
@@ -149,7 +158,7 @@ test('checkExists: a 404 probe reports the webhook absent so n8n recreates it', 
 
 test('checkExists: a non-404 error is rethrown (no silent duplicate registration)', async () => {
   const { ctx } = makeCtx({ configHash: CURRENT_HASH, throwErr: { statusCode: 500 } });
-  await assert.rejects(() => hooks().checkExists.call(ctx));
+  await rejectsAsApiError(() => hooks().checkExists.call(ctx), 500);
 });
 
 test('checkExists: a reachable webhook reports present', async () => {
@@ -170,7 +179,7 @@ test('checkExists: a registration without a stored hash is re-registered once (c
 
 test('checkExists: a legacy registration whose delete fails rethrows and keeps the id', async () => {
   const { ctx, staticData } = makeCtx({ throwErr: { statusCode: 500 } });
-  await assert.rejects(() => hooks().checkExists.call(ctx));
+  await rejectsAsApiError(() => hooks().checkExists.call(ctx), 500);
   assert.equal(staticData.webhookId, 'w1');
 });
 
@@ -212,6 +221,19 @@ test('checkExists: a registration whose event list drifted is rebuilt', async ()
   const { ctx, staticData } = makeCtx({
     configHash: CURRENT_HASH,
     getResponse: { id: 'w1', active: true, url: WEBHOOK_URL, events: ['session.status'] },
+  });
+  assert.equal(await hooks().checkExists.call(ctx), false);
+  assert.equal(staticData.webhookId, undefined);
+});
+
+// Same length as the wanted list is not the only way to drift: an event removed on the
+// server side leaves a shorter list that is a subset of the wanted one.
+test('checkExists: a registration that lost one of its events is rebuilt', async () => {
+  const events = ['message.received', 'session.status'];
+  const { ctx, staticData } = makeCtx({
+    events,
+    configHash: webhookConfigHash({ url: WEBHOOK_URL, events, secret: '', sessionId: 'default' }),
+    getResponse: { id: 'w1', active: true, url: WEBHOOK_URL, events: ['message.received'] },
   });
   assert.equal(await hooks().checkExists.call(ctx), false);
   assert.equal(staticData.webhookId, undefined);
@@ -277,7 +299,7 @@ test('checkExists: a stale webhook already gone (DELETE 404) still reports absen
 
 test('checkExists: a non-404 stale-delete failure rethrows and keeps the stored id', async () => {
   const { ctx, staticData } = makeCtx({ configHash: 'stale-hash', throwErr: { statusCode: 500 } });
-  await assert.rejects(() => hooks().checkExists.call(ctx));
+  await rejectsAsApiError(() => hooks().checkExists.call(ctx), 500);
   assert.equal(staticData.webhookId, 'w1');
 });
 
@@ -525,7 +547,7 @@ test('create: any other failure removing a leftover stops before registering aga
     listResponse: [{ id: 'stuck', url: WEBHOOK_URL }],
     deleteErrors: { stuck: { statusCode: 500, message: 'boom' } },
   });
-  await assert.rejects(() => hooks().create.call(ctx));
+  await rejectsAsApiError(() => hooks().create.call(ctx), 500);
   assert.equal(calls.some((c) => c.method === 'POST'), false);
 });
 

@@ -14,7 +14,10 @@ test('passes an already-parsed array through', () => {
 });
 
 test('rejects invalid JSON', () => {
-  assert.throws(() => parseBulkMessages('{not json'));
+  assert.throws(
+    () => parseBulkMessages('{not json'),
+    (error) => error instanceof Error && !(error instanceof TypeError),
+  );
 });
 
 test('rejects a non-array', () => {
