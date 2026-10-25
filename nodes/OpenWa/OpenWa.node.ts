@@ -338,7 +338,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create'] },
         },
         description:
-          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.25.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.24.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Proxy URL',
@@ -1345,7 +1345,7 @@ export class OpenWa implements INodeType {
         placeholder: 'Pizza, Sushi',
         displayOptions: { show: { resource: ['message'], operation: ['votePoll'] } },
         description:
-          "The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll's own options, so they must match exactly: a different case or a stray space selects nothing while still reporting success. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.",
+          "The option texts to select, at most 12. Accepts a comma-separated list, a JSON array, or an expression resolving to an array. These are matched by text against the poll's own options, so they must match exactly. On OpenWA 0.25.0 or later, a list in which nothing matches is refused with 400 POLL_OPTION_NOT_FOUND (the response names the valid options) and the earlier vote stays; older servers clear the vote and still report success. When only some options match, the others are dropped without notice. An option whose own text contains a comma must be supplied as a JSON array, since a comma-separated list would split it. The vote replaces any previous selection, and an empty list clears it. whatsapp-web.js only: Baileys answers 501.",
       },
       {
         displayName: 'Product ID',
@@ -2748,11 +2748,11 @@ export class OpenWa implements INodeType {
         default: true,
         displayOptions: { show: { resource: ['presence'], operation: ['setOwn'] } },
         description:
-          "Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder's own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published, and the setting resets on every reconnect.",
+          "Whether the account announces itself as online. WhatsApp routes notifications away from the phone while a linked device is online, so a workflow-driven session left available suppresses the account holder's own alerts; turn this off to hand them back. There is no read-back: nothing reports what was last published. OpenWA 0.24.0 or later re-applies the setting when the same engine reconnects, but a restart, a Stop/Start or a recovery that replaces the engine loses it, as does every reconnect on older servers.",
       },
       {
         displayName:
-          "Presence is connection-scoped. A subscription and the account's own availability both live on the socket, so a restart, a Stop/Start, or any automatic reconnect ends them and nothing on the server re-issues them. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.",
+          "Presence is connection-scoped. A subscription lives on the socket, so a restart, a Stop/Start, or any automatic reconnect ends it and nothing on the server re-issues it. The account's own availability survives a reconnect of the same engine on OpenWA 0.24.0 or later, but not a restart, a Stop/Start or a recovery that replaces the engine, and older servers lose it on every reconnect. Re-run these from a Trigger branch on <code>session.status</code> reaching <code>ready</code>, not once at workflow start. Subscribe is Baileys only; whatsapp-web.js answers 501 and never reports presence at all.",
         name: 'presenceScopeNotice',
         type: 'notice',
         default: '',
@@ -4085,7 +4085,7 @@ export class OpenWa implements INodeType {
             default: '',
             placeholder: 'session_started',
             description:
-              'Only return entries for this action, e.g. session_started or message_failed. An action the server does not recognise returns an empty page rather than an error, so a typo looks exactly like no matching activity.',
+              'Only return entries for this action, e.g. session_started or message_failed. An action the server does not recognise is refused with 400 on OpenWA 0.23.7 or later; older servers return an empty page, so a typo looks exactly like no matching activity.',
           },
           {
             displayName: 'API Key Name or ID',

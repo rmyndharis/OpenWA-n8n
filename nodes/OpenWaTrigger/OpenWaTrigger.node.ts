@@ -448,10 +448,10 @@ export class OpenWaTrigger implements INodeType {
     // the same moment can both pass.
     if (this.getNodeParameter('deduplicateDeliveries', false) as boolean) {
       const envelope = body as Record<string, unknown>;
-      // A Webhook > Test delivery is exempt. Its idempotency key is derived from the
-      // webhook id alone, so every test of the same webhook carries an identical
-      // key; de-duplicating it would silently drop every test after the first, and a
-      // manual probe is precisely the thing that must always run.
+      // A Webhook > Test delivery is exempt. Before server 0.24.0 its idempotency key
+      // was derived from the webhook id alone, so every test of the same webhook
+      // carried an identical key; de-duplicating it would silently drop every test
+      // after the first, and a manual probe is precisely the thing that must always run.
       if (envelope.event === 'test') {
         return { workflowData: [this.helpers.returnJsonArray(body)] };
       }
