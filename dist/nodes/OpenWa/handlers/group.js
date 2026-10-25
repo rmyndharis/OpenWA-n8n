@@ -120,10 +120,7 @@ async function buildGroupRequest(operation, itemIndex) {
             // Only a field left empty means "every pending request". An expression that
             // found nobody reads the same after resolution, and acting on everyone then
             // admits or turns away the whole queue, which cannot be undone.
-            if (requesters.length === 0 &&
-                (0, params_1.isExpression)(this.getNode().parameters.groupRequestParticipants)) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.', { itemIndex });
-            }
+            (0, params_1.assertListResolved)(this, this.getNode().parameters.groupRequestParticipants, requesters, 'Requesters', 'To act on every pending request, leave the field empty instead of using an expression.', itemIndex);
             if (requesters.length > MAX_PARTICIPANTS) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Requesters cannot exceed ${MAX_PARTICIPANTS} entries (got ${requesters.length})`, { itemIndex });
             }

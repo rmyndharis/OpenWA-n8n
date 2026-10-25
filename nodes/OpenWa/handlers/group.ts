@@ -3,12 +3,12 @@ import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import {
   assertFieldsResolved,
+  assertListResolved,
   LEAVE_UNCHANGED,
   toStringList,
   asText,
   textLength,
   inviteCodeFrom,
-  isExpression,
   isTemplateExpression,
 } from './params';
 import { assertImageMedia, resolveMediaSource, type MediaParamNames } from '../media';
@@ -177,16 +177,14 @@ export async function buildGroupRequest(
       // Only a field left empty means "every pending request". An expression that
       // found nobody reads the same after resolution, and acting on everyone then
       // admits or turns away the whole queue, which cannot be undone.
-      if (
-        requesters.length === 0 &&
-        isExpression(this.getNode().parameters.groupRequestParticipants)
-      ) {
-        throw new NodeOperationError(
-          this.getNode(),
-          'Requesters resolved to an empty list. To act on every pending request, leave the field empty instead of using an expression.',
-          { itemIndex },
-        );
-      }
+      assertListResolved(
+        this,
+        this.getNode().parameters.groupRequestParticipants,
+        requesters,
+        'Requesters',
+        'To act on every pending request, leave the field empty instead of using an expression.',
+        itemIndex,
+      );
       if (requesters.length > MAX_PARTICIPANTS) {
         throw new NodeOperationError(
           this.getNode(),

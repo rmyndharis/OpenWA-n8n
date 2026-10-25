@@ -81,11 +81,20 @@ export declare function assertFieldsResolved(ctx: IExecuteFunctions, fields: IDa
 /**
  * Turns a `collection` parameter into a query object.
  *
- * Only entries the user actually added are present, so anything left undefined,
- * null, or blank is dropped. `0` and `false` are meaningful values here (offset
- * 0, a disabled flag) and are deliberately kept.
+ * Only entries the user actually added are present. `0` and `false` are meaningful
+ * values here (offset 0, a disabled flag) and are kept. A paging or presentation key
+ * with no value is dropped, which restores the server's default. A key that narrows the
+ * result and has no value is refused instead: dropped, the request would select
+ * everything the option was added to exclude. A list or an object is refused too, since
+ * the server reads `chatId[0]=a` as a different key and ignores the filter.
  */
 export declare function toQueryParams(options: IDataObject | undefined): IDataObject;
+/**
+ * Refuses an expression that resolved to an empty list where the field left empty means
+ * something else: every pending request, the newest message, a key without that
+ * restriction. Read from the raw parameter, because once resolved the two look alike.
+ */
+export declare function assertListResolved(ctx: IExecuteFunctions, raw: unknown, list: unknown[], label: string, remedy: string, itemIndex: number): void;
 /**
  * Converts an n8n `dateTime` parameter to the epoch-ms number the API binds.
  *

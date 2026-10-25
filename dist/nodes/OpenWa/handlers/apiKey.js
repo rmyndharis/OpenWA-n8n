@@ -25,19 +25,6 @@ async function buildApiKeyRequest(operation, itemIndex) {
         // Name, so a copied Update node created its key under the old name.
         const fields = { ...this.getNodeParameter('keyFields', itemIndex, {}) };
         delete fields.name;
-        // A restriction with no value is refused here too: dropping it would create a
-        // key broader than the one asked for. That includes a list whose expression
-        // found no entries, which reads the same as one left out once resolved.
-        const raw = (this.getNode().parameters.keyFields ?? {});
-        for (const [key, label] of [
-            ['allowedIps', 'Allowed IPs'],
-            ['allowedSessions', 'Allowed Sessions'],
-            ['allowedChats', 'Allowed Chats'],
-        ]) {
-            if ((0, params_1.isExpression)(raw[key]) && (0, params_1.toStringList)(fields[key], label).length === 0) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`, { itemIndex });
-            }
-        }
         const body = {
             name: (0, params_1.requireText)(this, 'keyName', 'API key name', itemIndex),
             ...collectApiKeyFields.call(this, fields, 'Give it a value, or remove it from the fields to create the key without it.', itemIndex),
@@ -78,6 +65,32 @@ function collectApiKeyFields(fields, remedy, itemIndex) {
         name: 'Name',
         role: 'Role',
     }, remedy, itemIndex);
+    // A restriction with no value is refused rather than dropped: dropping it would
+    // create a key broader than the one asked for, or leave an update unapplied. That
+    // includes a list whose expression found no entries, and a role or expiry that
+    // resolved to blank, which read the same as a field left out once resolved.
+    const raw = (this.getNode().parameters.keyFields ?? {});
+    for (const [key, label] of [
+        ['allowedIps', 'Allowed IPs'],
+        ['allowedSessions', 'Allowed Sessions'],
+        ['allowedChats', 'Allowed Chats'],
+    ]) {
+        (0, params_1.assertListResolved)(this, raw[key], (0, params_1.toStringList)(fields[key], label), label, remedy, itemIndex);
+    }
+    for (const [key, label] of [
+        ['role', 'Role'],
+        ['expiresAt', 'Expires At'],
+    ]) {
+        // A number is never blank; skipping it leaves NaN and Infinity to the date and text
+        // checks below, which name the field as they do without this pre-check.
+        if ((0, params_1.isExpression)(raw[key]) &&
+            typeof fields[key] !== 'number' &&
+            (0, params_1.asText)(fields[key], label) === '') {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} has no value. ${remedy}`, {
+                itemIndex,
+            });
+        }
+    }
     const body = {};
     // Refused when blank rather than dropped: dropping it reported a rename that
     // never happened as a success.

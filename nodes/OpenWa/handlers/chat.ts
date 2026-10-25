@@ -1,7 +1,15 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireFullJid, requireJid, toEpochMs, toQueryParams, toStringList } from './params';
+import {
+  assertFieldsResolved,
+  assertListResolved,
+  requireFullJid,
+  requireJid,
+  toEpochMs,
+  toQueryParams,
+  toStringList,
+} from './params';
 import type { RequestSpec } from './types';
 
 /** Server-side cap on MarkChatReadDto.messageIds. */
@@ -55,6 +63,16 @@ export async function buildChatRequest(
         this.getNodeParameter('readMessageIds', itemIndex, ''),
         'Message IDs',
       );
+      // The server refuses an empty array so that "named nothing" never reads as "the
+      // newest message"; an expression that found no IDs must not collapse into it here.
+      assertListResolved(
+        this,
+        this.getNode().parameters.readMessageIds,
+        messageIds,
+        'Message IDs',
+        'To mark the chat read without naming messages, leave the field empty instead of using an expression.',
+        itemIndex,
+      );
       if (messageIds.length > 0) {
         if (messageIds.length > MAX_READ_MESSAGE_IDS) {
           throw new NodeOperationError(
@@ -87,12 +105,18 @@ export async function buildChatRequest(
       };
     case 'mute': {
       const raw = this.getNodeParameter('muteUntil', itemIndex, '') as string;
+      // An expression that found nothing is not the empty field: it would unmute a chat
+      // the workflow meant to mute. A real '' still unmutes, as a whole-value one does elsewhere.
+      assertFieldsResolved(
+        this,
+        { muteUntil: raw },
+        { muteUntil: 'Mute Until' },
+        'To unmute, leave the field empty.',
+        itemIndex,
+      );
       // The key is always present. Omitting it is a 400, while an explicit null is
       // how a chat is unmuted, so blank has to become null rather than disappear.
-      const muteUntil =
-        raw === '' || raw === undefined || raw === null
-          ? null
-          : toEpochMs(this, raw, 'Mute Until', itemIndex);
+      const muteUntil = raw === '' ? null : toEpochMs(this, raw, 'Mute Until', itemIndex);
       return { endpoint: `${base}/mute`, method: 'POST', body: { chatId, muteUntil } };
     }
     case 'setState': {

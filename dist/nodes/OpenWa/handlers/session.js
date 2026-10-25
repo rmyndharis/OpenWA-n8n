@@ -68,8 +68,7 @@ async function buildSessionRequest(operation, itemIndex) {
         return { endpoint: '/api/sessions', method: 'POST', body };
     }
     if (operation === 'listAll') {
-        const options = this.getNodeParameter('sessionListOptions', itemIndex, {});
-        const qs = (0, params_1.toQueryParams)(options);
+        let options = this.getNodeParameter('sessionListOptions', itemIndex, {});
         if ('name' in options) {
             // Trimmed as Create trims it: the server matches the name exactly. A blank one
             // is refused, as the server refuses ?name=, because dropping it lists every
@@ -78,9 +77,9 @@ async function buildSessionRequest(operation, itemIndex) {
             if (!name) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Name filter is empty. Remove the option to list every session.', { itemIndex });
             }
-            qs.name = name;
+            options = { ...options, name };
         }
-        return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
+        return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: (0, params_1.toQueryParams)(options) };
     }
     if (operation === 'getStatsOverview') {
         return { endpoint: '/api/sessions/stats/overview', method: 'GET', body: {} };
@@ -140,10 +139,16 @@ async function buildSessionRequest(operation, itemIndex) {
         }
         case 'updateConfig': {
             const fields = this.getNodeParameter('sessionConfigFields', itemIndex, {});
-            const body = {};
             // A PATCH merges: an absent key leaves the stored value alone, and an explicit
-            // null resets it to the default. An n8n collection cannot express null, which
-            // is why the unlimited case needs a sentinel.
+            // null resets it to the default. A field that resolved to nothing is neither, so
+            // it is refused rather than dropped (undefined) or sent as a reset (null).
+            (0, params_1.assertFieldsResolved)(this, fields, {
+                autoRejectCalls: 'Auto Reject Calls',
+                maxReconnectAttempts: 'Max Reconnect Attempts',
+                reconnectBaseDelay: 'Reconnect Base Delay',
+            }, params_1.LEAVE_UNCHANGED, itemIndex);
+            const body = {};
+            // The unlimited case needs a sentinel because no in-range number expresses it.
             if (fields.autoRejectCalls !== undefined) {
                 body.autoRejectCalls = fields.autoRejectCalls;
             }
@@ -155,10 +160,10 @@ async function buildSessionRequest(operation, itemIndex) {
                 // Number(null) as the real value 0 rather than as missing input.
                 const text = (0, params_1.asText)(fields.maxReconnectAttempts, 'Max Reconnect Attempts');
                 const cap = text === '' ? Number.NaN : Number(text);
-                if (!Number.isFinite(cap)) {
+                if (!Number.isFinite(cap) || cap < -1 || cap > 20) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Max Reconnect Attempts must be a number between -1 and 20', { itemIndex });
                 }
-                body.maxReconnectAttempts = cap < 0 ? null : cap;
+                body.maxReconnectAttempts = cap === -1 ? null : cap;
             }
             if (fields.reconnectBaseDelay !== undefined) {
                 body.reconnectBaseDelay = fields.reconnectBaseDelay;

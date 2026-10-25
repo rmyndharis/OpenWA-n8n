@@ -5,6 +5,7 @@ import {
   asText,
   isExpression,
   assertFieldsResolved,
+  assertListResolved,
   LEAVE_UNCHANGED,
   optionalNonBlank,
   requireText,
@@ -41,23 +42,6 @@ export async function buildApiKeyRequest(
     // Name, so a copied Update node created its key under the old name.
     const fields = { ...(this.getNodeParameter('keyFields', itemIndex, {}) as IDataObject) };
     delete fields.name;
-    // A restriction with no value is refused here too: dropping it would create a
-    // key broader than the one asked for. That includes a list whose expression
-    // found no entries, which reads the same as one left out once resolved.
-    const raw = (this.getNode().parameters.keyFields ?? {}) as IDataObject;
-    for (const [key, label] of [
-      ['allowedIps', 'Allowed IPs'],
-      ['allowedSessions', 'Allowed Sessions'],
-      ['allowedChats', 'Allowed Chats'],
-    ] as const) {
-      if (isExpression(raw[key]) && toStringList(fields[key], label).length === 0) {
-        throw new NodeOperationError(
-          this.getNode(),
-          `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`,
-          { itemIndex },
-        );
-      }
-    }
     const body: IDataObject = {
       name: requireText(this, 'keyName', 'API key name', itemIndex),
       ...collectApiKeyFields.call(
@@ -129,6 +113,34 @@ function collectApiKeyFields(
     remedy,
     itemIndex,
   );
+  // A restriction with no value is refused rather than dropped: dropping it would
+  // create a key broader than the one asked for, or leave an update unapplied. That
+  // includes a list whose expression found no entries, and a role or expiry that
+  // resolved to blank, which read the same as a field left out once resolved.
+  const raw = (this.getNode().parameters.keyFields ?? {}) as IDataObject;
+  for (const [key, label] of [
+    ['allowedIps', 'Allowed IPs'],
+    ['allowedSessions', 'Allowed Sessions'],
+    ['allowedChats', 'Allowed Chats'],
+  ] as const) {
+    assertListResolved(this, raw[key], toStringList(fields[key], label), label, remedy, itemIndex);
+  }
+  for (const [key, label] of [
+    ['role', 'Role'],
+    ['expiresAt', 'Expires At'],
+  ] as const) {
+    // A number is never blank; skipping it leaves NaN and Infinity to the date and text
+    // checks below, which name the field as they do without this pre-check.
+    if (
+      isExpression(raw[key]) &&
+      typeof fields[key] !== 'number' &&
+      asText(fields[key], label) === ''
+    ) {
+      throw new NodeOperationError(this.getNode(), `${label} has no value. ${remedy}`, {
+        itemIndex,
+      });
+    }
+  }
   const body: IDataObject = {};
   // Refused when blank rather than dropped: dropping it reported a rename that
   // never happened as a success.
