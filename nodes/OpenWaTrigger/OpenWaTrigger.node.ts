@@ -18,6 +18,7 @@ import { sanitizePathParam } from '../shared/sanitizePathParam';
 import { parseJsonParam, stableStringify } from '../shared/jsonParam';
 import { webhookSecretProblem } from '../shared/webhookSecret';
 import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
+import { serverBaseUrl } from '../shared/serverUrl';
 import { getSessions } from '../OpenWa/loadOptions';
 
 export class OpenWaTrigger implements INodeType {
@@ -131,7 +132,7 @@ export class OpenWaTrigger implements INodeType {
         }
 
         const credentials = await this.getCredentials('openWaApi');
-        const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+        const baseUrl = serverBaseUrl(credentials.serverUrl as string);
         const sessionId = sanitizePathParam(
           this.getNodeParameter('sessionId') as string,
           'Session ID',
@@ -252,7 +253,7 @@ export class OpenWaTrigger implements INodeType {
       async create(this: IHookFunctions): Promise<boolean> {
         const webhookUrl = this.getNodeWebhookUrl('default');
         const credentials = await this.getCredentials('openWaApi');
-        const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+        const baseUrl = serverBaseUrl(credentials.serverUrl as string);
         const sessionId = sanitizePathParam(
           this.getNodeParameter('sessionId') as string,
           'Session ID',
@@ -358,7 +359,7 @@ export class OpenWaTrigger implements INodeType {
         }
 
         const credentials = await this.getCredentials('openWaApi');
-        const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+        const baseUrl = serverBaseUrl(credentials.serverUrl as string);
         // Delete from the session the webhook was registered on: the parameter may
         // have been edited without re-activating since then. The stored value is
         // already sanitized; only the fallback, for registrations that predate

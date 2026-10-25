@@ -5843,3 +5843,48 @@ for (const [label, params] of [
     await assert.rejects(() => run(params), /cannot exceed 100 characters/);
   });
 }
+
+// A 200 that is not a JSON object cannot come from any route this node calls; it is a
+// page from something in front of the server (wrong Server URL path, proxy, portal).
+for (const [label, response] of [
+  ['an HTML page', '<!doctype html><html><body>Welcome</body></html>'],
+  ['plain text', 'OK'],
+  ['a number', 123],
+  ['a boolean', true],
+]) {
+  test(`session/getStatus fails on ${label} instead of emitting it as the item`, async () => {
+    const params = { resource: 'session', operation: 'getStatus', sessionId: 's1' };
+    await assert.rejects(
+      () => run(params, { response }),
+      (err) => {
+        assert.equal(err.constructor.name, 'NodeOperationError');
+        assert.match(err.message, /Expected a JSON object from the server/);
+        assert.equal(err.context.itemIndex, 0);
+        return true;
+      },
+    );
+  });
+}
+
+test('a non-JSON body under Continue On Fail becomes an error item, not a successful one', async () => {
+  const { output } = await run(
+    { resource: 'session', operation: 'getStatus', sessionId: 's1' },
+    { response: '<!doctype html>', continueOnFail: true },
+  );
+  assert.equal(output[0].length, 1);
+  assert.match(output[0][0].json.error, /Expected a JSON object from the server/);
+});
+
+for (const [label, response, method, expected] of [
+  ['an empty body', '', 'getStatus', {}],
+  ['a null body', null, 'getStatus', {}],
+  ['an object', { id: 's1' }, 'getStatus', { id: 's1' }],
+]) {
+  test(`session/${method} still passes ${label} through`, async () => {
+    const { output } = await run(
+      { resource: 'session', operation: method, sessionId: 's1' },
+      { response },
+    );
+    assert.deepEqual(output[0].map((item) => item.json), [expected]);
+  });
+}

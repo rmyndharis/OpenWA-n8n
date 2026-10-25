@@ -1,4 +1,5 @@
 import type { IDataObject, ILoadOptionsFunctions, INodePropertyOptions } from 'n8n-workflow';
+import { serverBaseUrl } from '../shared/serverUrl';
 
 /**
  * Dropdown loaders for the ID fields that have a listing endpoint behind them.
@@ -58,7 +59,7 @@ async function fetchPage(
   qs?: IDataObject,
 ): Promise<ListEntry[]> {
   const credentials = await ctx.getCredentials('openWaApi');
-  const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+  const baseUrl = serverBaseUrl(credentials.serverUrl as string);
   const response = await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'openWaApi', {
     method: 'GET',
     url: `${baseUrl}${endpoint}`,

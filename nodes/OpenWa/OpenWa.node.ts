@@ -32,6 +32,7 @@ import { buildWebhookRequest } from './handlers/webhook';
 import type { RequestSpec } from './handlers/types';
 import * as loadOptions from './loadOptions';
 import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
+import { serverBaseUrl } from '../shared/serverUrl';
 
 /**
  * Maps each resource to the builder that turns an operation into a request.
@@ -4270,7 +4271,7 @@ export class OpenWa implements INodeType {
     const operation = this.getNodeParameter('operation', 0) as string;
 
     const credentials = await this.getCredentials('openWaApi');
-    const baseUrl = (credentials.serverUrl as string).replace(/\/$/, '');
+    const baseUrl = serverBaseUrl(credentials.serverUrl as string);
 
     for (let i = 0; i < items.length; i++) {
       try {
@@ -4416,6 +4417,16 @@ export class OpenWa implements INodeType {
             });
           }
           continue;
+        } else if (typeof response !== 'object') {
+          // No route this node calls answers with a bare string, number or boolean.
+          // One that arrives is a page from something in front of the server (a
+          // wrong Server URL path, a proxy or captive portal answering 200), and
+          // casting it would pass an error page downstream as a successful item.
+          throw new NodeOperationError(
+            this.getNode(),
+            `Expected a JSON object from the server but received a ${typeof response} body. Check that the Server URL points at the OpenWA API, with no extra path.`,
+            { itemIndex: i },
+          );
         } else {
           json = response as JsonObject;
         }
