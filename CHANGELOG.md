@@ -12,6 +12,21 @@
 * refuse unresolved filters and expressions that would widen or reset ([#69](https://github.com/rmyndharis/OpenWA-n8n/issues/69)) ([93e25c6](https://github.com/rmyndharis/OpenWA-n8n/commit/93e25c6cb04178a359ec31dce51a53dcd8d5324a))
 * **trigger:** refuse deliveries whose raw body cannot be read ([#65](https://github.com/rmyndharis/OpenWA-n8n/issues/65)) ([7c2c76c](https://github.com/rmyndharis/OpenWA-n8n/commit/7c2c76c715205cf7303415ae1b9aafad54438c89))
 
+
+### Upgrade notes
+
+* A filter that narrows a list and is left without a value now fails the item with the field name instead of returning everything: Message > List Chat ID and From, System > Search, System > Get Audit Log, and Webhook > Get Delivery Failures Session. A saved node that added one of these filters and left it empty is the one case that stops working.
+* A list or an object given to one of those filters now fails the item.
+* An expression that resolves to nothing now fails the item where it used to act or reset: Message > Delete for Everyone, Chat > Mute Until and Mark Read Message IDs, Session > Update Config fields, and the lists, Role and Expires At of API Key > Update.
+* Session > Update Config accepts Max Reconnect Attempts from -1 (unlimited) to 20; other negative numbers no longer mean unlimited.
+* Message > List Since and Until reject epoch seconds, and a date that does not exist, such as 2026-02-30, is refused in every date field.
+* A poll option list written with brackets that is not valid JSON, NaN or Infinity used as text, and a Send Text or Reply message that is blank or over 4096 characters now fail the item.
+* Captions over 1024 characters, poll options over 100, empty or non-JSON Send Bulk messages, Set Picture media that is not an image, and path IDs with no text form now fail with the field name.
+* Mentions without a domain and an object in Emoji or in the MIME type of a Base64 source now fail the item.
+* The Server URL is trimmed and its trailing slashes are dropped, and a 200 reply that is not a JSON object now fails the item.
+* Webhook secret length is checked the way the server counts it, and Webhook Create reads its URL and events the way Update does.
+* Known issue: Deduplicate Deliveries has no effect on n8n 2.19.2 and later because n8n does not save its record; de-duplicate downstream on `idempotencyKey`.
+
 ## [1.2.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.1.0...v1.2.0) (2026-10-15)
 
 
