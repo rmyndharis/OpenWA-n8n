@@ -39,6 +39,9 @@ async function buildChatRequest(operation, itemIndex) {
             // Omit the field entirely when nothing was named: the DTO sets `minItems: 1`,
             // so an empty array is refused, and `null` reaches the Baileys adapter and 400s.
             const messageIds = (0, params_1.toStringList)(this.getNodeParameter('readMessageIds', itemIndex, ''), 'Message IDs');
+            // The server refuses an empty array so that "named nothing" never reads as "the
+            // newest message"; an expression that found no IDs must not collapse into it here.
+            (0, params_1.assertListResolved)(this, this.getNode().parameters.readMessageIds, messageIds, 'Message IDs', 'To mark the chat read without naming messages, leave the field empty instead of using an expression.', itemIndex);
             if (messageIds.length > 0) {
                 if (messageIds.length > MAX_READ_MESSAGE_IDS) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Mark Read accepts at most ${MAX_READ_MESSAGE_IDS} message IDs (got ${messageIds.length})`, { itemIndex });
@@ -67,11 +70,12 @@ async function buildChatRequest(operation, itemIndex) {
             };
         case 'mute': {
             const raw = this.getNodeParameter('muteUntil', itemIndex, '');
+            // An expression that found nothing is not the empty field: it would unmute a chat
+            // the workflow meant to mute. A real '' still unmutes, as a whole-value one does elsewhere.
+            (0, params_1.assertFieldsResolved)(this, { muteUntil: raw }, { muteUntil: 'Mute Until' }, 'To unmute, leave the field empty.', itemIndex);
             // The key is always present. Omitting it is a 400, while an explicit null is
             // how a chat is unmuted, so blank has to become null rather than disappear.
-            const muteUntil = raw === '' || raw === undefined || raw === null
-                ? null
-                : (0, params_1.toEpochMs)(this, raw, 'Mute Until', itemIndex);
+            const muteUntil = raw === '' ? null : (0, params_1.toEpochMs)(this, raw, 'Mute Until', itemIndex);
             return { endpoint: `${base}/mute`, method: 'POST', body: { chatId, muteUntil } };
         }
         case 'setState': {

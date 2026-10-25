@@ -2,7 +2,7 @@ import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { parseJsonParam } from '../../shared/jsonParam';
-import { toQueryParams, asText } from './params';
+import { assertFieldsResolved, LEAVE_UNCHANGED, toQueryParams, asText } from './params';
 import type { RequestSpec } from './types';
 
 /** Ceiling both proxy DTOs place on the URL (`@MaxLength(255)` on create and on PATCH). */
@@ -88,8 +88,7 @@ export async function buildSessionRequest(
   }
 
   if (operation === 'listAll') {
-    const options = this.getNodeParameter('sessionListOptions', itemIndex, {}) as IDataObject;
-    const qs = toQueryParams(options);
+    let options = this.getNodeParameter('sessionListOptions', itemIndex, {}) as IDataObject;
     if ('name' in options) {
       // Trimmed as Create trims it: the server matches the name exactly. A blank one
       // is refused, as the server refuses ?name=, because dropping it lists every
@@ -102,9 +101,9 @@ export async function buildSessionRequest(
           { itemIndex },
         );
       }
-      qs.name = name;
+      options = { ...options, name };
     }
-    return { endpoint: '/api/sessions', method: 'GET', body: {}, qs };
+    return { endpoint: '/api/sessions', method: 'GET', body: {}, qs: toQueryParams(options) };
   }
 
   if (operation === 'getStatsOverview') {
@@ -178,10 +177,22 @@ export async function buildSessionRequest(
         maxReconnectAttempts?: number;
         reconnectBaseDelay?: number;
       };
-      const body: Record<string, unknown> = {};
       // A PATCH merges: an absent key leaves the stored value alone, and an explicit
-      // null resets it to the default. An n8n collection cannot express null, which
-      // is why the unlimited case needs a sentinel.
+      // null resets it to the default. A field that resolved to nothing is neither, so
+      // it is refused rather than dropped (undefined) or sent as a reset (null).
+      assertFieldsResolved(
+        this,
+        fields as IDataObject,
+        {
+          autoRejectCalls: 'Auto Reject Calls',
+          maxReconnectAttempts: 'Max Reconnect Attempts',
+          reconnectBaseDelay: 'Reconnect Base Delay',
+        },
+        LEAVE_UNCHANGED,
+        itemIndex,
+      );
+      const body: Record<string, unknown> = {};
+      // The unlimited case needs a sentinel because no in-range number expresses it.
       if (fields.autoRejectCalls !== undefined) {
         body.autoRejectCalls = fields.autoRejectCalls;
       }
@@ -193,14 +204,14 @@ export async function buildSessionRequest(
         // Number(null) as the real value 0 rather than as missing input.
         const text = asText(fields.maxReconnectAttempts, 'Max Reconnect Attempts');
         const cap = text === '' ? Number.NaN : Number(text);
-        if (!Number.isFinite(cap)) {
+        if (!Number.isFinite(cap) || cap < -1 || cap > 20) {
           throw new NodeOperationError(
             this.getNode(),
             'Max Reconnect Attempts must be a number between -1 and 20',
             { itemIndex },
           );
         }
-        body.maxReconnectAttempts = cap < 0 ? null : cap;
+        body.maxReconnectAttempts = cap === -1 ? null : cap;
       }
       if (fields.reconnectBaseDelay !== undefined) {
         body.reconnectBaseDelay = fields.reconnectBaseDelay;

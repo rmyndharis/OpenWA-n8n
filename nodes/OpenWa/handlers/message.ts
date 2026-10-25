@@ -5,6 +5,7 @@ import { parseJsonParam } from '../../shared/jsonParam';
 import { parseBulkMessages } from '../bulkMessages';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import {
+  assertFieldsResolved,
   assertFiniteNumber,
   requireJid,
   requireText,
@@ -270,17 +271,6 @@ export async function buildMessageRequest(
 
   if (operation === 'list') {
     const options = this.getNodeParameter('messageListOptions', itemIndex, {}) as IDataObject;
-    for (const key of ['since', 'until', 'direction', 'orderBy', 'type', 'messageId']) {
-      if (!(key in options)) continue;
-      const value = options[key];
-      if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
-        throw new NodeOperationError(
-          this.getNode(),
-          `${key} has no value. Remove the option to leave the selection unrestricted.`,
-          { itemIndex },
-        );
-      }
-    }
     const qs = toQueryParams(options);
     for (const key of ['since', 'until'] as const) {
       if (!(key in options)) continue;
@@ -463,10 +453,20 @@ export async function buildMessageRequest(
     };
   } else if (operation === 'delete') {
     endpoint = `/api/sessions/${sessionId}/messages/delete`;
+    const forEveryone = this.getNodeParameter('forEveryone', itemIndex, true);
+    // The server reads a missing or null value as true and retracts the message from
+    // every recipient, which cannot be undone, so an expression that found nothing stops.
+    assertFieldsResolved(
+      this,
+      { forEveryone },
+      { forEveryone: 'Delete for Everyone' },
+      'Set it to true to retract the message for everyone, or to false to remove only your copy.',
+      itemIndex,
+    );
     body = {
       chatId,
       messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
-      forEveryone: this.getNodeParameter('forEveryone', itemIndex, true) as boolean,
+      forEveryone: forEveryone as boolean,
     };
   } else if (operation === 'sendVideo') {
     endpoint = `/api/sessions/${sessionId}/messages/send-video`;

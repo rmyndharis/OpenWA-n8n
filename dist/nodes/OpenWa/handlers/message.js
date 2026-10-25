@@ -218,14 +218,6 @@ async function buildMessageRequest(operation, itemIndex) {
     // --- Reads -----------------------------------------------------------------
     if (operation === 'list') {
         const options = this.getNodeParameter('messageListOptions', itemIndex, {});
-        for (const key of ['since', 'until', 'direction', 'orderBy', 'type', 'messageId']) {
-            if (!(key in options))
-                continue;
-            const value = options[key];
-            if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
-                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${key} has no value. Remove the option to leave the selection unrestricted.`, { itemIndex });
-            }
-        }
         const qs = (0, params_1.toQueryParams)(options);
         for (const key of ['since', 'until']) {
             if (!(key in options))
@@ -389,10 +381,14 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     else if (operation === 'delete') {
         endpoint = `/api/sessions/${sessionId}/messages/delete`;
+        const forEveryone = this.getNodeParameter('forEveryone', itemIndex, true);
+        // The server reads a missing or null value as true and retracts the message from
+        // every recipient, which cannot be undone, so an expression that found nothing stops.
+        (0, params_1.assertFieldsResolved)(this, { forEveryone }, { forEveryone: 'Delete for Everyone' }, 'Set it to true to retract the message for everyone, or to false to remove only your copy.', itemIndex);
         body = {
             chatId,
             messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
-            forEveryone: this.getNodeParameter('forEveryone', itemIndex, true),
+            forEveryone: forEveryone,
         };
     }
     else if (operation === 'sendVideo') {

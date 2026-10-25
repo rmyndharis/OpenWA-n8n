@@ -5844,6 +5844,182 @@ for (const [label, params] of [
   });
 }
 
+// --- Filters and toggles that resolved to nothing -----------------------------------
+// A key that narrows a result and has no value used to be dropped, so the request
+// selected everything the option was added to exclude. Paging and presentation keys
+// have a server default and stay droppable; so does a blank cursor, which the server
+// reads as the first page.
+
+const NARROWING_FILTERS = [
+  ['message/list', { resource: 'message', operation: 'list', sessionId: 'abc-123' }, 'messageListOptions', ['chatId', 'from']],
+  ['system/search', { resource: 'system', operation: 'search', searchQuery: 'x' }, 'searchFilters', ['sessionId', 'chatId', 'from', 'type', 'direction', 'dateFrom', 'dateTo']],
+  ['system/getAudit', { resource: 'system', operation: 'getAudit' }, 'auditFilters', ['sessionId', 'keyId', 'action', 'severity']],
+  ['webhook/getDeliveryFailures', { resource: 'webhook', operation: 'getDeliveryFailures' }, 'deliveryFailureOptions', ['sessionId']],
+];
+
+for (const [label, base, collection, keys] of NARROWING_FILTERS) {
+  for (const key of keys) {
+    for (const value of [undefined, null, '', '   ']) {
+      test(`${label} refuses a ${key} filter with no value (${JSON.stringify(value)}) instead of dropping it`, async () => {
+        const ctx = makeCtx({ params: { ...base, [collection]: { [key]: value } } });
+        await assert.rejects(() => new OpenWa().execute.call(ctx), new RegExp(`${key} has no value`));
+        assert.equal(ctx.calls.length, 0);
+      });
+    }
+    for (const value of [['a'], { a: 1 }]) {
+      test(`${label} refuses a ${key} filter given ${Array.isArray(value) ? 'a list' : 'an object'}, which the server would ignore`, async () => {
+        const ctx = makeCtx({ params: { ...base, [collection]: { [key]: value } } });
+        await assert.rejects(() => new OpenWa().execute.call(ctx), new RegExp(`${key} must be a single value`));
+        assert.equal(ctx.calls.length, 0);
+      });
+    }
+  }
+}
+
+for (const [label, base, collection, keys] of [
+  ['message/list', NARROWING_FILTERS[0][1], 'messageListOptions', ['limit', 'offset', 'after', 'inlineMedia']],
+  ['system/search', NARROWING_FILTERS[1][1], 'searchFilters', ['limit', 'offset']],
+  ['system/getAudit', NARROWING_FILTERS[2][1], 'auditFilters', ['limit', 'offset']],
+  ['webhook/getDeliveryFailures', NARROWING_FILTERS[3][1], 'deliveryFailureOptions', ['limit', 'offset']],
+]) {
+  for (const key of keys) {
+    test(`${label} still drops a ${key} with no value, restoring the server default`, async () => {
+      const { ctx } = await run({ ...base, [collection]: { [key]: undefined } });
+      assert.equal(singleCall(ctx).options.qs?.[key], undefined);
+      assert.equal(ctx.calls.length, 1);
+    });
+  }
+}
+
+test('message list keeps a blank cursor as the first page and still sends a real filter', async () => {
+  const { ctx } = await run({ ...NARROWING_FILTERS[0][1], messageListOptions: { chatId: '628@c.us', after: '' } });
+  assert.deepEqual(singleCall(ctx).options.qs, { chatId: '628@c.us' });
+});
+
+test('message list and search still take a Date object for their time bounds', async () => {
+  const at = new Date('2026-10-01T00:00:00Z');
+  const list = await run({ ...NARROWING_FILTERS[0][1], messageListOptions: { since: at } });
+  assert.deepEqual(singleCall(list.ctx).options.qs, { since: at.getTime() });
+  const search = await run({ ...NARROWING_FILTERS[1][1], searchFilters: { dateFrom: at } });
+  assert.equal(singleCall(search.ctx).options.qs.dateFrom, at.getTime());
+});
+
+test('audit filters still send the key under its wire name and keep other filters', async () => {
+  const { ctx } = await run({ ...NARROWING_FILTERS[2][1], auditFilters: { keyId: 'k1', action: 'session.start', limit: 10 } });
+  assert.deepEqual(singleCall(ctx).options.qs, { action: 'session.start', limit: 10, apiKeyId: 'k1' });
+});
+
+for (const typeVersion of [1, 2]) {
+  test(`message list v${typeVersion} refuses a chat or sender expression that found nothing`, async () => {
+    for (const key of ['chatId', 'from']) {
+      const ctx = makeCtx({ typeVersion });
+      const node = ctx.getNode();
+      node.parameters = { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { [key]: '={{ $json.missing }}' } };
+      const workflow = new Workflow({ nodes: [node], connections: {}, active: false, nodeTypes: { getByNameAndVersion: () => new OpenWa() } });
+      ctx.getNodeParameter = (name, _i, fallback) => workflow.expression.getParameterValue(node.parameters[name] ?? fallback, null, 0, 0, node.name, [{ json: {} }], 'manual', {});
+      await assert.rejects(new OpenWa().execute.call(ctx), new RegExp(key));
+      assert.equal(ctx.calls.length, 0);
+    }
+  });
+}
+
+for (const field of ['autoRejectCalls', 'maxReconnectAttempts', 'reconnectBaseDelay']) {
+  for (const value of [undefined, null]) {
+    test(`session/updateConfig refuses ${field} with no value (${value}) instead of dropping or resetting it`, async () => {
+      const ctx = makeCtx({ params: { resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { autoRejectCalls: true, [field]: value } } });
+      await assert.rejects(() => new OpenWa().execute.call(ctx), /has no value/);
+      assert.equal(ctx.calls.length, 0);
+    });
+  }
+}
+
+for (const [cap, expected] of [[-1, null], [0, 0], [20, 20], ['5', 5]]) {
+  test(`session/updateConfig reads a reconnect cap of ${JSON.stringify(cap)} as ${expected}`, async () => {
+    const { ctx } = await run({ resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { maxReconnectAttempts: cap } });
+    assert.deepEqual(singleCall(ctx).options.body, { maxReconnectAttempts: expected });
+  });
+}
+
+for (const cap of [-2, -5, 21, 99]) {
+  test(`session/updateConfig refuses a reconnect cap of ${cap} outside -1 to 20 instead of reading it as unlimited`, async () => {
+    await assert.rejects(() => run({ resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { maxReconnectAttempts: cap } }), /between -1 and 20/);
+  });
+}
+
+for (const value of [undefined, null]) {
+  test(`message/delete refuses Delete for Everyone with no value (${value}), which the server reads as true`, async () => {
+    const ctx = makeCtx({ params: { resource: 'message', operation: 'delete', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', forEveryone: value } });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Delete for Everyone has no value/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+for (const value of [true, false, 'false']) {
+  test(`message/delete still passes Delete for Everyone ${JSON.stringify(value)} through`, async () => {
+    const { ctx } = await run({ resource: 'message', operation: 'delete', sessionId: 'abc-123', chatId: '1@c.us', messageId: 'm1', forEveryone: value });
+    assert.equal(singleCall(ctx).options.body.forEveryone, value);
+  });
+}
+
+for (const value of [undefined, null]) {
+  test(`chat/mute refuses Mute Until with no value (${value}) instead of unmuting`, async () => {
+    const ctx = makeCtx({ params: { resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', muteUntil: value } });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Mute Until has no value/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('chat/mute still unmutes on an empty field and on a whole-value empty string', async () => {
+  for (const params of [{}, { muteUntil: '' }]) {
+    const { ctx } = await run({ resource: 'chat', operation: 'mute', sessionId: 'abc-123', chatId: '1@c.us', ...params });
+    assert.deepEqual(singleCall(ctx).options.body, { chatId: '1@c.us', muteUntil: null });
+  }
+});
+
+for (const [label, resolved] of [['an empty list', []], ['blank text', ''], ['nothing', undefined]]) {
+  test(`chat/markRead refuses a Message IDs expression that resolved to ${label} instead of acknowledging the newest message`, async () => {
+    const ctx = makeCtx({
+      params: { resource: 'chat', operation: 'markRead', sessionId: 'abc-123', chatId: '1@c.us', readMessageIds: resolved },
+      nodeParameters: { readMessageIds: '={{ $json.unread }}' },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Message IDs resolved to an empty list/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('chat/markRead keeps a literal empty field as the chat-level read and still sends named IDs', async () => {
+  const empty = await run({ resource: 'chat', operation: 'markRead', sessionId: 'abc-123', chatId: '1@c.us', readMessageIds: '' });
+  assert.deepEqual(singleCall(empty.ctx).options.body, { chatId: '1@c.us' });
+  const named = makeCtx({
+    params: { resource: 'chat', operation: 'markRead', sessionId: 'abc-123', chatId: '1@c.us', readMessageIds: ['m1'] },
+    nodeParameters: { readMessageIds: '={{ $json.unread }}' },
+  });
+  await new OpenWa().execute.call(named);
+  assert.deepEqual(singleCall(named).options.body, { chatId: '1@c.us', messageIds: ['m1'] });
+});
+
+for (const [field, resolved, label] of [
+  ['allowedIps', [], 'Allowed IPs resolved to an empty list'],
+  ['allowedSessions', '', 'Allowed Sessions resolved to an empty list'],
+  ['allowedChats', [], 'Allowed Chats resolved to an empty list'],
+  ['role', '', 'Role has no value'],
+  ['expiresAt', '', 'Expires At has no value'],
+]) {
+  test(`apiKey/update refuses ${field} whose expression resolved to nothing instead of leaving it unapplied`, async () => {
+    const ctx = makeCtx({
+      params: { resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: 'customer-7', [field]: resolved } },
+      nodeParameters: { keyFields: { name: 'customer-7', [field]: '={{ $json.value }}' } },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), new RegExp(label));
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('apiKey/update still drops a literal empty list and sends the fields that were set', async () => {
+  const { ctx } = await run({ resource: 'apiKey', operation: 'update', keyId: 'k1', keyFields: { name: 'customer-7', allowedIps: '' } });
+  assert.deepEqual(singleCall(ctx).options.body, { name: 'customer-7' });
+});
+
 // A 200 that is not a JSON object cannot come from any route this node calls; it is a
 // page from something in front of the server (wrong Server URL path, proxy, portal).
 for (const [label, response] of [
@@ -5886,5 +6062,16 @@ for (const [label, response, method, expected] of [
       { response },
     );
     assert.deepEqual(output[0].map((item) => item.json), [expected]);
+  });
+}
+
+for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+  test(`apiKey/create reads an Expires At expression that resolved to ${value} as an invalid date, not as blank`, async () => {
+    const ctx = makeCtx({
+      params: { resource: 'apiKey', operation: 'create', keyName: 'k', keyFields: { expiresAt: value } },
+      nodeParameters: { keyFields: { expiresAt: '={{ $json.value }}' } },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Expiry date is not a valid date/);
+    assert.equal(ctx.calls.length, 0);
   });
 }

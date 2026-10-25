@@ -43,17 +43,13 @@ export async function buildSystemRequest(
     }
 
     case 'getAudit': {
-      const { keyId, ...rest } = this.getNodeParameter(
-        'auditFilters',
-        itemIndex,
-        {},
-      ) as IDataObject;
-      const qs = toQueryParams(rest);
+      const qs = toQueryParams(this.getNodeParameter('auditFilters', itemIndex, {}) as IDataObject);
       // The UI field is `keyId` — spelling it `apiKeyId` there trips the n8n
       // lint rule that masks anything looking like a credential. The wire name
       // the API expects is restored here.
-      if (keyId !== undefined && keyId !== '') {
-        qs.apiKeyId = keyId;
+      if ('keyId' in qs) {
+        qs.apiKeyId = qs.keyId;
+        delete qs.keyId;
       }
       return { endpoint: '/api/audit', method: 'GET', body: {}, qs };
     }

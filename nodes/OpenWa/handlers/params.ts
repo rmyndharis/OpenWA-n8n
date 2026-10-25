@@ -274,20 +274,69 @@ export function assertFieldsResolved(
 }
 
 /**
+ * Query keys the server defaults when they are absent. Dropping one only restores that
+ * default, so it never widens what a request selects; every other key narrows a result.
+ */
+const HAS_SERVER_DEFAULT = new Set([
+  'limit',
+  'offset',
+  'page',
+  'after',
+  'inlineMedia',
+  'deep',
+  'includeMedia',
+]);
+
+/**
  * Turns a `collection` parameter into a query object.
  *
- * Only entries the user actually added are present, so anything left undefined,
- * null, or blank is dropped. `0` and `false` are meaningful values here (offset
- * 0, a disabled flag) and are deliberately kept.
+ * Only entries the user actually added are present. `0` and `false` are meaningful
+ * values here (offset 0, a disabled flag) and are kept. A paging or presentation key
+ * with no value is dropped, which restores the server's default. A key that narrows the
+ * result and has no value is refused instead: dropped, the request would select
+ * everything the option was added to exclude. A list or an object is refused too, since
+ * the server reads `chatId[0]=a` as a different key and ignores the filter.
  */
 export function toQueryParams(options: IDataObject | undefined): IDataObject {
   const qs: IDataObject = {};
   for (const [key, value] of Object.entries(options ?? {})) {
+    if (Array.isArray(value) || isOpaque(value)) {
+      throw new Error(
+        `${key} must be a single value, not a list or an object. Point the expression at one value, e.g. {{ $json.items[0] }}.`,
+      );
+    }
+    const blank =
+      value === undefined || value === null || (typeof value === 'string' && !value.trim());
+    if (blank && !HAS_SERVER_DEFAULT.has(key)) {
+      throw new Error(
+        `${key} has no value. Remove the option to leave the selection unrestricted.`,
+      );
+    }
     if (value !== undefined && value !== null && value !== '') {
       qs[key] = value;
     }
   }
   return qs;
+}
+
+/**
+ * Refuses an expression that resolved to an empty list where the field left empty means
+ * something else: every pending request, the newest message, a key without that
+ * restriction. Read from the raw parameter, because once resolved the two look alike.
+ */
+export function assertListResolved(
+  ctx: IExecuteFunctions,
+  raw: unknown,
+  list: unknown[],
+  label: string,
+  remedy: string,
+  itemIndex: number,
+): void {
+  if (list.length === 0 && isExpression(raw)) {
+    throw new NodeOperationError(ctx.getNode(), `${label} resolved to an empty list. ${remedy}`, {
+      itemIndex,
+    });
+  }
 }
 
 /**
