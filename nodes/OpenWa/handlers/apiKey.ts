@@ -50,7 +50,7 @@ export async function buildApiKeyRequest(
       ['allowedSessions', 'Allowed Sessions'],
       ['allowedChats', 'Allowed Chats'],
     ] as const) {
-      if (isExpression(raw[key]) && toStringList(fields[key]).length === 0) {
+      if (isExpression(raw[key]) && toStringList(fields[key], label).length === 0) {
         throw new NodeOperationError(
           this.getNode(),
           `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`,
@@ -168,15 +168,15 @@ function collectApiKeyFields(
     }
     body.expiresAt = new Date(expiresAt).toISOString();
   }
-  const allowedIps = toStringList(fields.allowedIps);
+  const allowedIps = toStringList(fields.allowedIps, 'Allowed IPs');
   if (allowedIps.length > 0) {
     body.allowedIps = allowedIps;
   }
-  const allowedSessions = toStringList(fields.allowedSessions);
+  const allowedSessions = toStringList(fields.allowedSessions, 'Allowed Sessions');
   if (allowedSessions.length > 0) {
     body.allowedSessions = allowedSessions;
   }
-  const allowedChats = toStringList(fields.allowedChats);
+  const allowedChats = toStringList(fields.allowedChats, 'Allowed Chats');
   if (allowedChats.length > 0) {
     body.allowedChats = allowedChats;
   }

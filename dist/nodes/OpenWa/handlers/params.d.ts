@@ -1,4 +1,10 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+/**
+ * Refuses NaN and Infinity. An expression such as `{{ $json.a * 2 }}` over a missing
+ * field resolves to one of them, and stringified it goes out as the text "NaN" or
+ * "Infinity", where left as a number the gateway would have refused the null it becomes.
+ */
+export declare function assertFiniteNumber(value: unknown, label: string): void;
 export declare function asText(value: unknown, label?: string): string;
 /**
  * A boolean parameter read as the user meant it. n8n does not coerce a boolean field
@@ -113,4 +119,4 @@ export declare function toEpochMs(ctx: IExecuteFunctions, raw: unknown, label: s
  * write is not "leave it out".
  */
 export declare function optionalNonBlank(ctx: IExecuteFunctions, value: string | undefined, label: string, itemIndex: number, maxLength?: number, remedy?: string): string | undefined;
-export declare function toStringList(raw: unknown): string[];
+export declare function toStringList(raw: unknown, label: string): string[];

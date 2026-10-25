@@ -11,7 +11,7 @@ import {
   isExpression,
   isTemplateExpression,
 } from './params';
-import { resolveMediaSource, type MediaParamNames } from '../media';
+import { assertImageMedia, resolveMediaSource, type MediaParamNames } from '../media';
 import type { RequestSpec } from './types';
 
 /**
@@ -41,7 +41,10 @@ const MAX_INVITE_CODE_LENGTH = 128;
  * offending field instead of surfacing a generic 400.
  */
 function getParticipants(this: IExecuteFunctions, itemIndex: number): string[] {
-  const participants = toStringList(this.getNodeParameter('groupParticipants', itemIndex, ''));
+  const participants = toStringList(
+    this.getNodeParameter('groupParticipants', itemIndex, ''),
+    'Participants',
+  );
   if (participants.length === 0) {
     throw new NodeOperationError(this.getNode(), 'At least one participant is required', {
       itemIndex,
@@ -169,6 +172,7 @@ export async function buildGroupRequest(
       const action = operation === 'approveMembershipRequests' ? 'approve' : 'reject';
       const requesters = toStringList(
         this.getNodeParameter('groupRequestParticipants', itemIndex, ''),
+        'Requesters',
       );
       // Only a field left empty means "every pending request". An expression that
       // found nobody reads the same after resolution, and acting on everyone then
@@ -208,7 +212,10 @@ export async function buildGroupRequest(
       return {
         endpoint: `${groupBase}/picture`,
         method: 'PUT',
-        body: await resolveMediaSource.call(this, itemIndex, GROUP_PICTURE_MEDIA, 'image/jpeg'),
+        body: assertImageMedia(
+          await resolveMediaSource.call(this, itemIndex, GROUP_PICTURE_MEDIA, 'image/jpeg'),
+          'Picture',
+        ),
       };
     case 'deletePicture':
       return { endpoint: `${groupBase}/picture`, method: 'DELETE', body: {} };

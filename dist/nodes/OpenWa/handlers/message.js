@@ -20,10 +20,12 @@ const CHATLESS_OPERATIONS = new Set([
     'list',
 ]);
 // Server-side DTO limits.
-const MAX_EDIT_BODY_LENGTH = 4096;
+const MAX_MESSAGE_LENGTH = 4096;
 const MAX_BUTTON_ID_LENGTH = 256;
 const MAX_FILENAME_LENGTH = 255;
 const MAX_POLL_NAME_LENGTH = 255;
+const MAX_POLL_OPTION_LENGTH = 100;
+const MAX_CAPTION_LENGTH = 1024;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_OPTIONS = 12;
@@ -149,13 +151,21 @@ function readCustomLinkPreview(itemIndex) {
  * which makes a refusal here the only place that failure is still recoverable.
  */
 function messageBody(ctx, raw, itemIndex) {
-    if (raw === null || raw === undefined) {
-        return '';
-    }
-    if (typeof raw === 'object') {
+    if (typeof raw === 'object' && raw !== null) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), 'Message must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.', { itemIndex });
     }
-    return typeof raw === 'string' ? raw : String(raw);
+    (0, params_1.assertFiniteNumber)(raw, 'Message');
+    const text = raw === null || raw === undefined ? '' : String(raw);
+    // The gateway takes a blank body as long as it is not empty, so one made of spaces
+    // alone would be delivered as an empty bubble. Its 4096 cap is checked here because
+    // production strips the detail from the 400 that names the field.
+    if (!text.trim()) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), 'Message cannot be empty', { itemIndex });
+    }
+    if ((0, params_1.textLength)(text) > MAX_MESSAGE_LENGTH) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`, { itemIndex });
+    }
+    return text;
 }
 /**
  * A candidate document name, kept only when it looks like a real file: a base name
@@ -183,6 +193,14 @@ function fileNameInUrl(url) {
     catch {
         return '';
     }
+}
+/** The optional caption of a media send, '' when none, checked against the gateway's cap. */
+function readCaption(ctx, itemIndex) {
+    const caption = (0, params_1.asText)(ctx.getNodeParameter('caption', itemIndex, ''), 'Caption');
+    if ((0, params_1.textLength)(caption) > MAX_CAPTION_LENGTH) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `Caption cannot exceed ${MAX_CAPTION_LENGTH} characters`, { itemIndex });
+    }
+    return caption;
 }
 async function buildMessageRequest(operation, itemIndex) {
     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId', itemIndex), 'Session ID');
@@ -215,7 +233,10 @@ async function buildMessageRequest(operation, itemIndex) {
             const value = options[key];
             const numeric = typeof value === 'number' ||
                 (typeof value === 'string' && /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value.trim()));
-            const ms = numeric ? Number(value) : (0, params_1.toEpochMs)(this, value, key, itemIndex);
+            // Numeric text goes through the same seconds guard as a number: the gateway's own
+            // message timestamps are Unix seconds, so one taken from a payload would otherwise
+            // be read as a moment in January 1970.
+            const ms = (0, params_1.toEpochMs)(this, numeric ? Number(value) : value, key, itemIndex);
             if (!Number.isFinite(ms) || ms < 0 || ms > Number.MAX_SAFE_INTEGER) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${key} must be a non-negative epoch millisecond value`, { itemIndex });
             }
@@ -283,7 +304,7 @@ async function buildMessageRequest(operation, itemIndex) {
     else if (operation === 'sendImage') {
         endpoint = `/api/sessions/${sessionId}/messages/send-image`;
         body = { chatId };
-        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+        const caption = readCaption(this, itemIndex);
         if (caption) {
             body.caption = caption;
         }
@@ -313,7 +334,7 @@ async function buildMessageRequest(operation, itemIndex) {
             filename = derived || 'document.pdf';
         }
         body = { chatId, filename };
-        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+        const caption = readCaption(this, itemIndex);
         if (caption) {
             body.caption = caption;
         }
@@ -377,7 +398,7 @@ async function buildMessageRequest(operation, itemIndex) {
     else if (operation === 'sendVideo') {
         endpoint = `/api/sessions/${sessionId}/messages/send-video`;
         body = { chatId };
-        const caption = (0, params_1.asText)(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+        const caption = readCaption(this, itemIndex);
         if (caption) {
             body.caption = caption;
         }
@@ -391,9 +412,12 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     else if (operation === 'sendPoll') {
         endpoint = `/api/sessions/${sessionId}/messages/send-poll`;
-        const pollOptions = (0, params_1.toStringList)(this.getNodeParameter('pollOptions', itemIndex, ''));
+        const pollOptions = (0, params_1.toStringList)(this.getNodeParameter('pollOptions', itemIndex, ''), 'Options');
         if (pollOptions.length < MIN_POLL_OPTIONS || pollOptions.length > MAX_POLL_OPTIONS) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `A poll needs between ${MIN_POLL_OPTIONS} and ${MAX_POLL_OPTIONS} options (got ${pollOptions.length})`, { itemIndex });
+        }
+        if (pollOptions.some((option) => (0, params_1.textLength)(option) > MAX_POLL_OPTION_LENGTH)) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Each poll option cannot exceed ${MAX_POLL_OPTION_LENGTH} characters`, { itemIndex });
         }
         body = {
             chatId,
@@ -451,8 +475,8 @@ async function buildMessageRequest(operation, itemIndex) {
         if (!newBody.trim()) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Message cannot be empty', { itemIndex });
         }
-        if ((0, params_1.textLength)(newBody) > MAX_EDIT_BODY_LENGTH) {
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Message cannot exceed ${MAX_EDIT_BODY_LENGTH} characters`, { itemIndex });
+        if ((0, params_1.textLength)(newBody) > MAX_MESSAGE_LENGTH) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`, { itemIndex });
         }
         body = {
             chatId,
@@ -492,7 +516,7 @@ async function buildMessageRequest(operation, itemIndex) {
     }
     else if (operation === 'votePoll') {
         endpoint = `/api/sessions/${sessionId}/messages/vote-poll`;
-        const selections = (0, params_1.toStringList)(this.getNodeParameter('pollVoteOptions', itemIndex, ''));
+        const selections = (0, params_1.toStringList)(this.getNodeParameter('pollVoteOptions', itemIndex, ''), 'Selected Options');
         if (selections.length > MAX_POLL_VOTE_OPTIONS) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `A vote can select at most ${MAX_POLL_VOTE_OPTIONS} options (got ${selections.length})`, { itemIndex });
         }
@@ -606,7 +630,7 @@ async function buildMessageRequest(operation, itemIndex) {
         operation === 'sendTemplate' ||
         operation === 'reply' ||
         operation === 'edit') {
-        const mentions = (0, params_1.toStringList)(this.getNodeParameter('mentions', itemIndex, ''));
+        const mentions = (0, params_1.toStringList)(this.getNodeParameter('mentions', itemIndex, ''), 'Mentions');
         if (mentions.length > 0) {
             body.mentions = mentions;
         }

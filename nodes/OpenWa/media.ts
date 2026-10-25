@@ -48,6 +48,26 @@ export async function resolveMediaSource(
 }
 
 /**
+ * Refuses media that cannot be a picture. The gateway takes a profile or group picture
+ * only when its MIME type matches `^image/`, and a binary item downloaded by an HTTP
+ * Request often arrives as application/octet-stream. Its 400 names the field in
+ * development only, so the reason is given here. A URL source carries no MIME type to
+ * check: the gateway reads it from the download.
+ */
+export function assertImageMedia(
+  media: Record<string, unknown>,
+  label: string,
+): Record<string, unknown> {
+  const mimetype = media.mimetype;
+  if (typeof mimetype === 'string' && !/^image\//.test(mimetype)) {
+    throw new Error(
+      `${label} must be an image, but its MIME type is "${mimetype}". Give the binary item an image/* MIME type upstream, or use the Base64 source and set the MIME type here.`,
+    );
+  }
+  return media;
+}
+
+/**
  * A URL or base64 payload, trimmed and coerced. A list holding one value is read as
  * that value; a longer one is refused rather than joined: joined, two URLs read as
  * one bogus URL and two base64 payloads decode to one corrupt file, the first alone

@@ -5,6 +5,7 @@ import { parseJsonParam } from '../../shared/jsonParam';
 import { parseBulkMessages } from '../bulkMessages';
 import { resolveMediaSource, type MediaParamNames } from '../media';
 import {
+  assertFiniteNumber,
   requireJid,
   requireText,
   toQueryParams,
@@ -30,10 +31,12 @@ const CHATLESS_OPERATIONS = new Set([
 ]);
 
 // Server-side DTO limits.
-const MAX_EDIT_BODY_LENGTH = 4096;
+const MAX_MESSAGE_LENGTH = 4096;
 const MAX_BUTTON_ID_LENGTH = 256;
 const MAX_FILENAME_LENGTH = 255;
 const MAX_POLL_NAME_LENGTH = 255;
+const MAX_POLL_OPTION_LENGTH = 100;
+const MAX_CAPTION_LENGTH = 1024;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_OPTIONS = 12;
@@ -175,17 +178,29 @@ function readCustomLinkPreview(
  * which makes a refusal here the only place that failure is still recoverable.
  */
 function messageBody(ctx: IExecuteFunctions, raw: unknown, itemIndex: number): string {
-  if (raw === null || raw === undefined) {
-    return '';
-  }
-  if (typeof raw === 'object') {
+  if (typeof raw === 'object' && raw !== null) {
     throw new NodeOperationError(
       ctx.getNode(),
       'Message must be text. Point the expression at the value itself, e.g. {{ $json.payload.text }}.',
       { itemIndex },
     );
   }
-  return typeof raw === 'string' ? raw : String(raw);
+  assertFiniteNumber(raw, 'Message');
+  const text = raw === null || raw === undefined ? '' : String(raw);
+  // The gateway takes a blank body as long as it is not empty, so one made of spaces
+  // alone would be delivered as an empty bubble. Its 4096 cap is checked here because
+  // production strips the detail from the 400 that names the field.
+  if (!text.trim()) {
+    throw new NodeOperationError(ctx.getNode(), 'Message cannot be empty', { itemIndex });
+  }
+  if (textLength(text) > MAX_MESSAGE_LENGTH) {
+    throw new NodeOperationError(
+      ctx.getNode(),
+      `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
+      { itemIndex },
+    );
+  }
+  return text;
 }
 
 /**
@@ -215,6 +230,19 @@ function fileNameInUrl(url: string): string {
   } catch {
     return '';
   }
+}
+
+/** The optional caption of a media send, '' when none, checked against the gateway's cap. */
+function readCaption(ctx: IExecuteFunctions, itemIndex: number): string {
+  const caption = asText(ctx.getNodeParameter('caption', itemIndex, ''), 'Caption');
+  if (textLength(caption) > MAX_CAPTION_LENGTH) {
+    throw new NodeOperationError(
+      ctx.getNode(),
+      `Caption cannot exceed ${MAX_CAPTION_LENGTH} characters`,
+      { itemIndex },
+    );
+  }
+  return caption;
 }
 
 export async function buildMessageRequest(
@@ -260,7 +288,10 @@ export async function buildMessageRequest(
       const numeric =
         typeof value === 'number' ||
         (typeof value === 'string' && /^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(value.trim()));
-      const ms = numeric ? Number(value) : toEpochMs(this, value, key, itemIndex);
+      // Numeric text goes through the same seconds guard as a number: the gateway's own
+      // message timestamps are Unix seconds, so one taken from a payload would otherwise
+      // be read as a moment in January 1970.
+      const ms = toEpochMs(this, numeric ? Number(value) : value, key, itemIndex);
       if (!Number.isFinite(ms) || ms < 0 || ms > Number.MAX_SAFE_INTEGER) {
         throw new NodeOperationError(
           this.getNode(),
@@ -340,7 +371,7 @@ export async function buildMessageRequest(
   } else if (operation === 'sendImage') {
     endpoint = `/api/sessions/${sessionId}/messages/send-image`;
     body = { chatId };
-    const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+    const caption = readCaption(this, itemIndex);
     if (caption) {
       body.caption = caption;
     }
@@ -376,7 +407,7 @@ export async function buildMessageRequest(
       filename = derived || 'document.pdf';
     }
     body = { chatId, filename };
-    const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+    const caption = readCaption(this, itemIndex);
     if (caption) {
       body.caption = caption;
     }
@@ -440,7 +471,7 @@ export async function buildMessageRequest(
   } else if (operation === 'sendVideo') {
     endpoint = `/api/sessions/${sessionId}/messages/send-video`;
     body = { chatId };
-    const caption = asText(this.getNodeParameter('caption', itemIndex, ''), 'Caption');
+    const caption = readCaption(this, itemIndex);
     if (caption) {
       body.caption = caption;
     }
@@ -458,11 +489,21 @@ export async function buildMessageRequest(
     );
   } else if (operation === 'sendPoll') {
     endpoint = `/api/sessions/${sessionId}/messages/send-poll`;
-    const pollOptions = toStringList(this.getNodeParameter('pollOptions', itemIndex, ''));
+    const pollOptions = toStringList(
+      this.getNodeParameter('pollOptions', itemIndex, ''),
+      'Options',
+    );
     if (pollOptions.length < MIN_POLL_OPTIONS || pollOptions.length > MAX_POLL_OPTIONS) {
       throw new NodeOperationError(
         this.getNode(),
         `A poll needs between ${MIN_POLL_OPTIONS} and ${MAX_POLL_OPTIONS} options (got ${pollOptions.length})`,
+        { itemIndex },
+      );
+    }
+    if (pollOptions.some((option) => textLength(option) > MAX_POLL_OPTION_LENGTH)) {
+      throw new NodeOperationError(
+        this.getNode(),
+        `Each poll option cannot exceed ${MAX_POLL_OPTION_LENGTH} characters`,
         { itemIndex },
       );
     }
@@ -533,10 +574,10 @@ export async function buildMessageRequest(
     if (!newBody.trim()) {
       throw new NodeOperationError(this.getNode(), 'Message cannot be empty', { itemIndex });
     }
-    if (textLength(newBody) > MAX_EDIT_BODY_LENGTH) {
+    if (textLength(newBody) > MAX_MESSAGE_LENGTH) {
       throw new NodeOperationError(
         this.getNode(),
-        `Message cannot exceed ${MAX_EDIT_BODY_LENGTH} characters`,
+        `Message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
         { itemIndex },
       );
     }
@@ -578,7 +619,10 @@ export async function buildMessageRequest(
     };
   } else if (operation === 'votePoll') {
     endpoint = `/api/sessions/${sessionId}/messages/vote-poll`;
-    const selections = toStringList(this.getNodeParameter('pollVoteOptions', itemIndex, ''));
+    const selections = toStringList(
+      this.getNodeParameter('pollVoteOptions', itemIndex, ''),
+      'Selected Options',
+    );
     if (selections.length > MAX_POLL_VOTE_OPTIONS) {
       throw new NodeOperationError(
         this.getNode(),
@@ -696,7 +740,7 @@ export async function buildMessageRequest(
     operation === 'reply' ||
     operation === 'edit'
   ) {
-    const mentions = toStringList(this.getNodeParameter('mentions', itemIndex, ''));
+    const mentions = toStringList(this.getNodeParameter('mentions', itemIndex, ''), 'Mentions');
     if (mentions.length > 0) {
       body.mentions = mentions;
     }

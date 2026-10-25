@@ -1,7 +1,7 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { resolveMediaSource, type MediaParamNames } from '../media';
+import { assertImageMedia, resolveMediaSource, type MediaParamNames } from '../media';
 import { requireText, asText, textLength, isTemplateExpression } from './params';
 import type { RequestSpec } from './types';
 
@@ -75,7 +75,10 @@ export async function buildProfileRequest(
       return {
         endpoint: `${base}/picture`,
         method: 'PUT',
-        body: await resolveMediaSource.call(this, itemIndex, PICTURE_MEDIA, 'image/jpeg'),
+        body: assertImageMedia(
+          await resolveMediaSource.call(this, itemIndex, PICTURE_MEDIA, 'image/jpeg'),
+          'Picture',
+        ),
       };
     default:
       return null;

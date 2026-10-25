@@ -55,7 +55,7 @@ async function buildProfileRequest(operation, itemIndex) {
             return {
                 endpoint: `${base}/picture`,
                 method: 'PUT',
-                body: await media_1.resolveMediaSource.call(this, itemIndex, PICTURE_MEDIA, 'image/jpeg'),
+                body: (0, media_1.assertImageMedia)(await media_1.resolveMediaSource.call(this, itemIndex, PICTURE_MEDIA, 'image/jpeg'), 'Picture'),
             };
         default:
             return null;

@@ -30,7 +30,7 @@ const MAX_INVITE_CODE_LENGTH = 128;
  * offending field instead of surfacing a generic 400.
  */
 function getParticipants(itemIndex) {
-    const participants = (0, params_1.toStringList)(this.getNodeParameter('groupParticipants', itemIndex, ''));
+    const participants = (0, params_1.toStringList)(this.getNodeParameter('groupParticipants', itemIndex, ''), 'Participants');
     if (participants.length === 0) {
         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one participant is required', {
             itemIndex,
@@ -116,7 +116,7 @@ async function buildGroupRequest(operation, itemIndex) {
         case 'approveMembershipRequests':
         case 'rejectMembershipRequests': {
             const action = operation === 'approveMembershipRequests' ? 'approve' : 'reject';
-            const requesters = (0, params_1.toStringList)(this.getNodeParameter('groupRequestParticipants', itemIndex, ''));
+            const requesters = (0, params_1.toStringList)(this.getNodeParameter('groupRequestParticipants', itemIndex, ''), 'Requesters');
             // Only a field left empty means "every pending request". An expression that
             // found nobody reads the same after resolution, and acting on everyone then
             // admits or turns away the whole queue, which cannot be undone.
@@ -145,7 +145,7 @@ async function buildGroupRequest(operation, itemIndex) {
             return {
                 endpoint: `${groupBase}/picture`,
                 method: 'PUT',
-                body: await media_1.resolveMediaSource.call(this, itemIndex, GROUP_PICTURE_MEDIA, 'image/jpeg'),
+                body: (0, media_1.assertImageMedia)(await media_1.resolveMediaSource.call(this, itemIndex, GROUP_PICTURE_MEDIA, 'image/jpeg'), 'Picture'),
             };
         case 'deletePicture':
             return { endpoint: `${groupBase}/picture`, method: 'DELETE', body: {} };

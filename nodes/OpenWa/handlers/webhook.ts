@@ -24,6 +24,12 @@ function parseJsonObject(node: INode, raw: unknown, label: string, itemIndex: nu
   }
 }
 
+/** The events of a registration: the selection itself, or the text an expression built. */
+function readEvents(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  return raw ? toStringList(raw, 'Events') : [];
+}
+
 function assertSecretLength(node: INode, secret: string, itemIndex: number): void {
   const problem = webhookSecretProblem(secret);
   if (problem) {
@@ -70,7 +76,7 @@ export async function buildWebhookRequest(
       if (value !== undefined) body[key] = value;
     }
     if (fields.ids !== undefined) {
-      const ids = toStringList(fields.ids);
+      const ids = toStringList(fields.ids, 'Failure IDs');
       if (ids.length > 500 || ids.some((id) => [...id].length > 128)) {
         throw new NodeOperationError(
           this.getNode(),
@@ -119,16 +125,20 @@ export async function buildWebhookRequest(
   }
 
   if (operation === 'create') {
-    const events = this.getNodeParameter('events', itemIndex) as string[];
-    if (!events || events.length === 0) {
+    // Read as the Update operation reads them: an expression can resolve to a comma
+    // separated text, which the gateway refuses as "events must be an array", and a URL
+    // pasted with a trailing newline, which it refuses as not a URL.
+    const events = readEvents(this.getNodeParameter('events', itemIndex));
+    if (events.length === 0) {
       throw new NodeOperationError(this.getNode(), 'At least one event must be selected', {
         itemIndex,
       });
     }
-    const body: Record<string, unknown> = {
-      url: this.getNodeParameter('webhookUrl', itemIndex) as string,
-      events,
-    };
+    const url = asText(this.getNodeParameter('webhookUrl', itemIndex), 'URL');
+    if (!url) {
+      throw new NodeOperationError(this.getNode(), 'URL cannot be empty', { itemIndex });
+    }
+    const body: Record<string, unknown> = { url, events };
     const webhookSecret = this.getNodeParameter('webhookSecret', itemIndex, '') as string;
     assertSecretLength(this.getNode(), webhookSecret, itemIndex);
     if (webhookSecret) {
@@ -215,7 +225,7 @@ export async function buildWebhookRequest(
         body.url = url;
         continue;
       }
-      body[key] = value;
+      body[key] = key === 'events' ? readEvents(value) : value;
     }
     // The server reads an empty secret as "stop signing" (`@ValidateIf(o => o.secret
     // !== '')` skips the 16-character floor for exactly that value). A blank field
@@ -224,9 +234,15 @@ export async function buildWebhookRequest(
     // spelled with its own toggle instead.
     if (updateFields.clearSecret === true) {
       body.secret = '';
-    } else if (typeof updateFields.secret === 'string' && updateFields.secret.trim() !== '') {
-      assertSecretLength(this.getNode(), updateFields.secret, itemIndex);
-      body.secret = updateFields.secret;
+    } else {
+      // A number is a secret out of an expression and reads as its digits. Skipping it
+      // reported a rotation that never happened, with the other fields still sent.
+      const secret =
+        typeof updateFields.secret === 'number' ? String(updateFields.secret) : updateFields.secret;
+      if (typeof secret === 'string' && secret.trim() !== '') {
+        assertSecretLength(this.getNode(), secret, itemIndex);
+        body.secret = secret;
+      }
     }
     // Mirror the create-webhook guard so an empty Events selection fails with a clear
     // message here instead of a raw server 400 (the DTO requires at least one event).
