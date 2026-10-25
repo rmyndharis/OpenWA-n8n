@@ -7,6 +7,8 @@ exports.isOn = isOn;
 exports.isExpression = isExpression;
 exports.isTemplateExpression = isTemplateExpression;
 exports.requireJid = requireJid;
+exports.isFullJid = isFullJid;
+exports.assertNotOpaque = assertNotOpaque;
 exports.requireFullJid = requireFullJid;
 exports.inviteCodeFrom = inviteCodeFrom;
 exports.requireText = requireText;
@@ -142,6 +144,26 @@ function requireJid(ctx, paramName, label, itemIndex) {
     return value;
 }
 /**
+ * Whether an ID carries its domain (`628123456789@c.us`), as against a bare number or
+ * a `@628123456789` mention token. Deliberately looser than the gateway's own rules
+ * for each field, so it can never refuse a value the gateway would take.
+ */
+function isFullJid(value) {
+    return /^[^\s@]+@[^\s@]+$/.test(value);
+}
+/**
+ * Refuses a value that is an object with nothing useful to say, which the gateway would
+ * otherwise turn into the text "[object Object]" and send. Anything else is returned
+ * untouched, null and the empty string included: on React an empty emoji removes the
+ * reaction, and null must keep reaching the gateway as the refusal it is today.
+ */
+function assertNotOpaque(ctx, value, label, itemIndex) {
+    if (typeof value === 'object' && value !== null && isOpaque(value)) {
+        throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} must be text. Point the expression at the value itself, e.g. {{ $json.value }}.`, { itemIndex });
+    }
+    return value;
+}
+/**
  * requireJid for the routes whose DTO requires a domain-qualified ID
  * (`@Matches(/^[^\s@]+@[^\s@]+$/)`). Checking here lets the message name the field,
  * where the server's 400 detail is stripped in production. The example is fixed
@@ -149,7 +171,7 @@ function requireJid(ctx, paramName, label, itemIndex) {
  */
 function requireFullJid(ctx, paramName, label, itemIndex) {
     const value = requireJid(ctx, paramName, label, itemIndex);
-    if (!/^[^\s@]+@[^\s@]+$/.test(value)) {
+    if (!isFullJid(value)) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} must be a full WhatsApp ID including its domain, such as 628123456789@c.us, not a bare number`, { itemIndex });
     }
     return value;

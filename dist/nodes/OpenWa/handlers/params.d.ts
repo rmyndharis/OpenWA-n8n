@@ -29,6 +29,19 @@ export declare function isExpression(raw: unknown): boolean;
 export declare function isTemplateExpression(raw: unknown): boolean;
 export declare function requireJid(ctx: IExecuteFunctions, paramName: string, label: string, itemIndex: number): string;
 /**
+ * Whether an ID carries its domain (`628123456789@c.us`), as against a bare number or
+ * a `@628123456789` mention token. Deliberately looser than the gateway's own rules
+ * for each field, so it can never refuse a value the gateway would take.
+ */
+export declare function isFullJid(value: string): boolean;
+/**
+ * Refuses a value that is an object with nothing useful to say, which the gateway would
+ * otherwise turn into the text "[object Object]" and send. Anything else is returned
+ * untouched, null and the empty string included: on React an empty emoji removes the
+ * reaction, and null must keep reaching the gateway as the refusal it is today.
+ */
+export declare function assertNotOpaque<T>(ctx: IExecuteFunctions, value: T, label: string, itemIndex: number): T;
+/**
  * requireJid for the routes whose DTO requires a domain-qualified ID
  * (`@Matches(/^[^\s@]+@[^\s@]+$/)`). Checking here lets the message name the field,
  * where the server's 400 detail is stripped in production. The example is fixed
