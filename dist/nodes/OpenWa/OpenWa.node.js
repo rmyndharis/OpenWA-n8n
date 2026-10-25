@@ -1359,7 +1359,7 @@ class OpenWa {
                     default: '[]',
                     required: true,
                     displayOptions: { show: { resource: ['message'], operation: ['sendBulk'] } },
-                    description: 'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk. Items that are exactly alike (same chat ID, type, content, and variables) are collapsed by the server, keeping the first, so the batch total it reports back can be lower than the number of items sent.',
+                    description: 'Array of up to 100 items. Text item: { "chatId": "628...@c.us", "type": "text", "content": { "text": "hi" } }. Media item: same shape with "type" set to image/video/audio/document and the media nested under that key in "content" — provide it as a remote link or a "base64" field (base64 also needs "mimetype"), plus an optional "caption". No binary source in bulk. Items that are exactly alike (same chat ID, type, content, and variables) are collapsed by the server, keeping the first, so the batch total it reports back can be lower than the number of items sent. Each item can also carry "variables" (an object of string values substituted into matching placeholders in the content) and, inside "content", "mentions" (a list of WhatsApp IDs). A document can set "filename", and an audio item "ptt": true to send a voice note.',
                 },
                 {
                     displayName: 'Batch ID',
@@ -4091,7 +4091,7 @@ class OpenWa {
                                 { name: 'Viewer', value: 'viewer' },
                             ],
                             default: 'viewer',
-                            description: 'Permission level granted to the key',
+                            description: 'Permission level granted to the key. On Create, a key without this option is an OPERATOR key. On Update, leaving it out keeps the current role',
                         },
                     ],
                 },
