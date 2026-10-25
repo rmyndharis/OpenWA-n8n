@@ -1,3 +1,5 @@
+import { textLength } from '../OpenWa/handlers/params';
+
 /**
  * Bounds the server places on an HMAC secret when registering a webhook.
  * Mirrors `@MinLength(16) @MaxLength(255)` on the core server's webhook-create
@@ -14,14 +16,19 @@ export const MAX_WEBHOOK_SECRET_LENGTH = 255;
  * would accept it. Empty (or missing) means "no signing", which every server
  * version allows.
  */
-export function webhookSecretProblem(secret: string): string | null {
-  if (!secret) {
+export function webhookSecretProblem(value: string): string | null {
+  if (!value) {
     return null;
   }
-  if (secret.length < MIN_WEBHOOK_SECRET_LENGTH) {
+  // An expression can hand over a number, which the gateway reads as its digits.
+  const secret = String(value);
+  // The server counts the floor as @MinLength does (a surrogate pair is one character)
+  // and the ceiling in code points (@MaxCodePoints), so the two are not the same unit.
+  // String.length refused an emoji secret the server takes and passed one it refuses.
+  if (textLength(secret) < MIN_WEBHOOK_SECRET_LENGTH) {
     return `Webhook secret must be at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`;
   }
-  if (secret.length > MAX_WEBHOOK_SECRET_LENGTH) {
+  if ([...secret].length > MAX_WEBHOOK_SECRET_LENGTH) {
     return `Webhook secret cannot exceed ${MAX_WEBHOOK_SECRET_LENGTH} characters`;
   }
   return null;

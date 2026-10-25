@@ -38,7 +38,7 @@ async function buildChatRequest(operation, itemIndex) {
             const body = { chatId };
             // Omit the field entirely when nothing was named: the DTO sets `minItems: 1`,
             // so an empty array is refused, and `null` reaches the Baileys adapter and 400s.
-            const messageIds = (0, params_1.toStringList)(this.getNodeParameter('readMessageIds', itemIndex, ''));
+            const messageIds = (0, params_1.toStringList)(this.getNodeParameter('readMessageIds', itemIndex, ''), 'Message IDs');
             if (messageIds.length > 0) {
                 if (messageIds.length > MAX_READ_MESSAGE_IDS) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Mark Read accepts at most ${MAX_READ_MESSAGE_IDS} message IDs (got ${messageIds.length})`, { itemIndex });

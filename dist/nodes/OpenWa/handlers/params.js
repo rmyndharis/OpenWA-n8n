@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LEAVE_UNCHANGED = void 0;
+exports.assertFiniteNumber = assertFiniteNumber;
 exports.asText = asText;
 exports.isOn = isOn;
 exports.isExpression = isExpression;
@@ -54,10 +55,21 @@ function isOpaque(value) {
         return true;
     }
 }
+/**
+ * Refuses NaN and Infinity. An expression such as `{{ $json.a * 2 }}` over a missing
+ * field resolves to one of them, and stringified it goes out as the text "NaN" or
+ * "Infinity", where left as a number the gateway would have refused the null it becomes.
+ */
+function assertFiniteNumber(value, label) {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+        throw new Error(`${label} is not a valid number`);
+    }
+}
 function asText(value, label = 'This field') {
     if (value === undefined || value === null) {
         return '';
     }
+    assertFiniteNumber(value, label);
     if (typeof value === 'object') {
         // Refused only when stringifying it carries NOTHING. The gateway validates with
         // implicit conversion, which rewrites the value before `@IsString()` sees it, so
@@ -278,6 +290,17 @@ function toEpochMs(ctx, raw, label, itemIndex) {
     if (typeof raw === 'number' && raw !== 0 && Number.isFinite(raw) && Math.abs(raw) < 1e11) {
         throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} looks like epoch seconds. Epoch values are milliseconds, not seconds.`, { itemIndex });
     }
+    // Date.parse rolls an impossible day over ('2026-02-30' becomes 2 March), so a typo
+    // moved the date instead of failing the way month 13 does. Only the leading
+    // YYYY-MM-DD is read; the rest of the string is left to the parsers below.
+    const day = /^(\d{4})-(\d{2})-(\d{2})(?!\d)/.exec(text);
+    if (day) {
+        const probe = new Date(0);
+        probe.setUTCFullYear(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+        if (probe.getUTCMonth() !== Number(day[2]) - 1) {
+            throw new n8n_workflow_1.NodeOperationError(ctx.getNode(), `${label} is not a valid date`, { itemIndex });
+        }
+    }
     const zoned = ZONELESS_DATE_TIME.test(text)
         ? wallTimeToEpochMs(text, ctx.getTimezone?.())
         : undefined;
@@ -398,21 +421,29 @@ function optionalNonBlank(ctx, value, label, itemIndex, maxLength, remedy = expo
  *
  * Returns an empty array when nothing was provided.
  */
-function listEntry(value) {
+function listEntry(value, label) {
     if (typeof value === 'object' && value !== null) {
-        throw new Error('List entries must be text. Map the expression to the values themselves, e.g. {{ $json.items.map((i) => i.id) }}.');
+        throw new Error(`${label}: list entries must be text. Map the expression to the values themselves, e.g. {{ $json.items.map((i) => i.id) }}.`);
     }
+    assertFiniteNumber(value, `${label} entry`);
     return String(value ?? '').trim();
 }
-function toStringList(raw) {
+/**
+ * A single bracket pair with a separator inside and no bracket nested in it: the shape
+ * of an attempted JSON array that is not valid JSON, such as ['Pizza', 'Sushi'] or
+ * [Pizza, Sushi]. "[Urgent] foo, bar" and "[A], [B]" are lists whose entries happen to
+ * start with a bracket, and do not match.
+ */
+const BROKEN_JSON_LIST = /^\[[^[\]]*[,\n][^[\]]*\]$/;
+function toStringList(raw, label) {
     if (raw === undefined || raw === null || raw === '') {
         return [];
     }
     if (Array.isArray(raw)) {
-        return raw.map(listEntry).filter(Boolean);
+        return raw.map((entry) => listEntry(entry, label)).filter(Boolean);
     }
     if (typeof raw !== 'string') {
-        return [listEntry(raw)].filter(Boolean);
+        return [listEntry(raw, label)].filter(Boolean);
     }
     const trimmed = raw.trim();
     if (trimmed.startsWith('[')) {
@@ -424,11 +455,17 @@ function toStringList(raw) {
             parsed = JSON.parse(trimmed);
         }
         catch {
-            // Not valid JSON after all: fall through and treat it as a plain separated
-            // list rather than failing on a stray bracket.
+            // Not valid JSON after all: a stray bracket falls through and is treated as a
+            // plain separated list.
         }
         if (Array.isArray(parsed)) {
-            return parsed.map(listEntry).filter(Boolean);
+            return parsed.map((entry) => listEntry(entry, label)).filter(Boolean);
+        }
+        // JSON.parse never yields undefined, so this is the unparsable case. A whole
+        // bracketed list is refused rather than split, because splitting it posts the
+        // brackets and quotes as part of every entry.
+        if (parsed === undefined && BROKEN_JSON_LIST.test(trimmed)) {
+            throw new Error(`${label} looks like a JSON array but is not valid JSON. Use double quotes, e.g. ["a", "b"], or a plain comma-separated list without brackets.`);
         }
     }
     return trimmed

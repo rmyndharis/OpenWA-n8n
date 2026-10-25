@@ -21,7 +21,7 @@ async function buildContactRequest(operation, itemIndex) {
     if (operation === 'getProfilePictures') {
         // Bulk variant of getProfilePicture: the ids ride in a required query
         // parameter, so an empty list would fetch nothing and 400.
-        const ids = (0, params_1.toStringList)(this.getNodeParameter('contactIds', itemIndex, ''));
+        const ids = (0, params_1.toStringList)(this.getNodeParameter('contactIds', itemIndex, ''), 'Contact IDs');
         if (ids.length === 0) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one contact ID is required', {
                 itemIndex,

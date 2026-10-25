@@ -44,7 +44,10 @@ const MAX_RECIPIENTS = 256;
  * an audience restriction on Baileys only.
  */
 function getRecipients(ctx: IExecuteFunctions, itemIndex: number): string[] | undefined {
-  const recipients = toStringList(ctx.getNodeParameter('statusRecipients', itemIndex, ''));
+  const recipients = toStringList(
+    ctx.getNodeParameter('statusRecipients', itemIndex, ''),
+    'Recipients',
+  );
   if (recipients.length === 0) {
     return undefined;
   }

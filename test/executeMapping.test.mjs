@@ -192,14 +192,14 @@ for (const typeVersion of [1, 2]) {
   });
 }
 
-for (const value of [0, '0', 1, '1', 1234, '1234', 1.5, '1.5', '1.7e12', '1E+3', Number.MAX_SAFE_INTEGER]) {
+for (const value of [0, '0', 100000000000, '100000000000', '1.7e12', 1700000000000, '1700000000000', Number.MAX_SAFE_INTEGER]) {
   test(`message list accepts numeric millisecond boundary ${JSON.stringify(value)}`, async () => {
     const { ctx } = await run({ resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: value } });
     assert.deepEqual(singleCall(ctx).options.qs, { since: Number(value) });
   });
 }
 
-for (const value of [-1, '-1', Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, '1e999', '0x10']) {
+for (const value of [-1, '-1', Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, '1e999', '0x10', 1, '1', 1234, 1.5, '1E+3', 1700000000, '1700000000', '1.7e9']) {
   test(`message list refuses invalid numeric millisecond boundary ${String(value)}`, async () => {
     const ctx = makeCtx({ params: { resource: 'message', operation: 'list', sessionId: 'abc-123', messageListOptions: { since: value } } });
     await assert.rejects(new OpenWa().execute.call(ctx), /since/i);
@@ -3637,7 +3637,7 @@ test('a pasted JSON array of objects is refused, not chopped on its commas', asy
         groupId: 'g@g.us',
         groupParticipants: '[{"id":"628111@c.us"},{"id":"628222@c.us"}]',
       }),
-    /List entries must be text/,
+    /Participants: list entries must be text/,
   );
 });
 
@@ -4658,7 +4658,7 @@ const guardCases = [
       sessionId: 'abc-123',
       sessionConfigFields: { maxReconnectAttempts: Number.NaN },
     },
-    /Max Reconnect Attempts must be a number/,
+    /Max Reconnect Attempts is not a valid number/,
   ],
   [
     'an unknown resource fails with a clear message',

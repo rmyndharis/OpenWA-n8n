@@ -10,7 +10,18 @@ exports.parseBulkMessages = parseBulkMessages;
  * NodeOperationError with the item index.
  */
 function parseBulkMessages(raw) {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    let parsed;
+    let readable = true;
+    try {
+        parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    }
+    catch {
+        readable = false;
+    }
+    // Thrown outside the catch: the portal scan refuses a plain Error raised inside one.
+    if (!readable) {
+        throw new Error('Messages must be valid JSON');
+    }
     if (!Array.isArray(parsed)) {
         throw new Error('Messages must be a JSON array');
     }

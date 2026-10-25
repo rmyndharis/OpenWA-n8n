@@ -42,7 +42,7 @@ const MAX_RECIPIENTS = 256;
  * an audience restriction on Baileys only.
  */
 function getRecipients(ctx, itemIndex) {
-    const recipients = (0, params_1.toStringList)(ctx.getNodeParameter('statusRecipients', itemIndex, ''));
+    const recipients = (0, params_1.toStringList)(ctx.getNodeParameter('statusRecipients', itemIndex, ''), 'Recipients');
     if (recipients.length === 0) {
         return undefined;
     }

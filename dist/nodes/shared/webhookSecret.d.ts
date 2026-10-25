@@ -13,4 +13,4 @@ export declare const MAX_WEBHOOK_SECRET_LENGTH = 255;
  * would accept it. Empty (or missing) means "no signing", which every server
  * version allows.
  */
-export declare function webhookSecretProblem(secret: string): string | null;
+export declare function webhookSecretProblem(value: string): string | null;

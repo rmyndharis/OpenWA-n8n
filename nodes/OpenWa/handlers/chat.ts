@@ -51,7 +51,10 @@ export async function buildChatRequest(
       const body: Record<string, unknown> = { chatId };
       // Omit the field entirely when nothing was named: the DTO sets `minItems: 1`,
       // so an empty array is refused, and `null` reaches the Baileys adapter and 400s.
-      const messageIds = toStringList(this.getNodeParameter('readMessageIds', itemIndex, ''));
+      const messageIds = toStringList(
+        this.getNodeParameter('readMessageIds', itemIndex, ''),
+        'Message IDs',
+      );
       if (messageIds.length > 0) {
         if (messageIds.length > MAX_READ_MESSAGE_IDS) {
           throw new NodeOperationError(

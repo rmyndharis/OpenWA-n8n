@@ -34,7 +34,7 @@ async function buildApiKeyRequest(operation, itemIndex) {
             ['allowedSessions', 'Allowed Sessions'],
             ['allowedChats', 'Allowed Chats'],
         ]) {
-            if ((0, params_1.isExpression)(raw[key]) && (0, params_1.toStringList)(fields[key]).length === 0) {
+            if ((0, params_1.isExpression)(raw[key]) && (0, params_1.toStringList)(fields[key], label).length === 0) {
                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${label} resolved to an empty list, which would create a key without that restriction. Remove it from the fields to create one on purpose.`, { itemIndex });
             }
         }
@@ -113,15 +113,15 @@ function collectApiKeyFields(fields, remedy, itemIndex) {
         }
         body.expiresAt = new Date(expiresAt).toISOString();
     }
-    const allowedIps = (0, params_1.toStringList)(fields.allowedIps);
+    const allowedIps = (0, params_1.toStringList)(fields.allowedIps, 'Allowed IPs');
     if (allowedIps.length > 0) {
         body.allowedIps = allowedIps;
     }
-    const allowedSessions = (0, params_1.toStringList)(fields.allowedSessions);
+    const allowedSessions = (0, params_1.toStringList)(fields.allowedSessions, 'Allowed Sessions');
     if (allowedSessions.length > 0) {
         body.allowedSessions = allowedSessions;
     }
-    const allowedChats = (0, params_1.toStringList)(fields.allowedChats);
+    const allowedChats = (0, params_1.toStringList)(fields.allowedChats, 'Allowed Chats');
     if (allowedChats.length > 0) {
         body.allowedChats = allowedChats;
     }
