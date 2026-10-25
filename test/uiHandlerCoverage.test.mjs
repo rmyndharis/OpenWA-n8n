@@ -79,6 +79,10 @@ const PARAMS = {
   bulkMessages: '[{"chatId":"628123456789@c.us","type":"text","content":{"text":"hi"}}]',
 };
 
+// What V8 says when code, rather than validation, fails on the fake input.
+const JS_ENGINE_FAILURE =
+  /^(?:Cannot (?:read|set|destructure|convert)\b|.+ is not (?:a function|a constructor|iterable|defined)\b|Invalid array length|Maximum call stack)/;
+
 function makeCtx(resource, operation) {
   const calls = [];
   const params = { ...PARAMS, resource, operation };
@@ -126,6 +130,7 @@ test('every operation the UI offers reaches a handler branch', async () => {
   assert.ok(pairs.length > 100, `expected the full operation surface, got ${pairs.length}`);
 
   const unreachable = [];
+  const crashed = [];
   for (const { resource, operation } of pairs) {
     const ctx = makeCtx(resource, operation);
     try {
@@ -134,9 +139,14 @@ test('every operation the UI offers reaches a handler branch', async () => {
       // A handler rejecting the fake input is fine; falling through is not.
       if (/Unsupported resource\/operation/.test(error.message)) {
         unreachable.push(`${resource}/${operation}`);
+      } else if (JS_ENGINE_FAILURE.test(error.message)) {
+        // The executor re-wraps anything that is not a NodeApiError, so the original
+        // class is gone and only the engine's own wording marks a handler that crashed.
+        crashed.push(`${resource}/${operation}: ${error.message}`);
       }
     }
   }
 
   assert.deepEqual(unreachable, [], `operations offered by the UI with no handler branch:\n${unreachable.join('\n')}`);
+  assert.deepEqual(crashed, [], 'a handler crashed instead of validating its input');
 });
