@@ -10,6 +10,7 @@ const sanitizePathParam_1 = require("../shared/sanitizePathParam");
 const jsonParam_1 = require("../shared/jsonParam");
 const webhookSecret_1 = require("../shared/webhookSecret");
 const webhookEvents_1 = require("../shared/webhookEvents");
+const serverUrl_1 = require("../shared/serverUrl");
 const loadOptions_1 = require("../OpenWa/loadOptions");
 class OpenWaTrigger {
     constructor() {
@@ -112,7 +113,7 @@ class OpenWaTrigger {
                         return false;
                     }
                     const credentials = await this.getCredentials('openWaApi');
-                    const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+                    const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     const webhookUrl = this.getNodeWebhookUrl('default') ?? '';
                     const events = this.getNodeParameter('events');
@@ -222,7 +223,7 @@ class OpenWaTrigger {
                 async create() {
                     const webhookUrl = this.getNodeWebhookUrl('default');
                     const credentials = await this.getCredentials('openWaApi');
-                    const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+                    const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     const events = this.getNodeParameter('events');
                     const webhookSecret = this.getNodeParameter('webhookSecret', '');
@@ -319,7 +320,7 @@ class OpenWaTrigger {
                         return true;
                     }
                     const credentials = await this.getCredentials('openWaApi');
-                    const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+                    const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
                     // Delete from the session the webhook was registered on: the parameter may
                     // have been edited without re-activating since then. The stored value is
                     // already sanitized; only the fallback, for registrations that predate

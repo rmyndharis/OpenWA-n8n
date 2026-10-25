@@ -56,6 +56,7 @@ const template_1 = require("./handlers/template");
 const webhook_1 = require("./handlers/webhook");
 const loadOptions = __importStar(require("./loadOptions"));
 const webhookEvents_1 = require("../shared/webhookEvents");
+const serverUrl_1 = require("../shared/serverUrl");
 /**
  * Maps each resource to the builder that turns an operation into a request.
  * A resource missing from this map, or a builder that returns null for the
@@ -4110,7 +4111,7 @@ class OpenWa {
         const resource = this.getNodeParameter('resource', 0);
         const operation = this.getNodeParameter('operation', 0);
         const credentials = await this.getCredentials('openWaApi');
-        const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+        const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
         for (let i = 0; i < items.length; i++) {
             try {
                 const builder = RESOURCE_BUILDERS[resource];
@@ -4227,6 +4228,13 @@ class OpenWa {
                         });
                     }
                     continue;
+                }
+                else if (typeof response !== 'object') {
+                    // No route this node calls answers with a bare string, number or boolean.
+                    // One that arrives is a page from something in front of the server (a
+                    // wrong Server URL path, a proxy or captive portal answering 200), and
+                    // casting it would pass an error page downstream as a successful item.
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Expected a JSON object from the server but received a ${typeof response} body. Check that the Server URL points at the OpenWA API, with no extra path.`, { itemIndex: i });
                 }
                 else {
                     json = response;

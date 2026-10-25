@@ -9,6 +9,7 @@ exports.getLabels = getLabels;
 exports.getWebhooks = getWebhooks;
 exports.getChannels = getChannels;
 exports.getApiKeys = getApiKeys;
+const serverUrl_1 = require("../shared/serverUrl");
 /**
  * Dropdown loaders for the ID fields that have a listing endpoint behind them.
  *
@@ -52,7 +53,7 @@ function extractList(response) {
 /** Runs one GET against the configured server using the node's credential. */
 async function fetchPage(ctx, endpoint, qs) {
     const credentials = await ctx.getCredentials('openWaApi');
-    const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+    const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
     const response = await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'openWaApi', {
         method: 'GET',
         url: `${baseUrl}${endpoint}`,
