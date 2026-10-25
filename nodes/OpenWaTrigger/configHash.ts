@@ -9,7 +9,7 @@ import { stableStringify } from '../shared/jsonParam';
  * this hash and re-registers on a mismatch.
  *
  * Only the hash is ever kept in workflow static data (which lives in the n8n
- * database) — the secret itself is never stored.
+ * database); the secret itself is never kept in static data.
  */
 export function webhookConfigHash(config: {
   url: string;

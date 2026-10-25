@@ -283,7 +283,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 > ]
 > ```
 >
-> Media (`image`/`video`/`audio`/`document`) uses `url` or `base64` (add `mimetype` for base64) — there is no binary source in bulk. Send Bulk returns a `batchId` immediately and sends in the background; poll **Get Batch Status** until the status is `completed`, `cancelled`, or `failed`, or stop it early with **Cancel Batch**.
+> Media (`image`/`video`/`audio`/`document`) uses `url` or `base64` (add `mimetype` for base64) — there is no binary source in bulk. An item can also carry a `variables` object that fills `{{name}}` placeholders in its content, and `content.mentions` as on the single sends. Send Bulk returns a `batchId` immediately and sends in the background; poll **Get Batch Status** until the status is `completed`, `cancelled`, or `failed`, or stop it early with **Cancel Batch**.
 
 **Message List filters (v0.25.0):** Since is inclusive and Until is exclusive, both using WhatsApp message time. Date values are converted to epoch milliseconds in the workflow timezone. Direction selects incoming or outgoing, Type is an exact stored token, and Message ID is the WhatsApp reference, distinct from the stored row ID used by After Row ID. Order By defaults to ingestion time (`createdAt`); `timestamp` orders by message time and excludes rows without one. Keep the selection and ordering unchanged while paging with a cursor. Poll choices and media omission markers are preserved in the returned envelope.
 
@@ -304,6 +304,15 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
    **Chat ID** (`628123456789@c.us`) and **Message**
 
 > **Provisioning a session:** sessions are identified by a **UUID** (returned by **Create**, **Get Status**, or **List All**). A full end-to-end flow is **Create → Start → Get QR** (scan) or **Request Pairing Code** (enter on the phone) → wait for `session.authenticated`. The Trigger can listen for `session.qr` and `session.authenticated` events; these session operations are what drive those state transitions.
+
+### Using as an AI tool
+
+The OpenWA node can be attached to an AI agent as a tool. You choose the resource and operation when you build the workflow; the model only fills the fields you map to `$fromAI()`.
+
+- Give the tool a key with the lowest role it needs, and restrict it with `allowedSessions` and `allowedChats`. Set Session ID yourself rather than leaving it to the model, and do not map the target ID of a destructive operation (Session > Delete, Group > Remove Participants, Webhook > Create or Update) to `$fromAI()`.
+- Everything an operation returns becomes part of the model's context and is stored in the execution data like any other output. API Key > Create returns the new key in plaintext, and a key created without a Role is an OPERATOR key. Session > Get QR, Session > Request Pairing Code and Group > Get Invite Code return codes that grant access.
+- Message > Get Media and Status > Get Media return a file, which an agent tool cannot carry; use them from a regular node.
+- Webhook secrets, webhook headers and a session Proxy URL that carries credentials are saved as ordinary node parameters. They appear in the workflow JSON, in exports and Git sync, and in execution snapshots. Treat those as sensitive.
 
 ### OpenWA Trigger
 
