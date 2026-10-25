@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.2.0...v1.2.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* correct copy that misstates current OpenWA server behaviour ([#71](https://github.com/rmyndharis/OpenWA-n8n/issues/71)) ([ab05dae](https://github.com/rmyndharis/OpenWA-n8n/commit/ab05daed76cb7323d46becddfdaa329123f01cd5))
+* **message:** refuse bare-number mentions and object emoji or MIME values ([#70](https://github.com/rmyndharis/OpenWA-n8n/issues/70)) ([ca9ae3d](https://github.com/rmyndharis/OpenWA-n8n/commit/ca9ae3d2651643ed280f698ed2fb4217a7085851))
+* normalize the Server URL and fail on non-JSON replies ([#66](https://github.com/rmyndharis/OpenWA-n8n/issues/66)) ([e44f18f](https://github.com/rmyndharis/OpenWA-n8n/commit/e44f18fc3c89e9dfa4f2b1d1937edf6bee599e88))
+* refuse input whose meaning would change before it is sent ([#68](https://github.com/rmyndharis/OpenWA-n8n/issues/68)) ([b63a43d](https://github.com/rmyndharis/OpenWA-n8n/commit/b63a43d0c8ce27aa47f5e913afcb3727c18b0806))
+* refuse unresolved filters and expressions that would widen or reset ([#69](https://github.com/rmyndharis/OpenWA-n8n/issues/69)) ([93e25c6](https://github.com/rmyndharis/OpenWA-n8n/commit/93e25c6cb04178a359ec31dce51a53dcd8d5324a))
+* **trigger:** refuse deliveries whose raw body cannot be read ([#65](https://github.com/rmyndharis/OpenWA-n8n/issues/65)) ([7c2c76c](https://github.com/rmyndharis/OpenWA-n8n/commit/7c2c76c715205cf7303415ae1b9aafad54438c89))
+
 ## [1.2.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.1.0...v1.2.0) (2026-10-15)
 
 
