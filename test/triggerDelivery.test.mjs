@@ -25,7 +25,8 @@ function makeCtx({
   signatureHeader,
   staticData = {},
   // 'missing' → no readRawBody; 'noop' → present but populates nothing;
-  // 'populates' → sets req.rawBody like modern n8n does.
+  // 'populates' → sets req.rawBody like modern n8n does; 'throws' → rejects, as it
+  // does once n8n has already consumed a multipart body.
   readRawBody = 'missing',
 } = {}) {
   const logs = [];
@@ -41,6 +42,10 @@ function makeCtx({
   } else if (readRawBody === 'populates') {
     req.readRawBody = async () => {
       req.rawBody = RAW;
+    };
+  } else if (readRawBody === 'throws') {
+    req.readRawBody = async () => {
+      throw new Error('Request body stream was aborted or is not readable');
     };
   }
   const res = {
@@ -150,6 +155,38 @@ test('a readRawBody that populates nothing still rejects loudly', async () => {
   // Absent, not empty: n8n skips the run only when workflowData is undefined, so
   // an empty item set would still register an execution for a refused delivery.
   assert.equal(result.workflowData, undefined);
+});
+
+test('a raw body that cannot be read rejects with 401 instead of throwing into an error execution', async () => {
+  const staticData = { recentDeliveryIds: ['kept'] };
+  const { ctx, responseCalls } = makeCtx({
+    secret: SECRET,
+    deduplicate: true,
+    rawBody: undefined,
+    readRawBody: 'throws',
+    staticData,
+  });
+  // A throw here would reach n8n as a failed webhook: a 500 plus an error execution
+  // that anyone who knows the URL could repeat with an unsigned multipart POST.
+  const result = await deliver(ctx);
+  assert.deepEqual(responseCalls, [['status', 401], ['send', 'Unauthorized']]);
+  assert.equal(result.noWebhookResponse, true);
+  assert.equal(result.workflowData, undefined);
+  assert.deepEqual(staticData, { recentDeliveryIds: ['kept'] });
+});
+
+test('a delivery refused for a bad signature does not touch the dedup record', async () => {
+  const staticData = { recentDeliveryIds: ['kept'] };
+  const { ctx } = makeCtx({
+    secret: SECRET,
+    deduplicate: true,
+    rawBody: RAW,
+    signatureHeader: 'sha256=deadbeef',
+    staticData,
+  });
+  const result = await deliver(ctx);
+  assert.equal(result.workflowData, undefined);
+  assert.deepEqual(staticData, { recentDeliveryIds: ['kept'] });
 });
 
 // --- de-duplication ---

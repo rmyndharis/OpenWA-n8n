@@ -396,7 +396,16 @@ export class OpenWaTrigger implements INodeType {
     const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
     if (webhookSecret) {
       if (typeof req.readRawBody === 'function' && !req.rawBody) {
-        await req.readRawBody();
+        try {
+          await req.readRawBody();
+        } catch {
+          // n8n consumes a multipart body before this node runs, so the raw bytes can no
+          // longer be read. Refuse it like any other delivery that cannot be verified: an
+          // uncaught throw here is recorded as an error execution, which anyone who knows
+          // the URL could repeat.
+          this.getResponseObject().status(401).send('Unauthorized');
+          return { noWebhookResponse: true };
+        }
       }
       // The raw bytes are the only reliable source — OpenWA signs the exact JSON it
       // transmits, and re-serializing a parsed body can reorder keys or change

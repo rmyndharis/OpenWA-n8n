@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 // Imports compiled output, so run `npm run build` before this test.
+import { createRequire } from 'node:module';
 import { httpStatusFromError } from '../dist/nodes/OpenWaTrigger/httpStatus.js';
 import { webhookConfigHash } from '../dist/nodes/OpenWaTrigger/configHash.js';
 import { stableStringify } from '../dist/nodes/shared/jsonParam.js';
@@ -75,6 +76,9 @@ function makeCtx({
   return { ctx, staticData, calls };
 }
 
+// n8n-workflow ships a broken ESM entry; its CommonJS build is what n8n itself loads.
+const { NodeApiError } = createRequire(import.meta.url)('n8n-workflow');
+
 const hooks = () => new OpenWaTrigger().webhookMethods.default;
 
 // A failure that must surface has to surface as the gateway's own error with its status, not
@@ -105,6 +109,33 @@ test('httpStatusFromError returns undefined for a status-less error', () => {
 
 test('httpStatusFromError preserves a non-404 status', () => {
   assert.equal(httpStatusFromError({ statusCode: 500 }), 500);
+});
+
+// The error the node actually sees is n8n's own wrapper around the request library's
+// error, not a hand-written object. n8n-core builds it the same way (new NodeApiError).
+class AxiosError extends Error {
+  constructor(code, status) {
+    super(code);
+    this.name = 'AxiosError';
+    this.code = code;
+    if (status !== undefined) {
+      this.status = status;
+      this.response = { status, data: {} };
+    }
+  }
+}
+const apiNode = { id: '1', name: 'OpenWA Trigger', type: 'x', typeVersion: 1, position: [0, 0], parameters: {} };
+
+test('httpStatusFromError reads the status of a real NodeApiError wrapping a 404', () => {
+  const wrapped = new NodeApiError(apiNode, new AxiosError('ERR_BAD_REQUEST', 404));
+  assert.equal(httpStatusFromError(wrapped), 404);
+  // The node re-wraps what the helper threw before inspecting it again elsewhere.
+  assert.equal(httpStatusFromError(new NodeApiError(apiNode, wrapped)), 404);
+});
+
+test('httpStatusFromError gives no status for a real NodeApiError wrapping a network failure', () => {
+  const wrapped = new NodeApiError(apiNode, new AxiosError('ECONNREFUSED'));
+  assert.equal(httpStatusFromError(wrapped), undefined);
 });
 
 // --- webhookConfigHash shape coverage ---

@@ -352,7 +352,7 @@ Conditions are ANDed, at most 20. Fields are `sender`, `recipient`, `body`, `typ
 
 #### 🔐 Signature verification
 
-The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification.
+The Trigger has an optional **Webhook Secret**. When set, the secret is registered with OpenWA at webhook creation, and OpenWA signs every delivery with HMAC-SHA256 in the `X-OpenWA-Signature: sha256=<hex>` header. The node verifies each delivery against the raw request body and rejects (HTTP 401) any that fail. Leave it empty to skip verification, in which case anyone who knows the Trigger's URL can start the workflow, so set one when the n8n instance is reachable from outside. The signature covers the body only and OpenWA sends no signed timestamp header, so a captured delivery can be replayed unless the workflow de-duplicates on `idempotencyKey`.
 
 > **Secret length:** the secret must be between **16 and 255 characters**. The server enforces both bounds at registration (server **≥ 0.20.0**; a short secret on an older server was already brute-forcible from one observed signature), and the node checks them before sending so the error names the field instead of surfacing a raw `400`. Webhooks registered with a short secret before the floor keep working until re-registered.
 
@@ -392,7 +392,9 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 
 OpenWA guarantees at-least-once delivery: it retries a failed POST, and it replays any delivery stranded by a gateway crash. Both carry the same `idempotencyKey`, so the same event can reach n8n twice and would otherwise run the workflow twice. Enable **Deduplicate Deliveries** on the Trigger to drop repeats; the node remembers the 500 most recent idempotency keys (kept in workflow static data), falling back to `deliveryId` on a gateway too old to send one.
 
-It is best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run. Enable it when downstream actions are not idempotent.
+It is best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run. The same happens when the workflow writes its own static data and an earlier run finishes after a later delivery arrived. Enable it when downstream actions are not idempotent.
+
+> **n8n 2.x:** from n8n 2.19.2 onward (checked up to 2.45.3) the record of seen events is not saved, because n8n resets its change flag before it persists the Trigger's static data, so the option has no effect there. n8n 1.123.87 and 2.19.0 save it as described. Until n8n fixes this, de-duplicate downstream on `idempotencyKey`.
 
 ---
 
@@ -408,7 +410,7 @@ It is best-effort: n8n saves the record of seen events once per delivery, so del
 
 ## 🔗 Compatibility
 
-Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.25.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `f045dde1f9f8b623668ab02971009228296d60e4`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.25.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `f045dde1f9f8b623668ab02971009228296d60e4`.
 
 The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, and Webhook > Redrive Delivery Failures requires **v0.25.0**. These operations return `404` on servers predating their route.
 
