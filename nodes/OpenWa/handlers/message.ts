@@ -7,6 +7,8 @@ import { resolveMediaSource, type MediaParamNames } from '../media';
 import {
   assertFieldsResolved,
   assertFiniteNumber,
+  assertNotOpaque,
+  isFullJid,
   requireJid,
   requireText,
   toQueryParams,
@@ -449,7 +451,12 @@ export async function buildMessageRequest(
     body = {
       chatId,
       messageId: requireText(this, 'messageId', 'Message ID', itemIndex),
-      emoji: this.getNodeParameter('emoji', itemIndex, '') as string,
+      emoji: assertNotOpaque(
+        this,
+        this.getNodeParameter('emoji', itemIndex, ''),
+        'Emoji',
+        itemIndex,
+      ) as string,
     };
   } else if (operation === 'delete') {
     endpoint = `/api/sessions/${sessionId}/messages/delete`;
@@ -742,6 +749,15 @@ export async function buildMessageRequest(
   ) {
     const mentions = toStringList(this.getNodeParameter('mentions', itemIndex, ''), 'Mentions');
     if (mentions.length > 0) {
+      // The gateway's 400 for a malformed entry names nothing in production. Only the
+      // domain is checked: its rules for the number part have changed before.
+      if (!mentions.every(isFullJid)) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Mentions must be full WhatsApp IDs including the domain, such as 628123456789@c.us, not bare numbers',
+          { itemIndex },
+        );
+      }
       body.mentions = mentions;
     }
   }

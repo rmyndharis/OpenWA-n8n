@@ -376,7 +376,7 @@ async function buildMessageRequest(operation, itemIndex) {
         body = {
             chatId,
             messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
-            emoji: this.getNodeParameter('emoji', itemIndex, ''),
+            emoji: (0, params_1.assertNotOpaque)(this, this.getNodeParameter('emoji', itemIndex, ''), 'Emoji', itemIndex),
         };
     }
     else if (operation === 'delete') {
@@ -628,6 +628,11 @@ async function buildMessageRequest(operation, itemIndex) {
         operation === 'edit') {
         const mentions = (0, params_1.toStringList)(this.getNodeParameter('mentions', itemIndex, ''), 'Mentions');
         if (mentions.length > 0) {
+            // The gateway's 400 for a malformed entry names nothing in production. Only the
+            // domain is checked: its rules for the number part have changed before.
+            if (!mentions.every(params_1.isFullJid)) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Mentions must be full WhatsApp IDs including the domain, such as 628123456789@c.us, not bare numbers', { itemIndex });
+            }
             body.mentions = mentions;
         }
     }

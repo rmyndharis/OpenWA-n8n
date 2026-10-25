@@ -1,5 +1,5 @@
 import type { IExecuteFunctions } from 'n8n-workflow';
-import { asText } from './handlers/params';
+import { asText, assertNotOpaque } from './handlers/params';
 
 /**
  * Names of the per-operation media fields. Every send-* media operation carries
@@ -43,7 +43,12 @@ export async function resolveMediaSource(
   }
   return {
     base64: mediaValue(this.getNodeParameter(params.base64, itemIndex), 'Base64 Data'),
-    mimetype: this.getNodeParameter(params.mimeType, itemIndex) as string,
+    mimetype: assertNotOpaque(
+      this,
+      this.getNodeParameter(params.mimeType, itemIndex),
+      'MIME Type',
+      itemIndex,
+    ) as string,
   };
 }
 
