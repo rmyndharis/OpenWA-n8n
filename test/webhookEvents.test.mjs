@@ -12,7 +12,7 @@ const { OpenWa } = actionModule;
 const { OpenWaTrigger } = triggerModule;
 
 // Independently checked against the pinned release by npm run check:openwa.
-const { contract } = JSON.parse(readFileSync(new URL('./fixtures/openwa-0.25.0.json', import.meta.url)));
+const { contract } = JSON.parse(readFileSync(new URL('./fixtures/openwa-0.26.0.json', import.meta.url)));
 const CORE_WEBHOOK_EVENTS_SNAPSHOT = contract.webhookEvents;
 
 // Collect every `events` multiOptions parameter's value list from a node's
@@ -38,8 +38,8 @@ function collectEventValues(properties) {
 test('the snapshot is the size the provenance comment claims', () => {
   // Cheap tripwire for the failure this file already had once: a copy that lost entries while every
   // other assertion kept passing, because they all compare against the copy.
-  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 24);
-  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 24, 'snapshot has duplicates');
+  assert.equal(CORE_WEBHOOK_EVENTS_SNAPSHOT.length, 26);
+  assert.equal(new Set(CORE_WEBHOOK_EVENTS_SNAPSHOT).size, 26, 'snapshot has duplicates');
 });
 
 test('the shared WEBHOOK_EVENT_VALUES list matches the core catalog snapshot', () => {

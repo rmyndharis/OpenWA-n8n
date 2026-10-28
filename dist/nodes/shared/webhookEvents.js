@@ -68,6 +68,11 @@ exports.WEBHOOK_EVENT_OPTIONS = [
         description: 'Triggers when a reaction is added to or removed from a message',
     },
     {
+        name: 'Message Receipt',
+        value: 'message.receipt',
+        description: 'Triggers once per recipient when a group or Status message you sent is delivered, read or played. Baileys only; requires OpenWA 0.26.0 or later. A subscription to all events does not include it, so select it by name. Of the server-side filter fields only Chat ID and Kind read a value from its payload.',
+    },
+    {
         name: 'Message Received',
         value: 'message.received',
         description: 'Triggers when a new message is received',
@@ -81,6 +86,11 @@ exports.WEBHOOK_EVENT_OPTIONS = [
         name: 'Message Sent',
         value: 'message.sent',
         description: 'Triggers when a message is sent successfully',
+    },
+    {
+        name: 'Poll Vote',
+        value: 'poll.vote',
+        description: 'Triggers when someone votes on a poll or clears their vote. whatsapp-web.js only; requires OpenWA 0.26.0 or later. Server-side filters do not apply to it.',
     },
     {
         name: 'Presence Update',

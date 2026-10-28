@@ -1,6 +1,6 @@
 {
-  "version": "0.25.0",
-  "commit": "f045dde1f9f8b623668ab02971009228296d60e4",
+  "version": "0.26.0",
+  "commit": "386464e229e1762d95c8a1c0ddb9e2c8b13604bc",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -17,9 +17,11 @@
       "message.edited",
       "message.failed",
       "message.reaction",
+      "message.receipt",
       "message.received",
       "message.revoked",
       "message.sent",
+      "poll.vote",
       "presence.update",
       "session.authenticated",
       "session.disconnected",

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.25.0.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.26.0.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -88,7 +88,7 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.25\.0/);
+  assert.match(result.stdout, /0\.26\.0/);
 });
 
 for (const [label, file, before, after] of [
