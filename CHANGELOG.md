@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.2.1...v1.3.0) (2026-10-28)
+
+
+### Features
+
+* synchronize the node with OpenWA 0.26.0 ([#73](https://github.com/rmyndharis/OpenWA-n8n/issues/73)) ([940a228](https://github.com/rmyndharis/OpenWA-n8n/commit/940a2286aab3f7557cd8473c4c9901317d3792c8))
+
+
+### Upgrade notes
+
+* Message sends and actions given a Chat ID without its domain, such as 628123456789, now fail the item with the field name: every send, Reply, Edit, React, Delete, Pin, Unpin, Star, Vote Poll, Click Button and both Forward fields. The gateway answers 400 for it from 0.26.0 and answered 500 before.
+* Chat > Set State still passes a Chat ID without its domain through; a 0.26.0 gateway refuses it with 400, and earlier ones answered success without sending.
+* Message Receipt (Baileys) and Poll Vote (whatsapp-web.js) need server 0.26.0; an older server refuses the registration with 400, and a subscription to all events does not include Message Receipt.
+* A 0.26.0 gateway refuses an object or a boolean in Emoji or in the MIME type of a Base64 source with 400.
+
 ## [1.2.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.2.0...v1.2.1) (2026-10-25)
 
 
