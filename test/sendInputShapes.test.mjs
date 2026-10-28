@@ -126,3 +126,43 @@ test('a base64 send passes the MIME type through, including values that are not 
 test('a base64 send refuses an object MIME type and names the field', async () => {
   await refused({ ...image, imageMimeType: {} }, 'mime');
 });
+
+// The gateway's body DTOs require a domain on every chat ID since 0.26.0 and, in production,
+// answer a bare number with a 400 that names nothing. Older gateways accepted it at validation
+// and, on Baileys, threw in the engine without sending, so refusing it here costs no working send.
+const CHAT_BODY_OPERATIONS = [
+  ['sendText', { message: 'hi' }],
+  ['sendImage', { imageSource: 'url', imageUrl: 'https://example.test/a.png' }],
+  ['reply', { message: 'hi', quotedMessageId: 'm1' }],
+  ['edit', { message: 'hi', messageId: 'm1' }],
+  ['react', { messageId: 'm1', emoji: '\u{1F44D}' }],
+  ['delete', { messageId: 'm1' }],
+  ['pin', { messageId: 'm1' }],
+  ['star', { messageId: 'm1' }],
+];
+
+for (const [operation, fields] of CHAT_BODY_OPERATIONS) {
+  test(`${operation} refuses a Chat ID without its domain and names the field`, async () => {
+    await refused({ ...fields, operation, chatId: '628123456789' }, 'Chat ID');
+  });
+}
+
+test('forward refuses a From or To Chat ID without its domain and names the field', async () => {
+  const forward = { operation: 'forward', messageId: 'm1' };
+  const ids = { fromChatId: '628123456789@c.us', toChatId: '628999999999@c.us' };
+  await refused({ ...forward, ...ids, fromChatId: '628123456789' }, 'From Chat ID');
+  await refused({ ...forward, ...ids, toChatId: '628999999999' }, 'To Chat ID');
+  const body = await sent({ ...forward, ...ids });
+  assert.deepEqual([body.fromChatId, body.toChatId], [ids.fromChatId, ids.toChatId]);
+});
+
+test('the reads that put the Chat ID in the path still take whatever the user gave', async () => {
+  for (const [operation, fields] of [
+    ['getHistory', {}],
+    ['getReactions', { messageId: 'm1' }],
+  ]) {
+    const { ctx, done } = send({ ...fields, operation, chatId: '628123456789' });
+    await done;
+    assert.match(ctx.calls[0].url, /\/messages\/628123456789\//);
+  }
+});

@@ -346,6 +346,8 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 | `presence.update`       | Subscribed chat's presence changed — needs `POST /presence/subscribe` first, and **Baileys only** |
 | `group.join_request`    | Someone asked to join an administered group (server **≥ 0.15.0**) |
 | `event.response`        | RSVP to a WhatsApp event invitation (server **>= 0.25.0**, Baileys only) |
+| `message.receipt`       | One recipient received, read or played a group or Status message you sent (server **>= 0.26.0**, Baileys only; select it by name, `*` does not include it) |
+| `poll.vote`             | Someone voted on a poll or cleared their vote (server **>= 0.26.0**, whatsapp-web.js only) |
 
 #### 🎯 Server-side filters
 
@@ -357,7 +359,7 @@ The Trigger's optional **Filters** field is registered with the webhook, so the 
 
 Conditions are ANDed, at most 20. Fields are `sender`, `recipient`, `body`, `type`, `isGroup`, `kind`, `chatId`, `fromMe`, `hasMedia` and `mentions`. `kind` (server >= 0.23.4) distinguishes `individual`, `group`, `channel`, `status`, `broadcast` and `unknown`; `isGroup: false` includes all non-group kinds. `chatId` (server >= 0.23.6) scopes a conversation. On v0.25.0, Message Ack and Message Failed also match a `chatId` or `kind` filter when their payload identifies the chat. An `is` condition suppresses a payload missing its ID, type or kind field; a sender filter therefore still suppresses acks without a sender. ID, mentions, type and kind values take non-empty arrays, `body` takes text, and boolean fields take real booleans.
 
-> Filters narrow **message** events; `session.*`, `group.*`, `call.*` and `event.response` arrive regardless. A filtered-out delivery is silent. Changing a filter re-registers the webhook on the next activation. Activation removes other registrations using this Trigger URL, so give each filter set its own Trigger and URL.
+> Filters narrow **message** events; `session.*`, `group.*`, `call.*`, `poll.vote` and `event.response` arrive regardless. A filtered-out delivery is silent. Changing a filter re-registers the webhook on the next activation. Activation removes other registrations using this Trigger URL, so give each filter set its own Trigger and URL.
 
 #### 🔐 Signature verification
 
@@ -419,11 +421,11 @@ It is best-effort: n8n saves the record of seen events once per delivery, so del
 
 ## 🔗 Compatibility
 
-The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.25.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `f045dde1f9f8b623668ab02971009228296d60e4`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.26.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `386464e229e1762d95c8a1c0ddb9e2c8b13604bc`.
 
 The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, and Webhook > Redrive Delivery Failures requires **v0.25.0**. These operations return `404` on servers predating their route.
 
-The **event catalog** includes all 24 events of v0.25.0. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
+The **event catalog** includes all 26 events of v0.26.0. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
 
 A few **optional fields** need a server newer than the badge. They are opt-in, so a workflow that leaves them alone runs against any server at or above the floor, but filling one in against an older server returns a `400`, because the server rejects a request body carrying a field it does not know.
 
@@ -469,7 +471,7 @@ npm test         # build + unit tests (route mapping, guards, trigger delivery, 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only
 ESLint config in the repository.
 
-The contract check downloads three source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.25.0. Unit tests use the checked-in fixture and run without an upstream checkout.
+The contract check downloads three source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.26.0. Unit tests use the checked-in fixture and run without an upstream checkout.
 
 CI also runs the n8n Creator Portal scanner (see
 `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.

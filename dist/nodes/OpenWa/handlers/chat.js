@@ -29,7 +29,9 @@ async function buildChatRequest(operation, itemIndex) {
         };
     }
     // Every remaining operation posts the target chat in the body rather than the path.
-    // Set State's DTO takes a bare number; the other six require the domain.
+    // Set State's DTO took a bare number before server 0.26.0, which requires the domain like the
+    // other six. Both engines treat the indicator as best-effort, so an older gateway answered success
+    // without sending anything. It stays unchecked here so that answer does not become a failure there.
     const chatId = operation === 'setState'
         ? (0, params_1.requireJid)(this, 'chatId', 'Chat ID', itemIndex)
         : (0, params_1.requireFullJid)(this, 'chatId', 'Chat ID', itemIndex);

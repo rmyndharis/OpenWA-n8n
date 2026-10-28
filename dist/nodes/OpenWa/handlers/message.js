@@ -19,6 +19,12 @@ const CHATLESS_OPERATIONS = new Set([
     'forward',
     'list',
 ]);
+/**
+ * The reads that put the Chat ID in the URL path. Every other chat operation sends it in a
+ * body whose DTO requires the domain (server 0.26.0 answers 400; before it, Baileys threw in
+ * the engine and nothing was sent), so the field is checked here, where the message can name it.
+ */
+const CHAT_IN_PATH_OPERATIONS = new Set(['getHistory', 'getReactions', 'getMedia']);
 // Server-side DTO limits.
 const MAX_MESSAGE_LENGTH = 4096;
 const MAX_BUTTON_ID_LENGTH = 256;
@@ -213,6 +219,9 @@ async function buildMessageRequest(operation, itemIndex) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Chat ID cannot be empty', {
                 itemIndex,
             });
+        }
+        if (!CHAT_IN_PATH_OPERATIONS.has(operation)) {
+            chatId = (0, params_1.requireFullJid)(this, 'chatId', 'Chat ID', itemIndex);
         }
     }
     // --- Reads -----------------------------------------------------------------
@@ -483,8 +492,8 @@ async function buildMessageRequest(operation, itemIndex) {
     else if (operation === 'forward') {
         endpoint = `/api/sessions/${sessionId}/messages/forward`;
         body = {
-            fromChatId: (0, params_1.requireJid)(this, 'fromChatId', 'From Chat ID', itemIndex),
-            toChatId: (0, params_1.requireJid)(this, 'toChatId', 'To Chat ID', itemIndex),
+            fromChatId: (0, params_1.requireFullJid)(this, 'fromChatId', 'From Chat ID', itemIndex),
+            toChatId: (0, params_1.requireFullJid)(this, 'toChatId', 'To Chat ID', itemIndex),
             messageId: (0, params_1.requireText)(this, 'messageId', 'Message ID', itemIndex),
         };
         // send-catalog has no branch because the route no longer exists at all; the

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.25.0.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.26.0.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
