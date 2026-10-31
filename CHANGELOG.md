@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.3.0...v1.4.0) (2026-10-31)
+
+### Features
+
+* Add Group > Set Member Label for Baileys with a 30 UTF-16 code unit limit and explicit clearing.
+* Add URL and Base64 thumbnails to custom link previews on Message > Send Text.
+* Add whole-word and contains matching to System > Search.
+
+### Bug Fixes
+
+* Verify webhook signatures when the secret expression resolves to a number.
+* Reject null and list-valued member labels before they can clear an existing label.
+* Validate group IDs and normalize uppercase group domains before sending requests.
+* Validate preview metadata lengths, search query length and NUL characters before sending requests.
+
+### Upgrade notes
+
+* The new operation and optional fields require OpenWA 0.27.0; member labels and custom previews require Baileys.
+* Contains search requires SEARCH_CONTAINS_ENABLED=true and follows the server's term limits and 1,000-candidate ranking window.
+* Group-scoped operations now reject IDs without a valid @g.us domain locally; existing workflows keep their defaults when the new optional fields are omitted.
+* Before changing a Trigger credential's Server URL, deactivate it and verify removal of its webhook from the original gateway.
+
 ## [1.3.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.2.1...v1.3.0) (2026-10-28)
 
 
