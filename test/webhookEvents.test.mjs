@@ -12,7 +12,7 @@ const { OpenWa } = actionModule;
 const { OpenWaTrigger } = triggerModule;
 
 // Independently checked against the pinned release by npm run check:openwa.
-const { contract } = JSON.parse(readFileSync(new URL('./fixtures/openwa-0.26.0.json', import.meta.url)));
+const { contract } = JSON.parse(readFileSync(new URL('./fixtures/openwa-0.27.0.json', import.meta.url)));
 const CORE_WEBHOOK_EVENTS_SNAPSHOT = contract.webhookEvents;
 
 // Collect every `events` multiOptions parameter's value list from a node's

@@ -147,6 +147,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 | **Group**           | Reject Membership Requests  | Reject pending join requests                         |
 | **Group**           | Remove Participants         | Remove participants from a group                     |
 | **Group**           | Revoke Invite Code          | Revoke the group invite code                         |
+| **Group**           | Set Member Label            | Set the member label in a group                      |
 | **Group**           | Set Picture                 | Set the group picture                                |
 | **Group**           | Update Description          | Update the group description                         |
 | **Group**           | Update Settings             | Update group settings                                |
@@ -320,6 +321,8 @@ Starts a workflow when the selected events arrive on your session.
 
 The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessionId>`), so several active workflows can each run a Trigger on the same n8n instance without colliding on one shared path. When you change the session, events, or secret — or when the URL shape changes across a package upgrade — the server-side webhook is re-registered automatically on the next activation.
 
+Before changing the Server URL on credentials used by an active Trigger, deactivate the workflow while the original credentials are still configured, and verify that its webhook was removed from the original gateway. Activate it again after switching servers. If the URL was changed first, remove the leftover webhook from the original gateway manually.
+
 | Event                   | Description                           |
 | ----------------------- | ------------------------------------- |
 | `message.received`      | New incoming message                  |
@@ -421,16 +424,18 @@ It is best-effort: n8n saves the record of seen events once per delivery, so del
 
 ## 🔗 Compatibility
 
-The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.26.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `386464e229e1762d95c8a1c0ddb9e2c8b13604bc`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.27.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `d99fa201b942f71271e0ca055fc6c2e425215441`.
 
-The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, and Webhook > Redrive Delivery Failures requires **v0.25.0**. These operations return `404` on servers predating their route.
+The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, Webhook > Redrive Delivery Failures requires **v0.25.0**, and Group > Set Member Label requires **v0.27.0**. These operations return `404` on servers predating their route.
 
-The **event catalog** includes all 26 events of v0.26.0. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
+The **event catalog** includes all 26 events of v0.27.0. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
 
 A few **optional fields** need a server newer than the badge. They are opt-in, so a workflow that leaves them alone runs against any server at or above the floor, but filling one in against an older server returns a `400`, because the server rejects a request body carrying a field it does not know.
 
 | Field | Where | Needs |
 | ----- | ----- | ----- |
+| **Thumbnail URL / Thumbnail Base64** | Message > Send Text (Custom Link Preview) | server **>= 0.27.0** |
+| **Match** | System > Search | server **>= 0.27.0** |
 | **Since / Until / Direction / Order By / Type / Message ID** | Message > List | server **>= 0.25.0** |
 | **Idempotency Key** | twelve single-recipient sends | server **>= 0.25.0** |
 | **Quoted Message ID** | the nine single-message sends | server **≥ 0.17.0** |
@@ -444,7 +449,7 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | **Allowed Chats** | API Key > Create / Update | server **≥ 0.23.6** |
 | **`chatId` filter field** | Trigger Filters, Webhook > Create / Update, Automation Rule conditions | server **≥ 0.23.6** |
 
-> Query parameters behave differently on older servers: After Row ID, Inline Media, Name and the six v0.25.0 Message List filters can be ignored, so a request may read a broader selection or use older pagination. Idempotency Key is an HTTP header older servers ignore, so retry protection requires v0.25.0. The `kind` and `chatId` filter fields are validated when the webhook or rule is saved and are refused if unsupported.
+> Query parameters behave differently on older servers: After Row ID, Inline Media, Name, Match and the six v0.25.0 Message List filters can be ignored, so a request may read a broader selection or use older pagination. Idempotency Key is an HTTP header older servers ignore, so retry protection requires v0.25.0. The `kind` and `chatId` filter fields are validated when the webhook or rule is saved and are refused if unsupported.
 
 > Existing operations keep their earlier server floors when the newer optional fields are left unset. Engine-specific limitations are described on the relevant operation.
 
@@ -471,7 +476,7 @@ npm test         # build + unit tests (route mapping, guards, trigger delivery, 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only
 ESLint config in the repository.
 
-The contract check downloads three source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.26.0. Unit tests use the checked-in fixture and run without an upstream checkout.
+The contract check downloads nine source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.27.0. Unit tests use the checked-in fixture and run without an upstream checkout.
 
 CI also runs the n8n Creator Portal scanner (see
 `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.

@@ -1,6 +1,7 @@
 import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { requireText, toEpochMs, toQueryParams } from './params';
+import { asText, requireText, toEpochMs, toQueryParams } from './params';
 import type { RequestSpec } from './types';
 
 /**
@@ -56,13 +57,28 @@ export async function buildSystemRequest(
 
     case 'search': {
       // `q` is the only required query parameter; everything else narrows it.
-      const qs: IDataObject = {
-        q: requireText(this, 'searchQuery', 'Search query', itemIndex),
-      };
+      const q = requireText(this, 'searchQuery', 'Search query', itemIndex, 1000);
+      if (q.includes('\u0000')) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Search query cannot contain a NUL character',
+          { itemIndex },
+        );
+      }
+      const qs: IDataObject = { q };
       Object.assign(
         qs,
         toQueryParams(this.getNodeParameter('searchFilters', itemIndex, {}) as IDataObject),
       );
+      if (qs.match !== undefined) {
+        const match = asText(qs.match, 'Match');
+        if (match !== 'word' && match !== 'contains') {
+          throw new NodeOperationError(this.getNode(), 'Match must be "word" or "contains"', {
+            itemIndex,
+          });
+        }
+        qs.match = match;
+      }
       // Date From/To are dateTime fields, so the UI supplies ISO-8601 while
       // SearchQueryDto binds them as epoch-ms numbers — send them unconverted
       // and every date-filtered search fails validation.

@@ -1,6 +1,6 @@
 {
-  "version": "0.26.0",
-  "commit": "386464e229e1762d95c8a1c0ddb9e2c8b13604bc",
+  "version": "0.27.0",
+  "commit": "d99fa201b942f71271e0ca055fc6c2e425215441",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -60,6 +60,34 @@
       "send-text",
       "send-video"
     ],
+    "groupMemberLabel": {
+      "method": "PUT",
+      "path": "sessions/:sessionId/groups/:groupId/member-label",
+      "role": "ApiKeyRole.OPERATOR",
+      "fields": {
+        "label": {
+          "IsString": [],
+          "Matches": ["^[\\s\\S]{0,30}$", ""]
+        }
+      }
+    },
+    "customLinkPreview": {
+      "url": { "IsString": [], "IsNotEmpty": [], "MaxLength": [2048] },
+      "title": { "IsString": [], "IsNotEmpty": [], "MaxLength": [256] },
+      "description": { "IsOptional": [], "IsString": [], "MaxLength": [1024] },
+      "thumbnailUrl": { "IsOptional": [], "IsMediaUrl": [] },
+      "thumbnailBase64": { "IsOptional": [], "IsString": [] }
+    },
+    "search": {
+      "method": "GET",
+      "path": "search",
+      "role": "ApiKeyRole.OPERATOR",
+      "queries": ["chatId", "dateFrom", "dateTo", "direction", "from", "limit", "match", "offset", "q", "sessionId", "type"],
+      "fields": {
+        "q": { "IsString": [], "IsNotEmpty": [], "MaxLength": [1000], "NoNulCharacter": [] },
+        "match": { "IsOptional": [], "IsIn": [["word", "contains"]] }
+      }
+    },
     "redrive": {
       "method": "POST",
       "path": "webhooks/delivery-failures/redrive",

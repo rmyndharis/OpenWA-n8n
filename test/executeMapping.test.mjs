@@ -5589,6 +5589,11 @@ for (const [label, params, nodeParameters] of [
     { groupDescription: "={{ '' }}" },
   ],
   [
+    'group/setMemberLabel still clears through a whole expression that resolves to ""',
+    { resource: 'group', operation: 'setMemberLabel', sessionId: 'abc-123', groupId: '1@g.us', groupMemberLabel: '' },
+    { groupMemberLabel: "={{ '' }}" },
+  ],
+  [
     'profile/setStatus still clears through a whole $fromAI expression that resolves to ""',
     { resource: 'profile', operation: 'setStatus', sessionId: 'abc-123', profileStatus: '' },
     { profileStatus: "={{ $fromAI('status') }}" },
@@ -5598,7 +5603,7 @@ for (const [label, params, nodeParameters] of [
     const ctx = makeCtx({ params, nodeParameters });
     await new OpenWa().execute.call(ctx);
     const body = singleCall(ctx).options.body;
-    assert.equal(body.description ?? body.status, '');
+    assert.equal(body.description ?? body.label ?? body.status, '');
   });
 }
 
@@ -5852,7 +5857,7 @@ for (const [label, params] of [
 
 const NARROWING_FILTERS = [
   ['message/list', { resource: 'message', operation: 'list', sessionId: 'abc-123' }, 'messageListOptions', ['chatId', 'from']],
-  ['system/search', { resource: 'system', operation: 'search', searchQuery: 'x' }, 'searchFilters', ['sessionId', 'chatId', 'from', 'type', 'direction', 'dateFrom', 'dateTo']],
+  ['system/search', { resource: 'system', operation: 'search', searchQuery: 'x' }, 'searchFilters', ['sessionId', 'chatId', 'from', 'type', 'direction', 'match', 'dateFrom', 'dateTo']],
   ['system/getAudit', { resource: 'system', operation: 'getAudit' }, 'auditFilters', ['sessionId', 'keyId', 'action', 'severity']],
   ['webhook/getDeliveryFailures', { resource: 'webhook', operation: 'getDeliveryFailures' }, 'deliveryFailureOptions', ['sessionId']],
 ];
@@ -6075,3 +6080,300 @@ for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.equal(ctx.calls.length, 0);
   });
 }
+
+// --- OpenWA 0.27.0: Group > Set Member Label, Custom Link Preview thumbnails, Search match ---
+
+test('group/setMemberLabel sets and clears a member label', async () => {
+  const set = await run({
+    resource: 'group',
+    operation: 'setMemberLabel',
+    sessionId: 'abc-123',
+    groupId: '120363021234567890@g.us',
+    groupMemberLabel: '  Site A Management  ',
+  });
+  const call = singleCall(set.ctx);
+  assert.equal(call.options.method, 'PUT');
+  assert.equal(
+    call.options.url,
+    `${BASE}/api/sessions/abc-123/groups/120363021234567890%40g.us/member-label`,
+  );
+  assert.deepEqual(call.options.body, { label: 'Site A Management' });
+
+  const clear = await run({
+    resource: 'group',
+    operation: 'setMemberLabel',
+    sessionId: 'abc-123',
+    groupId: '120363021234567890@g.us',
+    groupMemberLabel: '',
+  });
+  assert.deepEqual(singleCall(clear.ctx).options.body, { label: '' });
+});
+
+test('group/setMemberLabel counts length in UTF-16 code units (astral emojis count as two)', async () => {
+  // 15 astral emojis = 30 UTF-16 code units -> accepted
+  const ok = await run({
+    resource: 'group',
+    operation: 'setMemberLabel',
+    sessionId: 'abc-123',
+    groupId: '1@g.us',
+    groupMemberLabel: '😀'.repeat(15),
+  });
+  assert.equal(singleCall(ok.ctx).options.body.label, '😀'.repeat(15));
+
+  // 16 astral emojis = 16 code points, 32 UTF-16 code units -> refused
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'group',
+        operation: 'setMemberLabel',
+        sessionId: 'abc-123',
+        groupId: '1@g.us',
+        groupMemberLabel: '😀'.repeat(16),
+      }),
+    /Member label cannot exceed 30 UTF-16 code units/,
+  );
+});
+
+test('group/setMemberLabel refuses an unresolved or whitespace-only template expression instead of clearing', async () => {
+  const unresolved = makeCtx({
+    params: {
+      resource: 'group',
+      operation: 'setMemberLabel',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupMemberLabel: undefined,
+    },
+    nodeParameters: { groupMemberLabel: '={{ $json.missing }}' },
+  });
+  await assert.rejects(
+    () => new OpenWa().execute.call(unresolved),
+    /Member label resolved to nothing/,
+  );
+  assert.equal(unresolved.calls.length, 0);
+
+  const templateBlank = makeCtx({
+    params: {
+      resource: 'group',
+      operation: 'setMemberLabel',
+      sessionId: 'abc-123',
+      groupId: '1@g.us',
+      groupMemberLabel: '   ',
+    },
+    nodeParameters: { groupMemberLabel: '={{ $json.role }} ' },
+  });
+  await assert.rejects(
+    () => new OpenWa().execute.call(templateBlank),
+    /Member label resolved to nothing/,
+  );
+  assert.equal(templateBlank.calls.length, 0);
+});
+
+for (const value of [null, [], ['Ops'], ['Ops', 'Sales']]) {
+  test(`group/setMemberLabel refuses ${JSON.stringify(value)} instead of changing the label`, async () => {
+    const ctx = makeCtx({
+      params: {
+        resource: 'group',
+        operation: 'setMemberLabel',
+        sessionId: 'abc-123',
+        groupId: '1@g.us',
+        groupMemberLabel: value,
+      },
+      nodeParameters: { groupMemberLabel: '={{ $json.role }}' },
+    });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Member label must be text/);
+    assert.equal(ctx.calls.length, 0);
+  });
+}
+
+test('message/sendText customLinkPreview carries thumbnailUrl or thumbnailBase64 (base64 wins and strips data URI prefix)', async () => {
+  const withUrl = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'see https://example.com/launch',
+    customLinkPreview: {
+      previewUrl: 'https://example.com/launch',
+      previewTitle: 'We launched',
+      previewDescription: 'Read the announcement.',
+      thumbnailUrl: 'https://example.com/launch.jpg',
+    },
+  });
+  assert.deepEqual(singleCall(withUrl.ctx).options.body.customLinkPreview, {
+    url: 'https://example.com/launch',
+    title: 'We launched',
+    description: 'Read the announcement.',
+    thumbnailUrl: 'https://example.com/launch.jpg',
+  });
+
+  const withBase64 = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'see https://example.com/launch',
+    customLinkPreview: {
+      previewUrl: 'https://example.com/launch',
+      previewTitle: 'We launched',
+      thumbnailBase64: 'data:image/jpeg;base64, /9j/4AAQSkZJRg== ',
+      thumbnailUrl: 'ftp://ignored-when-base64-present',
+    },
+  });
+  assert.deepEqual(singleCall(withBase64.ctx).options.body.customLinkPreview, {
+    url: 'https://example.com/launch',
+    title: 'We launched',
+    thumbnailBase64: '/9j/4AAQSkZJRg==',
+  });
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'sendText',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        message: 'see https://example.com/launch',
+        customLinkPreview: {
+          previewUrl: 'https://example.com/launch',
+          previewTitle: 'We launched',
+          thumbnailUrl: 'ftp://example.com/launch.jpg',
+        },
+      }),
+    /Custom Link Preview Thumbnail URL must use http:\/\/ or https:\/\//,
+  );
+});
+
+test('system/search forwards the match mode in query parameters and validates search inputs', async () => {
+  const { ctx } = await run({
+    resource: 'system',
+    operation: 'search',
+    searchQuery: 'voic',
+    searchFilters: { match: ' contains ', limit: 20 },
+  });
+  assert.deepEqual(singleCall(ctx).options.qs, { q: 'voic', match: 'contains', limit: 20 });
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'system',
+        operation: 'search',
+        searchQuery: 'voic',
+        searchFilters: { match: 'fuzzy' },
+      }),
+    /Match must be "word" or "contains"/,
+  );
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'system',
+        operation: 'search',
+        searchQuery: 'hello\u0000world',
+      }),
+    /Search query cannot contain a NUL character/,
+  );
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'system',
+        operation: 'search',
+        searchQuery: 'a'.repeat(1001),
+      }),
+    /Search query cannot exceed 1000 characters/,
+  );
+});
+
+test('group operations validate Group ID shape and normalize uppercase @G.US', async () => {
+  const normalized = await run({
+    resource: 'group',
+    operation: 'setMemberLabel',
+    sessionId: 'abc-123',
+    groupId: '120363021234567890@G.US',
+    groupMemberLabel: 'Ops',
+  });
+  assert.equal(
+    singleCall(normalized.ctx).options.url,
+    `${BASE}/api/sessions/abc-123/groups/120363021234567890%40g.us/member-label`,
+  );
+
+  for (const invalidGroupId of ['628123456789@c.us', '120363021234567890', '628123456789@c.us@g.us']) {
+    await assert.rejects(
+      () =>
+        run({
+          resource: 'group',
+          operation: 'setMemberLabel',
+          sessionId: 'abc-123',
+          groupId: invalidGroupId,
+          groupMemberLabel: 'Ops',
+        }),
+      /Group ID must be a WhatsApp group ID ending in @g\.us/,
+    );
+  }
+});
+
+test('message/sendText customLinkPreview enforces length caps, list guards, and data URI / URL edge cases', async () => {
+  // Data URI with MIME parameter (charset) is stripped
+  const withParamDataUri = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'see https://example.com',
+    customLinkPreview: {
+      previewUrl: 'https://example.com',
+      previewTitle: 'Title',
+      thumbnailBase64: 'data:image/svg+xml;charset=utf-8;base64,QUFB',
+    },
+  });
+  assert.equal(singleCall(withParamDataUri.ctx).options.body.customLinkPreview.thumbnailBase64, 'QUFB');
+
+  // Empty data URI prefix falls back to thumbnailUrl
+  const fallbackToUrl = await run({
+    resource: 'message',
+    operation: 'sendText',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    message: 'see https://example.com',
+    customLinkPreview: {
+      previewUrl: 'https://example.com',
+      previewTitle: 'Title',
+      thumbnailBase64: 'data:image/png;base64,   ',
+      thumbnailUrl: ['https://example.com/a.jpg'],
+    },
+  });
+  assert.deepEqual(singleCall(fallbackToUrl.ctx).options.body.customLinkPreview, {
+    url: 'https://example.com',
+    title: 'Title',
+    thumbnailUrl: 'https://example.com/a.jpg',
+  });
+
+  // Length caps on URL (2048), Title (256), Description (1024)
+  for (const [override, pattern] of [
+    [{ previewUrl: ['https://a.com', 'https://b.com'] }, /Custom Link Preview URL must be a single value, not a list/],
+    [{ previewUrl: `https://example.com/${'a'.repeat(2030)}` }, /Custom Link Preview URL cannot exceed 2048 characters/],
+    [{ previewTitle: 't'.repeat(257) }, /Custom Link Preview Title cannot exceed 256 characters/],
+    [{ previewDescription: 'd'.repeat(1025) }, /Custom Link Preview Description cannot exceed 1024 characters/],
+    [{ thumbnailBase64: ['QUFB', 'QkJC'] }, /Custom Link Preview Thumbnail Base64 must be a single value, not a list/],
+    [{ thumbnailUrl: ['https://a.com/1.jpg', 'https://a.com/2.jpg'] }, /Custom Link Preview Thumbnail URL must be a single value, not a list/],
+    [{ thumbnailUrl: 'http:example.com/a.jpg' }, /Custom Link Preview Thumbnail URL must be a valid http:\/\/ or https:\/\/ URL/],
+    [{ thumbnailUrl: 'not-a-url' }, /Custom Link Preview Thumbnail URL must be a valid http:\/\/ or https:\/\/ URL/],
+  ]) {
+    await assert.rejects(
+      () =>
+        run({
+          resource: 'message',
+          operation: 'sendText',
+          sessionId: 'abc-123',
+          chatId: '1@c.us',
+          message: 'see https://example.com',
+          customLinkPreview: {
+            previewUrl: 'https://example.com',
+            previewTitle: 'Title',
+            ...override,
+          },
+        }),
+      pattern,
+    );
+  }
+});

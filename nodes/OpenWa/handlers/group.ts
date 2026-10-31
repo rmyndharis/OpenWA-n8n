@@ -25,7 +25,14 @@ function getGroupId(this: IExecuteFunctions, itemIndex: number): string {
   if (!groupId) {
     throw new NodeOperationError(this.getNode(), 'Group ID cannot be empty', { itemIndex });
   }
-  return encodeURIComponent(groupId);
+  if (!/^[^\s@]+@g\.us$/i.test(groupId)) {
+    throw new NodeOperationError(
+      this.getNode(),
+      'Group ID must be a WhatsApp group ID ending in @g.us (e.g. 120363021234567890@g.us)',
+      { itemIndex },
+    );
+  }
+  return encodeURIComponent(groupId.replace(/@g\.us$/i, '@g.us'));
 }
 
 // Server-side DTO limits, enforced here so an oversized input fails with a
@@ -33,6 +40,7 @@ function getGroupId(this: IExecuteFunctions, itemIndex: number): string {
 const MAX_PARTICIPANTS = 256;
 const MAX_NAME_LENGTH = 100;
 const MAX_DESCRIPTION_LENGTH = 1024;
+const MAX_MEMBER_LABEL_LENGTH = 30;
 const MAX_INVITE_CODE_LENGTH = 128;
 
 /**
@@ -294,6 +302,44 @@ export async function buildGroupRequest(
         endpoint: `${groupBase}/description`,
         method: 'PUT',
         body: { description },
+      };
+    }
+    case 'setMemberLabel': {
+      // Like updateDescription, an empty string is valid and clears the label, so an
+      // expression that resolved to nothing or rendered only template whitespace must
+      // not silently clear it.
+      const rawLabel = this.getNodeParameter('groupMemberLabel', itemIndex, '');
+      if (rawLabel === null || Array.isArray(rawLabel)) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Member label must be text, not null or a list. To clear the member label, leave the field empty.',
+          { itemIndex },
+        );
+      }
+      const label = asText(rawLabel, 'Member label');
+      if (
+        rawLabel === undefined ||
+        (!label && isTemplateExpression(this.getNode().parameters.groupMemberLabel))
+      ) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'Member label resolved to nothing. To clear the member label, leave the field empty.',
+          { itemIndex },
+        );
+      }
+      // GroupMemberLabelDto caps the label in UTF-16 code units (.length), not Unicode
+      // code points, because Baileys slices with .slice(0, 30) and an astral emoji takes two.
+      if (label.length > MAX_MEMBER_LABEL_LENGTH) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `Member label cannot exceed ${MAX_MEMBER_LABEL_LENGTH} UTF-16 code units`,
+          { itemIndex },
+        );
+      }
+      return {
+        endpoint: `${groupBase}/member-label`,
+        method: 'PUT',
+        body: { label },
       };
     }
     case 'updateSettings': {

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "node",
+  "include-component-in-tag": false,
+  "pull-request-header": "Release notes",
+  "pull-request-footer": "See [CHANGELOG.md](CHANGELOG.md) for version history.",
+  "packages": {
+    ".": {}
+  }
+}
