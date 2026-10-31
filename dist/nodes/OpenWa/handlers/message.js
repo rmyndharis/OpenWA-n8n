@@ -32,6 +32,9 @@ const MAX_FILENAME_LENGTH = 255;
 const MAX_POLL_NAME_LENGTH = 255;
 const MAX_POLL_OPTION_LENGTH = 100;
 const MAX_CAPTION_LENGTH = 1024;
+const MAX_PREVIEW_URL_LENGTH = 2048;
+const MAX_PREVIEW_TITLE_LENGTH = 256;
+const MAX_PREVIEW_DESCRIPTION_LENGTH = 1024;
 // WhatsApp's own bounds on a poll.
 const MIN_POLL_OPTIONS = 2;
 const MAX_POLL_OPTIONS = 12;
@@ -136,10 +139,53 @@ function readCustomLinkPreview(itemIndex) {
     if (!url || !title) {
         return undefined;
     }
+    if (Array.isArray(fields.previewUrl) && fields.previewUrl.length > 1) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Custom Link Preview URL must be a single value, not a list', { itemIndex });
+    }
+    if ((0, params_1.textLength)(url) > MAX_PREVIEW_URL_LENGTH) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Custom Link Preview URL cannot exceed ${MAX_PREVIEW_URL_LENGTH} characters`, { itemIndex });
+    }
+    if ((0, params_1.textLength)(title) > MAX_PREVIEW_TITLE_LENGTH) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Custom Link Preview Title cannot exceed ${MAX_PREVIEW_TITLE_LENGTH} characters`, { itemIndex });
+    }
     const preview = { url, title };
     const description = (0, params_1.asText)(fields.previewDescription, 'Custom Link Preview Description');
     if (description) {
+        if ((0, params_1.textLength)(description) > MAX_PREVIEW_DESCRIPTION_LENGTH) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Custom Link Preview Description cannot exceed ${MAX_PREVIEW_DESCRIPTION_LENGTH} characters`, { itemIndex });
+        }
         preview.description = description;
+    }
+    if (Array.isArray(fields.thumbnailBase64) && fields.thumbnailBase64.length > 1) {
+        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Custom Link Preview Thumbnail Base64 must be a single value, not a list', { itemIndex });
+    }
+    const thumbnailBase64 = (0, params_1.asText)(fields.thumbnailBase64, 'Custom Link Preview Thumbnail Base64')
+        .replace(/^data:[^,]*;base64,/i, '')
+        .trim();
+    if (thumbnailBase64) {
+        preview.thumbnailBase64 = thumbnailBase64;
+    }
+    else {
+        if (Array.isArray(fields.thumbnailUrl) && fields.thumbnailUrl.length > 1) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Custom Link Preview Thumbnail URL must be a single value, not a list', { itemIndex });
+        }
+        const thumbnailUrl = (0, params_1.asText)(fields.thumbnailUrl, 'Custom Link Preview Thumbnail URL');
+        if (thumbnailUrl) {
+            let parsed;
+            try {
+                parsed = new URL(thumbnailUrl);
+            }
+            catch {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Custom Link Preview Thumbnail URL must be a valid http:// or https:// URL', { itemIndex });
+            }
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Custom Link Preview Thumbnail URL must use http:// or https:// (got ${parsed.protocol})`, { itemIndex });
+            }
+            if (!/^https?:\/\//i.test(thumbnailUrl) || !parsed.hostname) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Custom Link Preview Thumbnail URL must be a valid http:// or https:// URL', { itemIndex });
+            }
+            preview.thumbnailUrl = thumbnailUrl;
+        }
     }
     return preview;
 }

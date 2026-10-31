@@ -89,6 +89,34 @@ test('a valid signature over the raw body passes the payload through', async () 
   assert.deepEqual(result.workflowData[0][0].json, BODY);
 });
 
+test('a numeric secret expression registers and verifies deliveries using its digit string', async () => {
+  const secret = 1234567890123456;
+  const signatureHeader = 'sha256=' + createHmac('sha256', '1234567890123456').update(RAW).digest('hex');
+  const { ctx, responseCalls } = makeCtx({ secret, rawBody: RAW, signatureHeader });
+  const readParameter = ctx.getNodeParameter;
+  ctx.getNodeParameter = (name, fallback) => {
+    if (name === 'sessionId') return 'default';
+    if (name === 'events') return ['message.received'];
+    return readParameter(name, fallback);
+  };
+  ctx.getCredentials = async () => ({ serverUrl: 'http://localhost:2785' });
+  ctx.getNode = () => ({ id: 'node-1', name: 'OpenWA Trigger' });
+  ctx.getNodeWebhookUrl = () => 'https://n8n.example/webhook/test';
+  let registeredSecret;
+  ctx.helpers.httpRequestWithAuthentication = async (_credential, options) => {
+    if (options.method === 'GET') return [];
+    assert.equal(options.method, 'POST');
+    registeredSecret = options.body.secret;
+    return { id: 'w1' };
+  };
+
+  await new OpenWaTrigger().webhookMethods.default.create.call(ctx);
+  assert.equal(String(registeredSecret), '1234567890123456');
+  const result = await deliver(ctx);
+  assert.deepEqual(result.workflowData[0][0].json, BODY);
+  assert.deepEqual(responseCalls, []);
+});
+
 test('event responses preserve the signed payload and deduplicate a replay by its event key', async () => {
   const body = { event: 'event.response', idempotencyKey: 'event-rsvp-1', data: { eventMessageId: 'wa-event-1', chatId: '120363000000000000@g.us', responderId: '628123456789@s.whatsapp.net', fromMe: false, response: 'going', responseMessageId: 'wa-response-1', timestamp: 1790931600, extraGuestCount: 1 } };
   const rawBody = JSON.stringify(body);

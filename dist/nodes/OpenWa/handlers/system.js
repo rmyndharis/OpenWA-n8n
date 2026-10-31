@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildSystemRequest = buildSystemRequest;
+const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const params_1 = require("./params");
 /**
@@ -46,10 +47,21 @@ async function buildSystemRequest(operation, itemIndex) {
         }
         case 'search': {
             // `q` is the only required query parameter; everything else narrows it.
-            const qs = {
-                q: (0, params_1.requireText)(this, 'searchQuery', 'Search query', itemIndex),
-            };
+            const q = (0, params_1.requireText)(this, 'searchQuery', 'Search query', itemIndex, 1000);
+            if (q.includes('\u0000')) {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Search query cannot contain a NUL character', { itemIndex });
+            }
+            const qs = { q };
             Object.assign(qs, (0, params_1.toQueryParams)(this.getNodeParameter('searchFilters', itemIndex, {})));
+            if (qs.match !== undefined) {
+                const match = (0, params_1.asText)(qs.match, 'Match');
+                if (match !== 'word' && match !== 'contains') {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Match must be "word" or "contains"', {
+                        itemIndex,
+                    });
+                }
+                qs.match = match;
+            }
             // Date From/To are dateTime fields, so the UI supplies ISO-8601 while
             // SearchQueryDto binds them as epoch-ms numbers — send them unconverted
             // and every date-filtered search fails validation.

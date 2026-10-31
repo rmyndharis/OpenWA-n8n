@@ -21,7 +21,7 @@ export function verifyOpenWaSignature(
     return false;
   }
 
-  const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  const expected = `sha256=${createHmac('sha256', String(secret)).update(rawBody).digest('hex')}`;
   const provided = Buffer.from(signatureHeader);
   const expectedBuf = Buffer.from(expected);
 

@@ -1164,11 +1164,25 @@ class OpenWa {
                     description: 'Attach a preview card of your own instead of letting the engine build one. Baileys only: whatsapp-web.js answers 501 rather than dropping it silently. Both URL and Title must be set or nothing is sent, and the URL must also appear in the message text or WhatsApp renders no card at all.',
                     options: [
                         {
-                            displayName: 'URL',
-                            name: 'previewUrl',
+                            displayName: 'Description',
+                            name: 'previewDescription',
                             type: 'string',
                             default: '',
-                            description: 'The URL the card points at. It must also appear literally in the message text.',
+                            description: 'Optional line under the title',
+                        },
+                        {
+                            displayName: 'Thumbnail Base64',
+                            name: 'thumbnailBase64',
+                            type: 'string',
+                            default: '',
+                            description: 'Preview image as base64, with or without a data: prefix (at most 5 MiB decoded). Wins over Thumbnail URL. Requires OpenWA 0.27.0 or later.',
+                        },
+                        {
+                            displayName: 'Thumbnail URL',
+                            name: 'thumbnailUrl',
+                            type: 'string',
+                            default: '',
+                            description: 'Preview image URL (http or https), fetched by the gateway and rendered as the large preview card (at most 5 MiB). Requires OpenWA 0.27.0 or later.',
                         },
                         {
                             displayName: 'Title',
@@ -1178,11 +1192,11 @@ class OpenWa {
                             description: 'Card title. WhatsApp renders no preview without one.',
                         },
                         {
-                            displayName: 'Description',
-                            name: 'previewDescription',
+                            displayName: 'URL',
+                            name: 'previewUrl',
                             type: 'string',
                             default: '',
-                            description: 'Optional line under the title',
+                            description: 'The URL the card points at. It must also appear literally in the message text.',
                         },
                     ],
                 },
@@ -1864,6 +1878,11 @@ class OpenWa {
                             value: 'revokeInviteCode',
                             action: 'Revoke the group invite code',
                         },
+                        {
+                            name: 'Set Member Label',
+                            value: 'setMemberLabel',
+                            action: 'Set the member label in a group',
+                        },
                         { name: 'Set Picture', value: 'setPicture', action: 'Set the group picture' },
                         {
                             name: 'Update Description',
@@ -1922,6 +1941,7 @@ class OpenWa {
                                 'getPicture',
                                 'setPicture',
                                 'deletePicture',
+                                'setMemberLabel',
                             ],
                         },
                     },
@@ -1994,6 +2014,17 @@ class OpenWa {
                         show: { resource: ['group'], operation: ['updateDescription'] },
                     },
                     description: 'The new group description. Leave empty to clear the existing description.',
+                },
+                {
+                    displayName: 'Member Label',
+                    name: 'groupMemberLabel',
+                    type: 'string',
+                    default: '',
+                    placeholder: 'Site A Management',
+                    displayOptions: {
+                        show: { resource: ['group'], operation: ['setMemberLabel'] },
+                    },
+                    description: "This account's label in the group, shown beside its name (at most 30 UTF-16 code units, so an emoji outside the Basic Multilingual Plane takes two). Leave empty to clear the existing label. Baileys only: whatsapp-web.js answers 501. Requires OpenWA 0.27.0 or later.",
                 },
                 {
                     displayName: 'Requesters',
@@ -3884,6 +3915,17 @@ class OpenWa {
                             typeOptions: { minValue: 1, numberPrecision: 0 },
                             default: 50,
                             description: 'Max number of results to return',
+                        },
+                        {
+                            displayName: 'Match',
+                            name: 'match',
+                            type: 'options',
+                            options: [
+                                { name: 'Contains', value: 'contains' },
+                                { name: 'Whole Words', value: 'word' },
+                            ],
+                            default: 'word',
+                            description: 'How query terms are matched. Whole Words (the default) matches complete words. Contains matches any part of a word, ignoring case and accents, and ranks the 1,000 most recently stored matches; it requires SEARCH_CONTAINS_ENABLED=true on the server (501 otherwise), at least one term of 3 or more characters, and at most 64 characters across all terms. Requires OpenWA 0.27.0 or later.',
                         },
                         {
                             displayName: 'Offset',
