@@ -8,6 +8,9 @@ import type { RequestSpec } from './types';
 /** Ceiling both proxy DTOs place on the URL (`@MaxLength(255)` on create and on PATCH). */
 const MAX_PROXY_URL_LENGTH = 255;
 
+/** Ceiling `IsRecognisedSessionConfig` places on `Buffer.byteLength(JSON.stringify(config))`. */
+const MAX_SESSION_CONFIG_BYTES = 16 * 1024;
+
 /**
  * Refuses a proxy URL the server's `@IsUrl` would reject, so a typo fails in the
  * editor rather than as a 504 half a minute into a Start that never produces a QR.
@@ -72,6 +75,14 @@ export async function buildSessionRequest(
         throw new NodeOperationError(
           this.getNode(),
           'Session config must be a JSON object (e.g. {"autoRejectCalls":true})',
+          { itemIndex },
+        );
+      }
+      const configBytes = Buffer.byteLength(JSON.stringify(parsedConfig));
+      if (configBytes > MAX_SESSION_CONFIG_BYTES) {
+        throw new NodeOperationError(
+          this.getNode(),
+          `Session config cannot exceed ${MAX_SESSION_CONFIG_BYTES} bytes when serialized as JSON (got ${configBytes} bytes)`,
           { itemIndex },
         );
       }

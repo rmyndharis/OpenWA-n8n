@@ -53,20 +53,22 @@ export async function buildContactRequest(
     };
   }
 
-  if (operation === 'checkExists') {
-    const phoneNumber = asText(
-      this.getNodeParameter('phoneNumber', itemIndex),
-      'Phone number',
-    ).replace(/[\s+\-()]/g, '');
+  if (operation === 'checkExists' || operation === 'getLid') {
+    const phoneNumber = asText(this.getNodeParameter('phoneNumber', itemIndex), 'Phone number')
+      .replace(/(?::\d+)?@(?:c\.us|s\.whatsapp\.net|hosted)$/i, '')
+      .replace(/[\s+\-()]/g, '');
     if (!phoneNumber || !/^\d+$/.test(phoneNumber)) {
       throw new NodeOperationError(
         this.getNode(),
-        'Phone number must be digits in international format. Spaces, +, hyphens and parentheses are stripped first; any other character is rejected.',
+        'Phone number must be digits in international format (or a @c.us / @s.whatsapp.net contact ID). Spaces, +, hyphens and parentheses are stripped first; privacy IDs (@lid), groups, channels and any other characters are rejected.',
         { itemIndex },
       );
     }
     return {
-      endpoint: `/api/sessions/${sessionId}/contacts/check/${encodeURIComponent(phoneNumber)}`,
+      endpoint:
+        operation === 'checkExists'
+          ? `/api/sessions/${sessionId}/contacts/check/${encodeURIComponent(phoneNumber)}`
+          : `/api/sessions/${sessionId}/contacts/${encodeURIComponent(phoneNumber)}/lid`,
       method: 'GET',
       body: {},
     };

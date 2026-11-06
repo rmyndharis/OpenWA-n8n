@@ -4766,6 +4766,24 @@ const dotSegmentCases = [
     { resource: 'label', operation: 'removeFromChat', sessionId: 'abc-123', chatId: '..', labelId: 'l1' },
   ],
   ['message/getHistory', { resource: 'message', operation: 'getHistory', sessionId: 'abc-123', chatId: '.' }],
+  [
+    'message/getReceipts dot messageId',
+    { resource: 'message', operation: 'getReceipts', sessionId: 'abc-123', chatId: '628123@c.us', messageId: '..' },
+  ],
+  [
+    'message/getReceipts encoded-slash dot segment',
+    {
+      resource: 'message',
+      operation: 'getReceipts',
+      sessionId: 'abc-123',
+      chatId: '628123@c.us',
+      messageId: '../reactions',
+    },
+  ],
+  [
+    'message/cancelBatch encoded-backslash dot segment',
+    { resource: 'message', operation: 'cancelBatch', sessionId: 'abc-123', statusBatchId: '..\\other' },
+  ],
   ['catalog/getProduct', { resource: 'catalog', operation: 'getProduct', sessionId: 'abc-123', productId: '..' }],
 ];
 
@@ -6376,4 +6394,175 @@ test('message/sendText customLinkPreview enforces length caps, list guards, and 
       pattern,
     );
   }
+});
+
+// --- OpenWA 0.29.0: Contact > Get LID, Message > Get Receipts, Session config byte cap, Bulk object check, Webhook events max ---
+
+test('contact/getLid and contact/checkExists accept phone numbers and phone-based contact IDs, and reject non-phone IDs', async () => {
+  for (const [operation, expectedPath] of [
+    ['getLid', `${BASE}/api/sessions/abc-123/contacts/628123456789/lid`],
+    ['checkExists', `${BASE}/api/sessions/abc-123/contacts/check/628123456789`],
+  ]) {
+    for (const phoneNumber of [
+      '628123456789',
+      ' +62 (812) 345-6789 ',
+      '628123456789@c.us',
+      '628123456789@s.whatsapp.net',
+      '628123456789:5@s.whatsapp.net',
+      '628123456789@hosted',
+      '628123456789:0@hosted',
+      '628123456789@C.US',
+    ]) {
+      const { ctx } = await run({
+        resource: 'contact',
+        operation,
+        sessionId: 'abc-123',
+        phoneNumber,
+      });
+      const call = singleCall(ctx);
+      assert.equal(call.options.method, 'GET');
+      assert.equal(call.options.url, expectedPath);
+    }
+
+    for (const badPhone of [
+      '',
+      '   ',
+      '12345678901234@lid',
+      '12345678901234@hosted.lid',
+      '12036304@g.us',
+      '12036304@newsletter',
+      'status@broadcast',
+      '628123456789@c.us@c.us',
+      ':0@c.us',
+      '628123456789abc',
+    ]) {
+      await assert.rejects(
+        () =>
+          run({
+            resource: 'contact',
+            operation,
+            sessionId: 'abc-123',
+            phoneNumber: badPhone,
+          }),
+        /Phone number must be digits in international format/,
+      );
+    }
+  }
+});
+
+test('message/getReceipts encodes chatId and messageId in the URL path and rejects an empty messageId', async () => {
+  const { ctx } = await run({
+    resource: 'message',
+    operation: 'getReceipts',
+    sessionId: 'abc-123',
+    chatId: '628123456789@c.us',
+    messageId: 'true_628123456789@c.us_3EB0123456',
+  });
+  const call = singleCall(ctx);
+  assert.equal(call.options.method, 'GET');
+  assert.equal(
+    call.options.url,
+    `${BASE}/api/sessions/abc-123/messages/628123456789%40c.us/true_628123456789%40c.us_3EB0123456/receipts`,
+  );
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'getReceipts',
+        sessionId: 'abc-123',
+        chatId: '628123456789@c.us',
+        messageId: '   ',
+      }),
+    /Message ID cannot be empty/,
+  );
+});
+
+test('session/create enforces the 16384-byte JSON limit on sessionConfig', async () => {
+  // Exactly 16384 bytes as JSON (`{"k":"..."}` uses 8 bytes of wrapper + 16376 'a's = 16384 bytes)
+  const atLimit = { k: 'a'.repeat(16376) };
+  assert.equal(Buffer.byteLength(JSON.stringify(atLimit)), 16384);
+  const ok = await run({
+    resource: 'session',
+    operation: 'create',
+    sessionName: 'my-session',
+    sessionConfig: JSON.stringify(atLimit),
+  });
+  assert.deepEqual(singleCall(ok.ctx).options.body.config, atLimit);
+
+  // 16385 bytes as JSON -> refused before hitting the wire
+  const overLimit = { k: 'a'.repeat(16377) };
+  assert.equal(Buffer.byteLength(JSON.stringify(overLimit)), 16385);
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'session',
+        operation: 'create',
+        sessionName: 'my-session',
+        sessionConfig: overLimit,
+      }),
+    /Session config cannot exceed 16384 bytes when serialized as JSON \(got 16385 bytes\)/,
+  );
+});
+
+test('message/sendBulk refuses non-object items in bulkMessages before hitting the wire', async () => {
+  for (const badBulk of ['[[]]', '[null]', '["text"]', '[123]']) {
+    await assert.rejects(
+      () =>
+        run({
+          resource: 'message',
+          operation: 'sendBulk',
+          sessionId: 'abc-123',
+          bulkMessages: badBulk,
+        }),
+      /Each item in Messages must be a JSON object/,
+    );
+  }
+});
+
+test('webhook/create and webhook/update enforce the 27-entry events ceiling', async () => {
+  const twentySevenEvents = Array.from({ length: 27 }, (_, i) => `e${i}`);
+  const twentyEightEvents = Array.from({ length: 28 }, (_, i) => `e${i}`);
+
+  const created = await run({
+    resource: 'webhook',
+    operation: 'create',
+    sessionId: 'abc-123',
+    webhookUrl: 'https://n8n.example/hook',
+    events: twentySevenEvents,
+  });
+  assert.equal(singleCall(created.ctx).options.body.events.length, 27);
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'webhook',
+        operation: 'create',
+        sessionId: 'abc-123',
+        webhookUrl: 'https://n8n.example/hook',
+        events: twentyEightEvents,
+      }),
+    /Events cannot exceed 27 entries \(got 28\)/,
+  );
+
+  const updated = await run({
+    resource: 'webhook',
+    operation: 'update',
+    sessionId: 'abc-123',
+    webhookId: 'wh-1',
+    updateFields: { events: twentySevenEvents },
+  });
+  assert.equal(singleCall(updated.ctx).options.body.events.length, 27);
+
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'webhook',
+        operation: 'update',
+        sessionId: 'abc-123',
+        webhookId: 'wh-1',
+        updateFields: { events: twentyEightEvents },
+      }),
+    /Events cannot exceed 27 entries \(got 28\)/,
+  );
 });

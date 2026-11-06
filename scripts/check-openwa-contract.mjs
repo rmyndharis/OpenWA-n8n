@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.27.0.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.29.0.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
@@ -16,6 +16,9 @@ const paths = [
   'src/modules/search/search.controller.ts',
   'src/modules/search/dto/search-query.dto.ts',
   'src/modules/search/search.constants.ts',
+  'src/modules/contact/contact.controller.ts',
+  'src/modules/session/dto/recognised-session-config.validator.ts',
+  'src/modules/message/dto/bulk-message.dto.ts',
 ];
 
 function decorators(node) {
@@ -39,6 +42,20 @@ function validationArgument(node, constants = {}) {
   if (ts.isNumericLiteral(node)) return Number(node.text);
   if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
   if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    node.name.text === 'length' &&
+    ts.isIdentifier(node.expression) &&
+    Array.isArray(constants[node.expression.text])
+  ) {
+    return constants[node.expression.text].length;
+  }
+  if (ts.isBinaryExpression(node)) {
+    const left = validationArgument(node.left, constants);
+    const right = validationArgument(node.right, constants);
+    if (node.operatorToken.kind === ts.SyntaxKind.AsteriskToken) return left * right;
+    if (node.operatorToken.kind === ts.SyntaxKind.PlusToken) return left + right;
+  }
   assert(ts.isObjectLiteralExpression(node), `Nonliteral validation argument ${node.getText()}`);
   return Object.fromEntries(
     node.properties.map((property) => {
@@ -70,10 +87,10 @@ function stringArray(source, name) {
   });
 }
 
-function dtoFields(source, name, constants = {}, selected) {
-  const validators = [
-    'IsOptional', 'IsString', 'IsArray', 'IsInt', 'MaxLength', 'ArrayMaxSize', 'Min', 'Max',
-    'IsNotEmpty', 'IsIn', 'NoNulCharacter', 'Matches', 'IsMediaUrl',
+function dtoFields(source, name, constants = {}, selected, allowedValidators) {
+  const validators = allowedValidators ?? [
+    'IsOptional', 'IsString', 'IsArray', 'IsObject', 'IsInt', 'MaxLength', 'ArrayMinSize',
+    'ArrayMaxSize', 'Min', 'Max', 'IsNotEmpty', 'IsIn', 'NoNulCharacter', 'Matches', 'IsMediaUrl',
   ];
   return Object.fromEntries(
     declaration(source, name).members.filter(ts.isPropertyDeclaration)
@@ -104,15 +121,26 @@ function route(source, className, methodName, parameterDecorator, dtoName) {
   const controller = declaration(source, className);
   const method = controller.members.find((m) => ts.isMethodDeclaration(m) && m.name.getText() === methodName);
   assert(method, `Missing method ${methodName}`);
-  assert(method.parameters.some((p) => decorators(p).some((d) => d.name === parameterDecorator && d.args.length === 0) && p.type?.getText() === dtoName), `Missing ${methodName} validation`);
+  if (Array.isArray(parameterDecorator)) {
+    const params = method.parameters.flatMap((p) =>
+      decorators(p).filter((d) => d.name === 'Param').map((d) => d.args[0]),
+    );
+    assert.deepEqual(params, parameterDecorator, `Unexpected ${methodName} params`);
+  } else {
+    assert(method.parameters.some((p) => decorators(p).some((d) => d.name === parameterDecorator && d.args.length === 0) && p.type?.getText() === dtoName), `Missing ${methodName} validation`);
+  }
   const metadata = decorators(method);
   const http = metadata.find((d) => ['Get', 'Post', 'Put', 'Patch', 'Delete'].includes(d.name));
   assert(http, `Missing ${methodName} route`);
-  return {
+  const result = {
     method: http.name.toUpperCase(),
     path: [decorators(controller).find((d) => d.name === 'Controller')?.args[0], ...http.args].join('/'),
-    role: metadata.find((d) => d.name === 'RequireRole')?.args[0],
   };
+  const role = metadata.find((d) => d.name === 'RequireRole')?.args[0];
+  if (role !== undefined || !Array.isArray(parameterDecorator)) result.role = role;
+  const chatScoped = metadata.find((d) => d.name === 'ChatScoped')?.args[0];
+  if (Array.isArray(parameterDecorator) && chatScoped !== undefined) result.chatScoped = chatScoped;
+  return result;
 }
 
 try {
@@ -130,7 +158,41 @@ try {
       return ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
     }),
   );
-  const [webhook, message, webhooksList, group, groupDto, sendDto, search, searchDto, searchConstants] = sources;
+  const [
+    webhook,
+    message,
+    webhooksList,
+    group,
+    groupDto,
+    sendDto,
+    search,
+    searchDto,
+    searchConstants,
+    contact,
+    sessionConfigValidator,
+    bulkDto,
+  ] = sources;
+  const webhookEvents = stringArray(webhook, 'WEBHOOK_EVENTS').sort();
+  const webhookEventValidators = ['IsArray', 'ArrayMinSize', 'ArrayMaxSize'];
+  const createEventsBounds = dtoFields(
+    webhook,
+    'CreateWebhookDto',
+    { WEBHOOK_EVENTS: webhookEvents },
+    ['events'],
+    webhookEventValidators,
+  ).events;
+  const updateEventsBounds = dtoFields(
+    webhook,
+    'UpdateWebhookDto',
+    { WEBHOOK_EVENTS: webhookEvents },
+    ['events'],
+    webhookEventValidators,
+  ).events;
+  assert.deepEqual(
+    createEventsBounds,
+    updateEventsBounds,
+    'CreateWebhookDto and UpdateWebhookDto events bounds differ',
+  );
   const groupConstants = { GROUP_MEMBER_LABEL_MAX_LENGTH: validationArgument(initializer(groupDto, 'GROUP_MEMBER_LABEL_MAX_LENGTH')) };
   const previewConstants = Object.fromEntries(
     ['URL', 'TITLE', 'DESCRIPTION'].map((field) => {
@@ -167,7 +229,8 @@ try {
   const redriveDecorators = decorators(redrive);
   const fields = dtoFields(webhook, 'RedriveWebhookDeliveriesDto');
   const actual = {
-    webhookEvents: stringArray(webhook, 'WEBHOOK_EVENTS').sort(),
+    webhookEvents,
+    webhookEventsBounds: createEventsBounds,
     messageListPath: messagePath,
     messageListQueries: list.parameters
       .flatMap((p) =>
@@ -180,6 +243,21 @@ try {
       .filter((m) => decorators(m).some((d) => d.name === 'IdempotentSend'))
       .map((m) => decorators(m).find((d) => d.name === 'Post')?.args[0])
       .sort(),
+    contactGetLid: route(contact, 'ContactController', 'getContactLid', ['sessionId', 'number']),
+    messageGetReceipts: route(message, 'MessageController', 'getReceipts', [
+      'sessionId',
+      'chatId',
+      'messageId',
+    ]),
+    maxSessionConfigBytes: validationArgument(
+      initializer(sessionConfigValidator, 'MAX_SESSION_CONFIG_BYTES'),
+    ),
+    bulkMessages: dtoFields(
+      bulkDto,
+      'SendBulkMessageDto',
+      { BULK_MESSAGES_MAX: validationArgument(initializer(bulkDto, 'BULK_MESSAGES_MAX')) },
+      ['messages'],
+    ).messages,
     redrive: {
       method: 'POST',
       path: `${webhookPath}/${redriveDecorators.find((d) => d.name === 'Post').args[0]}`,

@@ -37,3 +37,12 @@ test('accepts exactly 100 items', () => {
   const items = Array.from({ length: 100 }, () => ({ chatId: '1@c.us' }));
   assert.equal(parseBulkMessages(items).length, 100);
 });
+
+for (const badItem of [null, 'text', 42, true, []]) {
+  test(`rejects a non-object batch item (${JSON.stringify(badItem)})`, () => {
+    assert.throws(
+      () => parseBulkMessages([{ chatId: '1@c.us' }, badItem]),
+      /Each item in Messages must be a JSON object/,
+    );
+  });
+}

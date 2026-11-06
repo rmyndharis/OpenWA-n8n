@@ -31,5 +31,10 @@ function parseBulkMessages(raw) {
     if (parsed.length > 100) {
         throw new Error('Messages cannot exceed 100 items per batch');
     }
+    for (const item of parsed) {
+        if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+            throw new Error('Each item in Messages must be a JSON object');
+        }
+    }
     return parsed;
 }
