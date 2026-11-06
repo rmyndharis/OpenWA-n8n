@@ -2,10 +2,22 @@
 
 ## [1.5.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.4.0...v1.5.0) (2026-11-06)
 
-
 ### Features
 
-* support OpenWA 0.29.0 ([e129778](https://github.com/rmyndharis/OpenWA-n8n/commit/e129778bb4b9640c5a17cb2d6ce457a45d2c8ea7))
+* Add Message > Get Receipts to read per-recipient delivery, read and played timestamps for an outbound message.
+* Add Contact > Get LID to look up the `@lid` privacy ID for a phone number or phone-based user JID.
+
+### Bug Fixes
+
+* Accept `@c.us`, `@s.whatsapp.net` and `@hosted` user JIDs on Contact > Check Exists and Contact > Get LID while rejecting `@lid`, groups, channels and non-digit inputs locally.
+* Validate the 16,384-byte JSON cap on Session > Create config, the 27-entry ceiling on Webhook > Create and Update events, and plain-object items on Message > Send Bulk before sending requests.
+* Check percent-encoded slashes and backslashes for dot segments on path-parameterized routes.
+
+### Upgrade notes
+
+* Message > Get Receipts and Contact > Get LID require OpenWA 0.29.0; Contact > Get LID requires an OPERATOR or ADMIN API key.
+* Contact > Check Exists now accepts `@c.us`, `@s.whatsapp.net` and `@hosted` user JIDs in addition to formatted phone numbers, and rejects `@lid`, group and channel IDs before calling the gateway.
+* Session > Create configs over 16,384 JSON bytes, Webhook > Create or Update event lists over 27 entries, and non-object items in Message > Send Bulk now fail the item locally.
 
 ## [1.4.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.3.0...v1.4.0) (2026-10-31)
 
