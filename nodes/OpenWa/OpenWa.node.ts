@@ -338,7 +338,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create'] },
         },
         description:
-          'Optional session config as a JSON object. The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.24.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+          'Optional session config as a JSON object (at most 16384 bytes when serialized as JSON). The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.24.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Proxy URL',
@@ -610,6 +610,11 @@ export class OpenWa implements INodeType {
             value: 'getReactions',
             action: 'Get the reactions on a message',
           },
+          {
+            name: 'Get Receipts',
+            value: 'getReceipts',
+            action: 'Get the receipts on a message',
+          },
           { name: 'List', value: 'list', action: 'List stored messages' },
           { name: 'Pin', value: 'pin', action: 'Pin a message in its chat' },
           { name: 'React', value: 'react', action: 'React to a message' },
@@ -682,6 +687,7 @@ export class OpenWa implements INodeType {
               'edit',
               'getHistory',
               'getReactions',
+              'getReceipts',
               'getMedia',
               'pin',
               'unpin',
@@ -735,7 +741,8 @@ export class OpenWa implements INodeType {
         displayOptions: {
           show: { resource: ['message'], operation: ['sendText', 'reply', 'edit'] },
         },
-        description: 'The text message to send. For Edit, this replaces the existing message body.',
+        description:
+          'The text message to send. For Edit, this replaces the existing message body or media caption (messages not sent by this session or carrying no text or caption, such as locations, stickers, polls, contact cards, or audio, are refused with 403).',
       },
       // Send Image fields
       {
@@ -1283,6 +1290,7 @@ export class OpenWa implements INodeType {
               'edit',
               'forward',
               'getReactions',
+              'getReceipts',
               'getMedia',
               'pin',
               'unpin',
@@ -1293,7 +1301,7 @@ export class OpenWa implements INodeType {
           },
         },
         description:
-          'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger. For Click Button, the ID of the prompt that offered the buttons.',
+          'The full serialized ID of the target message, as returned by send operations or delivered by the Trigger. For Click Button, the ID of the prompt that offered the buttons. For Get Receipts, the message must have been sent by this session (received messages are refused with 403).',
       },
       {
         displayName: 'Button ID',
@@ -1329,6 +1337,14 @@ export class OpenWa implements INodeType {
         type: 'notice',
         default: '',
         displayOptions: { show: { resource: ['message'], operation: ['getMedia'] } },
+      },
+      {
+        displayName:
+          'Get Receipts needs OpenWA 0.28.0 or later on the whatsapp-web.js engine; Baileys answers 501. It returns who received, read, and played a message sent by this account, with Unix-second timestamps, and answers 403 for a received message or 404 when the message ID is not a full serialized ID or not found in the chat.',
+        name: 'messageGetReceiptsNotice',
+        type: 'notice',
+        default: '',
+        displayOptions: { show: { resource: ['message'], operation: ['getReceipts'] } },
       },
       {
         displayName: 'Pin Duration',
@@ -1736,6 +1752,11 @@ export class OpenWa implements INodeType {
           { name: 'Check Exists', value: 'checkExists', action: 'Check if a number exists' },
           { name: 'Delete', value: 'delete', action: 'Delete a contact from the addressbook' },
           { name: 'Get Info', value: 'getInfo', action: 'Get contact information' },
+          {
+            name: 'Get LID',
+            value: 'getLid',
+            action: 'Look up the privacy id of a phone number',
+          },
           { name: 'Get Phone', value: 'getPhone', action: 'Resolve a contact phone number' },
           {
             name: 'Get Profile Picture',
@@ -1777,10 +1798,10 @@ export class OpenWa implements INodeType {
         required: true,
         placeholder: '628123456789',
         displayOptions: {
-          show: { resource: ['contact'], operation: ['checkExists'] },
+          show: { resource: ['contact'], operation: ['checkExists', 'getLid'] },
         },
         description:
-          'Phone number in international format. Spaces, +, hyphens and parentheses are stripped before the check, so leaving them in is fine.',
+          'Phone number in international format, or a phone-based contact ID (@c.us or @s.whatsapp.net). Spaces, +, hyphens, parentheses, and a @c.us or @s.whatsapp.net suffix are stripped before the request; privacy IDs (@lid), groups, and channels are refused. Get LID requires OpenWA 0.27.1 or later and an OPERATOR API key (chat-restricted keys are refused).',
       },
       {
         displayName: 'Contact Name or ID',
@@ -3542,7 +3563,7 @@ export class OpenWa implements INodeType {
       },
       {
         displayName:
-          'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs. A 503 can mean WhatsApp left the catalog query unanswered, which it does permanently for some business accounts, so treat a repeated 503 as that account being unsupported rather than as a transient worth retrying.',
+          'The catalog is Baileys only: whatsapp-web.js answers 501 on every operation here. Use List Products to find the product ID that Message > Send Product needs. Baileys reads no stock state from WhatsApp and reports isAvailable as true for every product, including hidden ones. A 503 can mean WhatsApp left the catalog query unanswered, which it does permanently for some business accounts, so treat a repeated 503 as that account being unsupported rather than as a transient worth retrying.',
         name: 'catalogEngineNotice',
         type: 'notice',
         default: '',
@@ -4336,8 +4357,13 @@ export class OpenWa implements INodeType {
         // encodeURIComponent leaves '.' alone, and the HTTP client resolves a dot
         // segment before sending, so an ID of '..' walks the request up to its parent
         // route: Contact > Delete with '..' becomes DELETE /api/sessions/<id>/, which
-        // is Session > Delete. Checked here because every path ID passes through.
-        if (spec.endpoint.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))) {
+        // is Session > Delete. %2F and %5C split too, because a proxy that decodes them
+        // before resolving dot segments reads '..%2Fx' as '../x'.
+        if (
+          spec.endpoint
+            .split(/[/\\]|%2f|%5c/i)
+            .some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))
+        ) {
           throw new NodeOperationError(this.getNode(), "An ID in the path cannot be '.' or '..'", {
             itemIndex: i,
           });

@@ -38,7 +38,7 @@ const CHATLESS_OPERATIONS = new Set([
  * body whose DTO requires the domain (server 0.26.0 answers 400; before it, Baileys threw in
  * the engine and nothing was sent), so the field is checked here, where the message can name it.
  */
-const CHAT_IN_PATH_OPERATIONS = new Set(['getHistory', 'getReactions', 'getMedia']);
+const CHAT_IN_PATH_OPERATIONS = new Set(['getHistory', 'getReactions', 'getReceipts', 'getMedia']);
 
 // Server-side DTO limits.
 const MAX_MESSAGE_LENGTH = 4096;
@@ -408,10 +408,11 @@ export async function buildMessageRequest(
     };
   }
 
-  if (operation === 'getReactions') {
+  if (operation === 'getReactions' || operation === 'getReceipts') {
     const messageId = requireText(this, 'messageId', 'Message ID', itemIndex);
+    const suffix = operation === 'getReactions' ? 'reactions' : 'receipts';
     return {
-      endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/reactions`,
+      endpoint: `/api/sessions/${sessionId}/messages/${encodeURIComponent(chatId)}/${encodeURIComponent(messageId)}/${suffix}`,
       method: 'GET',
       body: {},
     };

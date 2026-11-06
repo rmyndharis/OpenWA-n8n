@@ -3,8 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildWebhookRequest = buildWebhookRequest;
 const n8n_workflow_1 = require("n8n-workflow");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
+const webhookEvents_1 = require("../../shared/webhookEvents");
 const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
+/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
+const MAX_WEBHOOK_EVENTS = webhookEvents_1.WEBHOOK_EVENT_VALUES.length + 1;
 /**
  * Parses a JSON object field (headers, filters) supplied as text or already as an
  * object, so Create and Update read them the same way.
@@ -18,10 +21,12 @@ function parseJsonObject(node, raw, label, itemIndex) {
     }
 }
 /** The events of a registration: the selection itself, or the text an expression built. */
-function readEvents(raw) {
-    if (Array.isArray(raw))
-        return raw;
-    return raw ? (0, params_1.toStringList)(raw, 'Events') : [];
+function readEvents(node, raw, itemIndex) {
+    const events = Array.isArray(raw) ? raw : raw ? (0, params_1.toStringList)(raw, 'Events') : [];
+    if (events.length > MAX_WEBHOOK_EVENTS) {
+        throw new n8n_workflow_1.NodeOperationError(node, `Events cannot exceed ${MAX_WEBHOOK_EVENTS} entries (got ${events.length})`, { itemIndex });
+    }
+    return events;
 }
 function assertSecretLength(node, secret, itemIndex) {
     const problem = (0, webhookSecret_1.webhookSecretProblem)(secret);
@@ -93,7 +98,7 @@ async function buildWebhookRequest(operation, itemIndex) {
         // Read as the Update operation reads them: an expression can resolve to a comma
         // separated text, which the gateway refuses as "events must be an array", and a URL
         // pasted with a trailing newline, which it refuses as not a URL.
-        const events = readEvents(this.getNodeParameter('events', itemIndex));
+        const events = readEvents(this.getNode(), this.getNodeParameter('events', itemIndex), itemIndex);
         if (events.length === 0) {
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected', {
                 itemIndex,
@@ -167,7 +172,7 @@ async function buildWebhookRequest(operation, itemIndex) {
                 body.url = url;
                 continue;
             }
-            body[key] = key === 'events' ? readEvents(value) : value;
+            body[key] = key === 'events' ? readEvents(this.getNode(), value, itemIndex) : value;
         }
         // The server reads an empty secret as "stop signing" (`@ValidateIf(o => o.secret
         // !== '')` skips the 16-character floor for exactly that value). A blank field

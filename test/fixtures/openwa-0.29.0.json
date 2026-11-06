@@ -1,6 +1,6 @@
 {
-  "version": "0.27.0",
-  "commit": "d99fa201b942f71271e0ca055fc6c2e425215441",
+  "version": "0.29.0",
+  "commit": "af348ed3a451ce297d2eca8ed53dfe66cde49e52",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -31,6 +31,11 @@
       "session.status",
       "status.received"
     ],
+    "webhookEventsBounds": {
+      "IsArray": [],
+      "ArrayMinSize": [1],
+      "ArrayMaxSize": [27]
+    },
     "messageListPath": "sessions/:sessionId/messages",
     "messageListQueries": [
       "after",
@@ -60,6 +65,22 @@
       "send-text",
       "send-video"
     ],
+    "contactGetLid": {
+      "method": "GET",
+      "path": "sessions/:sessionId/contacts/:number/lid",
+      "role": "ApiKeyRole.OPERATOR"
+    },
+    "messageGetReceipts": {
+      "method": "GET",
+      "path": "sessions/:sessionId/messages/:chatId/:messageId/receipts",
+      "chatScoped": "fenced"
+    },
+    "maxSessionConfigBytes": 16384,
+    "bulkMessages": {
+      "IsArray": [],
+      "ArrayMaxSize": [100],
+      "IsObject": [{ "each": true }]
+    },
     "groupMemberLabel": {
       "method": "PUT",
       "path": "sessions/:sessionId/groups/:groupId/member-label",

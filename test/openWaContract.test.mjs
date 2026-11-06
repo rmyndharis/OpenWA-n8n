@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.27.0.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.29.0.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -75,6 +75,30 @@ test('OpenWA 0.27.0 group member label, custom link preview thumbnails, and sear
   );
 });
 
+test('OpenWA 0.29.0 contact LID lookup and message receipts are exposed', () => {
+  const contactOp = properties.find(
+    (p) => p.name === 'operation' && p.displayOptions?.show?.resource?.includes('contact'),
+  );
+  assert(contactOp.options.some((o) => o.value === 'getLid'));
+  const phoneNumber = properties.find(
+    (p) => p.name === 'phoneNumber' && p.displayOptions?.show?.resource?.includes('contact'),
+  );
+  assert.deepEqual(phoneNumber.displayOptions.show.operation, ['checkExists', 'getLid']);
+
+  const messageOp = properties.find(
+    (p) => p.name === 'operation' && p.displayOptions?.show?.resource?.includes('message'),
+  );
+  assert(messageOp.options.some((o) => o.value === 'getReceipts'));
+  const messageChatId = properties.find(
+    (p) => p.name === 'chatId' && p.displayOptions?.show?.resource?.includes('message'),
+  );
+  assert(messageChatId.displayOptions.show.operation.includes('getReceipts'));
+  const messageId = properties.find(
+    (p) => p.name === 'messageId' && p.displayOptions?.show?.resource?.includes('message'),
+  );
+  assert(messageId.displayOptions.show.operation.includes('getReceipts'));
+});
+
 function upstreamSources() {
   const { contract } = snapshot;
   return {
@@ -86,11 +110,19 @@ function upstreamSources() {
         @IsOptional() @IsString() @MaxLength(128) webhookId?: string;
         @IsOptional() @IsArray() @ArrayMaxSize(500) @IsString({each: true}) @MaxLength(128, {each: true}) ids?: string[];
         @IsOptional() @IsInt() @Min(1) @Max(500) limit?: number;
+      }
+      export class CreateWebhookDto {
+        @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length + 1) events?: string[];
+      }
+      export class UpdateWebhookDto {
+        @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length + 1) events?: string[];
       }`,
     'src/modules/message/message.controller.ts': `
       @Controller('sessions/:sessionId/messages')
       export class MessageController {
         @Get() getMessages(${contract.messageListQueries.map((q, i) => `@Query('${q}') q${i}?: string`).join(',')}) {}
+        @ChatScoped('fenced') @Get(':chatId/:messageId/receipts')
+        getReceipts(@Param('sessionId') sessionId: string, @Param('chatId') chatId: string, @Param('messageId') messageId: string) {}
         ${contract.idempotentSendPaths.map((p, i) => {
           const method = p === 'send-text' ? 'sendText' : `send${i}`;
           const parameter = p === 'send-text' ? '@Body() dto: SendTextMessageDto' : '';
@@ -144,6 +176,20 @@ function upstreamSources() {
         sessionId?: string; chatId?: string; from?: string; direction?: MessageDirection;
         type?: MessageType; dateFrom?: number; dateTo?: number; limit?: number; offset?: number;
       }`,
+    'src/modules/contact/contact.controller.ts': `
+      @Controller('sessions/:sessionId/contacts')
+      export class ContactController {
+        @Get(':number/lid') @RequireRole(ApiKeyRole.OPERATOR)
+        getContactLid(@Param('sessionId') sessionId: string, @Param('number') number: string) {}
+      }`,
+    'src/modules/session/dto/recognised-session-config.validator.ts': `
+      export const MAX_SESSION_CONFIG_BYTES = 16 * 1024;`,
+    'src/modules/message/dto/bulk-message.dto.ts': `
+      export const BULK_MESSAGES_MAX = 100;
+      export class SendBulkMessageDto {
+        @ToStrictArray() @IsArray() @ArrayMaxSize(BULK_MESSAGES_MAX) @IsObject({ each: true }) @ValidateNested({ each: true })
+        messages!: BulkMessageItemDto[];
+      }`,
   };
 }
 
@@ -165,10 +211,23 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.27\.0/);
+  assert.match(result.stdout, /0\.29\.0/);
 });
 
 for (const [label, file, before, after] of [
+  ['contact LID method', 'src/modules/contact/contact.controller.ts', "@Get(':number/lid')", "@Post(':number/lid')"],
+  ['contact LID path', 'src/modules/contact/contact.controller.ts', ':number/lid', ':number/privacy-id'],
+  ['contact LID permission', 'src/modules/contact/contact.controller.ts', 'ApiKeyRole.OPERATOR', 'ApiKeyRole.ADMIN'],
+  ['contact LID params', 'src/modules/contact/contact.controller.ts', "@Param('number')", "@Param('contactId')"],
+  ['message receipts method', 'src/modules/message/message.controller.ts', "@Get(':chatId/:messageId/receipts')", "@Post(':chatId/:messageId/receipts')"],
+  ['message receipts path', 'src/modules/message/message.controller.ts', ':chatId/:messageId/receipts', ':chatId/:messageId/acks'],
+  ['message receipts chat scope', 'src/modules/message/message.controller.ts', "@ChatScoped('fenced') @Get(':chatId/:messageId/receipts')", "@Get(':chatId/:messageId/receipts')"],
+  ['message receipts params', 'src/modules/message/message.controller.ts', "@Param('messageId')", "@Param('id')"],
+  ['session config byte limit', 'src/modules/session/dto/recognised-session-config.validator.ts', '16 * 1024', '32 * 1024'],
+  ['bulk message item object validator', 'src/modules/message/dto/bulk-message.dto.ts', '@IsObject({ each: true })', ''],
+  ['bulk message max size', 'src/modules/message/dto/bulk-message.dto.ts', 'BULK_MESSAGES_MAX = 100', 'BULK_MESSAGES_MAX = 50'],
+  ['webhook create events max size', 'src/modules/webhook/dto/webhook.dto.ts', 'export class CreateWebhookDto {\n        @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length + 1)', 'export class CreateWebhookDto {\n        @IsOptional() @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length)'],
+  ['webhook update events max size', 'src/modules/webhook/dto/webhook.dto.ts', 'export class UpdateWebhookDto {\n        @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length + 1)', 'export class UpdateWebhookDto {\n        @IsArray() @ArrayMinSize(1) @ArrayMaxSize(WEBHOOK_EVENTS.length)'],
   ['member label method', 'src/modules/group/group.controller.ts', "@Put(':groupId/member-label')", "@Post(':groupId/member-label')"],
   ['member label path', 'src/modules/group/group.controller.ts', ':groupId/member-label', ':groupId/label'],
   ['member label permission', 'src/modules/group/group.controller.ts', 'ApiKeyRole.OPERATOR', 'ApiKeyRole.ADMIN'],

@@ -160,6 +160,7 @@ test('the reads that put the Chat ID in the path still take whatever the user ga
   for (const [operation, fields] of [
     ['getHistory', {}],
     ['getReactions', { messageId: 'm1' }],
+    ['getReceipts', { messageId: 'm1' }],
   ]) {
     const { ctx, done } = send({ ...fields, operation, chatId: '628123456789' });
     await done;
