@@ -23,23 +23,24 @@ const CURRENT_HASH = webhookConfigHash({
 
 // A plain fake `this` for the webhook lifecycle hooks — no n8n mock framework.
 // `staticData` is returned by reference so tests can assert what was cleared.
-function makeCtx({
-  webhookId = 'w1',
-  storedSessionId = 'default',
-  configHash,
-  secret = '',
-  events = ['message.received'],
-  filters,
-  throwErr = null,
-  createResponse = { id: 'w1' },
-  // What GET /webhooks/:id answers. Defaults to a registration that still matches
-  // the configuration below, which is what checkExists must accept as healthy.
-  getResponse,
-  // What GET /webhooks (the session's list) answers.
-  listResponse = [],
-  // What a DELETE of a given webhook id throws, keyed by id.
-  deleteErrors = {},
-} = {}) {
+function makeCtx(opts = {}) {
+  const {
+    webhookId = 'w1',
+    storedSessionId = 'default',
+    configHash,
+    secret = '',
+    filters,
+    throwErr = null,
+    createResponse = { id: 'w1' },
+    // What GET /webhooks/:id answers. Defaults to a registration that still matches
+    // the configuration below, which is what checkExists must accept as healthy.
+    getResponse,
+    // What GET /webhooks (the session's list) answers.
+    listResponse = [],
+    // What a DELETE of a given webhook id throws, keyed by id.
+    deleteErrors = {},
+  } = opts;
+  const events = 'events' in opts ? opts.events : ['message.received'];
   const staticData = {};
   if (webhookId !== undefined) staticData.webhookId = webhookId;
   if (storedSessionId !== undefined) staticData.sessionId = storedSessionId;
@@ -388,6 +389,115 @@ test('create: rejects a secret shorter than 16 characters before any request', a
   });
   await assert.rejects(() => hooks().create.call(ctx), /at least 16 characters/);
   assert.equal(calls.length, 0);
+});
+
+test('create: enforces the 27-entry events ceiling before any request', async () => {
+  const twentySevenEvents = Array.from({ length: 27 }, (_, i) => `e${i}`);
+  const twentyEightEvents = Array.from({ length: 28 }, (_, i) => `e${i}`);
+
+  const ok = makeCtx({
+    webhookId: undefined,
+    storedSessionId: undefined,
+    events: twentySevenEvents,
+  });
+  assert.equal(await hooks().create.call(ok.ctx), true);
+  assert.equal(ok.calls.find((c) => c.method === 'POST').body.events.length, 27);
+
+  for (const overEvents of [twentyEightEvents, twentyEightEvents.join(', ')]) {
+    const over = makeCtx({
+      webhookId: undefined,
+      storedSessionId: undefined,
+      events: overEvents,
+    });
+    await assert.rejects(
+      () => hooks().create.call(over.ctx),
+      /Events cannot exceed 27 entries \(got 28\)/,
+    );
+    assert.equal(over.calls.length, 0);
+  }
+});
+
+test('create: normalizes expression-supplied events and rejects empty or malformed values before any request', async () => {
+  for (const [events, expected] of [
+    ['message.received, message.sent', ['message.received', 'message.sent']],
+    ['["message.received", "session.status"]', ['message.received', 'session.status']],
+    ['*', ['*']],
+    [['  message.received  ', ''], ['message.received']],
+  ]) {
+    const { ctx, calls } = makeCtx({
+      webhookId: undefined,
+      storedSessionId: undefined,
+      events,
+    });
+    assert.equal(await hooks().create.call(ctx), true);
+    assert.deepEqual(calls.find((c) => c.method === 'POST').body.events, expected);
+  }
+
+  for (const emptyEvents of [[], ['  ', ''], '', '   ', 0, false, null, undefined]) {
+    const { ctx, calls } = makeCtx({
+      webhookId: undefined,
+      storedSessionId: undefined,
+      events: emptyEvents,
+    });
+    await assert.rejects(() => hooks().create.call(ctx), /At least one event must be selected/);
+    assert.equal(calls.length, 0);
+  }
+
+  for (const [badEvents, pattern] of [
+    ['[message.received, message.sent]', /Events looks like a JSON array/],
+    [[{}], /Events: list entries must be text/],
+    [{}, /Events: list entries must be text/],
+    [[NaN], /Events entry is not a valid number/],
+  ]) {
+    const { ctx, calls } = makeCtx({
+      webhookId: undefined,
+      storedSessionId: undefined,
+      events: badEvents,
+    });
+    await assert.rejects(() => hooks().create.call(ctx), pattern);
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('checkExists and webhookConfigHash: treat expression-supplied event lists identically to arrays and discard non-iterable or malformed values cleanly', async () => {
+  const base = { url: WEBHOOK_URL, secret: '', sessionId: 'default' };
+  const arrayHash = webhookConfigHash({
+    ...base,
+    events: ['message.received', 'session.status'],
+  });
+  assert.equal(
+    webhookConfigHash({ ...base, events: 'session.status, message.received' }),
+    arrayHash,
+  );
+  assert.equal(
+    webhookConfigHash({ ...base, events: '["session.status", "message.received"]' }),
+    arrayHash,
+  );
+
+  const matching = makeCtx({
+    configHash: arrayHash,
+    events: 'session.status, message.received',
+    getResponse: {
+      id: 'w1',
+      active: true,
+      url: WEBHOOK_URL,
+      events: ['message.received', 'session.status'],
+    },
+  });
+  assert.equal(await hooks().checkExists.call(matching.ctx), true);
+  assert.equal(matching.calls.length, 1);
+  assert.equal(matching.calls[0].method, 'GET');
+
+  for (const badOrEmpty of [undefined, null, '', '   ', 0, false, '[bad, json]', {}, [{}]]) {
+    const stale = makeCtx({
+      configHash: CURRENT_HASH,
+      events: badOrEmpty,
+    });
+    assert.equal(await hooks().checkExists.call(stale.ctx), false);
+    assert.equal(stale.calls.length, 1);
+    assert.equal(stale.calls[0].method, 'DELETE');
+    assert.equal(stale.staticData.webhookId, undefined);
+  }
 });
 
 // --- node description ---

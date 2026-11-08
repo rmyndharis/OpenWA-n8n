@@ -93,7 +93,7 @@ class OpenWaTrigger {
                     description: "Whether to drop a repeated delivery of the same event, keyed on the envelope's idempotencyKey. OpenWA guarantees at-least-once delivery: it retries a failed POST and replays any delivery stranded by a gateway crash, both under the same idempotencyKey, either of which can otherwise run this workflow twice. Best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run. From n8n 2.19.2 onward n8n does not save the record at all, so the option has no effect there; de-duplicate downstream on idempotencyKey instead.",
                 },
                 {
-                    displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
+                    displayName: 'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>isForwarded: true</code> (with <code>forwardingScore</code> when positive) on a forwarded message, <code>type: "masked"</code> for a withheld business message, and <code>revokedId</code> on a <code>message.revoked</code> event.',
                     name: 'outputShapeNotice',
                     type: 'notice',
                     default: '',
@@ -116,7 +116,7 @@ class OpenWaTrigger {
                     const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
                     const webhookUrl = this.getNodeWebhookUrl('default') ?? '';
-                    const events = this.getNodeParameter('events');
+                    const rawEvents = this.getNodeParameter('events');
                     // Drop the stored registration from the server and forget it locally, so the
                     // caller can report absent and let n8n create a fresh one.
                     const discardRegistration = async () => {
@@ -154,7 +154,7 @@ class OpenWaTrigger {
                     // changed across a package upgrade).
                     const currentHash = (0, configHash_1.webhookConfigHash)({
                         url: webhookUrl,
-                        events,
+                        events: rawEvents,
                         secret: this.getNodeParameter('webhookSecret', ''),
                         sessionId,
                         filters: this.getNodeParameter('filters', ''),
@@ -193,8 +193,15 @@ class OpenWaTrigger {
                     // no other trace, so it is compared here. The comparison ignores key order,
                     // because the server round-trips filters through a JSON column and a
                     // reordered but identical filter must not force a re-registration.
+                    let wantedEvents;
+                    try {
+                        wantedEvents = (0, webhookEvents_1.normalizeWebhookEvents)(rawEvents);
+                    }
+                    catch {
+                        wantedEvents = undefined;
+                    }
                     const sameEvents = (a, b) => {
-                        if (!Array.isArray(a) || a.length !== b.length) {
+                        if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
                             return false;
                         }
                         const left = [...a].sort();
@@ -214,7 +221,7 @@ class OpenWaTrigger {
                     const sameFilters = (0, jsonParam_1.stableStringify)(registration.filters ?? null) === (0, jsonParam_1.stableStringify)(wantedFilters ?? null);
                     if (registration.active === false ||
                         (typeof registration.url === 'string' && registration.url !== webhookUrl) ||
-                        !sameEvents(registration.events, events) ||
+                        !sameEvents(registration.events, wantedEvents) ||
                         !sameFilters) {
                         return discardRegistration();
                     }
@@ -225,10 +232,19 @@ class OpenWaTrigger {
                     const credentials = await this.getCredentials('openWaApi');
                     const baseUrl = (0, serverUrl_1.serverBaseUrl)(credentials.serverUrl);
                     const sessionId = (0, sanitizePathParam_1.sanitizePathParam)(this.getNodeParameter('sessionId'), 'Session ID');
-                    const events = this.getNodeParameter('events');
+                    let events;
+                    try {
+                        events = (0, webhookEvents_1.normalizeWebhookEvents)(this.getNodeParameter('events'));
+                    }
+                    catch (error) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), error);
+                    }
                     const webhookSecret = this.getNodeParameter('webhookSecret', '');
-                    if (!events || events.length === 0) {
+                    if (events.length === 0) {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'At least one event must be selected');
+                    }
+                    if (events.length > webhookEvents_1.MAX_WEBHOOK_EVENTS) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Events cannot exceed ${webhookEvents_1.MAX_WEBHOOK_EVENTS} entries (got ${events.length})`);
                     }
                     // A short secret is rejected by the server's registration floor; failing
                     // here names the field instead of surfacing a raw 400 mid-activation.

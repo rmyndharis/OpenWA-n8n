@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.WEBHOOK_EVENT_VALUES = exports.WEBHOOK_EVENT_OPTIONS = void 0;
+exports.MAX_WEBHOOK_EVENTS = exports.WEBHOOK_EVENT_VALUES = exports.WEBHOOK_EVENT_OPTIONS = void 0;
+exports.normalizeWebhookEvents = normalizeWebhookEvents;
+const params_1 = require("../OpenWa/handlers/params");
 exports.WEBHOOK_EVENT_OPTIONS = [
     {
         name: 'Call Accepted',
@@ -135,3 +137,9 @@ exports.WEBHOOK_EVENT_OPTIONS = [
 ];
 /** The event values only, for tests and for configHash seed parity. */
 exports.WEBHOOK_EVENT_VALUES = exports.WEBHOOK_EVENT_OPTIONS.map((o) => o.value);
+/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
+exports.MAX_WEBHOOK_EVENTS = exports.WEBHOOK_EVENT_VALUES.length + 1;
+/** The events of a registration: the selection itself, or the text an expression built. */
+function normalizeWebhookEvents(raw) {
+    return raw ? (0, params_1.toStringList)(raw, 'Events') : [];
+}

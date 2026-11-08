@@ -6,8 +6,6 @@ const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const webhookEvents_1 = require("../../shared/webhookEvents");
 const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
-/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
-const MAX_WEBHOOK_EVENTS = webhookEvents_1.WEBHOOK_EVENT_VALUES.length + 1;
 /**
  * Parses a JSON object field (headers, filters) supplied as text or already as an
  * object, so Create and Update read them the same way.
@@ -22,9 +20,9 @@ function parseJsonObject(node, raw, label, itemIndex) {
 }
 /** The events of a registration: the selection itself, or the text an expression built. */
 function readEvents(node, raw, itemIndex) {
-    const events = Array.isArray(raw) ? raw : raw ? (0, params_1.toStringList)(raw, 'Events') : [];
-    if (events.length > MAX_WEBHOOK_EVENTS) {
-        throw new n8n_workflow_1.NodeOperationError(node, `Events cannot exceed ${MAX_WEBHOOK_EVENTS} entries (got ${events.length})`, { itemIndex });
+    const events = (0, webhookEvents_1.normalizeWebhookEvents)(raw);
+    if (events.length > webhookEvents_1.MAX_WEBHOOK_EVENTS) {
+        throw new n8n_workflow_1.NodeOperationError(node, `Events cannot exceed ${webhookEvents_1.MAX_WEBHOOK_EVENTS} entries (got ${events.length})`, { itemIndex });
     }
     return events;
 }

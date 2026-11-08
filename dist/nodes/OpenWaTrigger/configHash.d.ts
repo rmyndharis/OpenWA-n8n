@@ -10,7 +10,7 @@
  */
 export declare function webhookConfigHash(config: {
     url: string;
-    events: string[];
+    events: unknown;
     secret: string;
     sessionId: string;
     filters?: unknown;

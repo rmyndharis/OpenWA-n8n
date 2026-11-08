@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.29.0.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.29.1.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -190,6 +190,11 @@ function upstreamSources() {
         @ToStrictArray() @IsArray() @ArrayMaxSize(BULK_MESSAGES_MAX) @IsObject({ each: true }) @ValidateNested({ each: true })
         messages!: BulkMessageItemDto[];
       }`,
+    'src/modules/message/dto/message-responses.dto.ts': `
+      export class ChatHistoryMessageDto {
+        @ApiPropertyOptional() isForwarded?: boolean;
+        @ApiPropertyOptional() forwardingScore?: number;
+      }`,
   };
 }
 
@@ -211,10 +216,18 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.29\.0/);
+  assert.match(result.stdout, /0\.29\.1/);
 });
 
 for (const [label, file, before, after] of [
+  ['chat history isForwarded field', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', ''],
+  ['chat history isForwarded optionality', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', 'isForwarded!: boolean;'],
+  ['chat history isForwarded type', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', 'isForwarded?: string;'],
+  ['chat history isForwarded decorator', 'src/modules/message/dto/message-responses.dto.ts', '@ApiPropertyOptional() isForwarded?: boolean;', 'isForwarded?: boolean;'],
+  ['chat history forwardingScore field', 'src/modules/message/dto/message-responses.dto.ts', 'forwardingScore?: number;', ''],
+  ['chat history forwardingScore optionality', 'src/modules/message/dto/message-responses.dto.ts', 'forwardingScore?: number;', 'forwardingScore!: number;'],
+  ['chat history forwardingScore type', 'src/modules/message/dto/message-responses.dto.ts', 'forwardingScore?: number;', 'forwardingScore?: string;'],
+  ['chat history forwardingScore decorator', 'src/modules/message/dto/message-responses.dto.ts', '@ApiPropertyOptional() forwardingScore?: number;', 'forwardingScore?: number;'],
   ['contact LID method', 'src/modules/contact/contact.controller.ts', "@Get(':number/lid')", "@Post(':number/lid')"],
   ['contact LID path', 'src/modules/contact/contact.controller.ts', ':number/lid', ':number/privacy-id'],
   ['contact LID permission', 'src/modules/contact/contact.controller.ts', 'ApiKeyRole.OPERATOR', 'ApiKeyRole.ADMIN'],

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.29.0.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.29.1.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
@@ -19,6 +19,7 @@ const paths = [
   'src/modules/contact/contact.controller.ts',
   'src/modules/session/dto/recognised-session-config.validator.ts',
   'src/modules/message/dto/bulk-message.dto.ts',
+  'src/modules/message/dto/message-responses.dto.ts',
 ];
 
 function decorators(node) {
@@ -117,6 +118,21 @@ function dtoFields(source, name, constants = {}, selected, allowedValidators) {
   );
 }
 
+function optionalDtoTypes(source, name, selected) {
+  const members = declaration(source, name).members.filter(ts.isPropertyDeclaration);
+  return Object.fromEntries(
+    [...selected].sort().map((fieldName) => {
+      const field = members.find((m) => m.name.getText() === fieldName);
+      assert(field && field.questionToken, `Missing optional field ${name}.${fieldName}`);
+      assert(
+        decorators(field).some((d) => d.name === 'ApiPropertyOptional'),
+        `Missing ApiPropertyOptional on ${name}.${fieldName}`,
+      );
+      return [fieldName, field.type?.getText()];
+    }),
+  );
+}
+
 function route(source, className, methodName, parameterDecorator, dtoName) {
   const controller = declaration(source, className);
   const method = controller.members.find((m) => ts.isMethodDeclaration(m) && m.name.getText() === methodName);
@@ -171,6 +187,7 @@ try {
     contact,
     sessionConfigValidator,
     bulkDto,
+    messageResponsesDto,
   ] = sources;
   const webhookEvents = stringArray(webhook, 'WEBHOOK_EVENTS').sort();
   const webhookEventValidators = ['IsArray', 'ArrayMinSize', 'ArrayMaxSize'];
@@ -248,6 +265,10 @@ try {
       'sessionId',
       'chatId',
       'messageId',
+    ]),
+    chatHistoryForwardedFields: optionalDtoTypes(messageResponsesDto, 'ChatHistoryMessageDto', [
+      'isForwarded',
+      'forwardingScore',
     ]),
     maxSessionConfigBytes: validationArgument(
       initializer(sessionConfigValidator, 'MAX_SESSION_CONFIG_BYTES'),

@@ -17,7 +17,11 @@ import { webhookConfigHash } from './configHash';
 import { sanitizePathParam } from '../shared/sanitizePathParam';
 import { parseJsonParam, stableStringify } from '../shared/jsonParam';
 import { webhookSecretProblem } from '../shared/webhookSecret';
-import { WEBHOOK_EVENT_OPTIONS } from '../shared/webhookEvents';
+import {
+  MAX_WEBHOOK_EVENTS,
+  WEBHOOK_EVENT_OPTIONS,
+  normalizeWebhookEvents,
+} from '../shared/webhookEvents';
 import { serverBaseUrl } from '../shared/serverUrl';
 import { getSessions } from '../OpenWa/loadOptions';
 
@@ -106,7 +110,7 @@ export class OpenWaTrigger implements INodeType {
       },
       {
         displayName:
-          'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>type: "masked"</code> for a withheld business message and <code>revokedId</code> on a <code>message.revoked</code> event.',
+          'Each event arrives as an envelope: <code>event</code>, <code>timestamp</code>, <code>sessionId</code>, <code>idempotencyKey</code>, <code>deliveryId</code>, and the event payload under <code>data</code>. Read message fields from <code>data</code> (e.g. <code>{{ $json.data }}</code>). To de-duplicate downstream, key on <code>idempotencyKey</code>, which identifies the event and is reused across retries and crash replays; <code>deliveryId</code> identifies a single attempt and changes on every replay. Some payloads carry extra fields under <code>data</code>, e.g. <code>isForwarded: true</code> (with <code>forwardingScore</code> when positive) on a forwarded message, <code>type: "masked"</code> for a withheld business message, and <code>revokedId</code> on a <code>message.revoked</code> event.',
         name: 'outputShapeNotice',
         type: 'notice',
         default: '',
@@ -139,7 +143,7 @@ export class OpenWaTrigger implements INodeType {
         );
 
         const webhookUrl = this.getNodeWebhookUrl('default') ?? '';
-        const events = this.getNodeParameter('events') as string[];
+        const rawEvents = this.getNodeParameter('events');
 
         // Drop the stored registration from the server and forget it locally, so the
         // caller can report absent and let n8n create a fresh one.
@@ -178,7 +182,7 @@ export class OpenWaTrigger implements INodeType {
         // changed across a package upgrade).
         const currentHash = webhookConfigHash({
           url: webhookUrl,
-          events,
+          events: rawEvents,
           secret: this.getNodeParameter('webhookSecret', '') as string,
           sessionId,
           filters: this.getNodeParameter('filters', ''),
@@ -218,8 +222,14 @@ export class OpenWaTrigger implements INodeType {
         // no other trace, so it is compared here. The comparison ignores key order,
         // because the server round-trips filters through a JSON column and a
         // reordered but identical filter must not force a re-registration.
-        const sameEvents = (a: unknown, b: string[]): boolean => {
-          if (!Array.isArray(a) || a.length !== b.length) {
+        let wantedEvents: string[] | undefined;
+        try {
+          wantedEvents = normalizeWebhookEvents(rawEvents);
+        } catch {
+          wantedEvents = undefined;
+        }
+        const sameEvents = (a: unknown, b: string[] | undefined): boolean => {
+          if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
             return false;
           }
           const left = [...(a as string[])].sort();
@@ -241,7 +251,7 @@ export class OpenWaTrigger implements INodeType {
         if (
           registration.active === false ||
           (typeof registration.url === 'string' && registration.url !== webhookUrl) ||
-          !sameEvents(registration.events, events) ||
+          !sameEvents(registration.events, wantedEvents) ||
           !sameFilters
         ) {
           return discardRegistration();
@@ -258,11 +268,22 @@ export class OpenWaTrigger implements INodeType {
           this.getNodeParameter('sessionId') as string,
           'Session ID',
         );
-        const events = this.getNodeParameter('events') as string[];
+        let events: string[];
+        try {
+          events = normalizeWebhookEvents(this.getNodeParameter('events'));
+        } catch (error) {
+          throw new NodeOperationError(this.getNode(), error as Error);
+        }
         const webhookSecret = this.getNodeParameter('webhookSecret', '') as string;
 
-        if (!events || events.length === 0) {
+        if (events.length === 0) {
           throw new NodeOperationError(this.getNode(), 'At least one event must be selected');
+        }
+        if (events.length > MAX_WEBHOOK_EVENTS) {
+          throw new NodeOperationError(
+            this.getNode(),
+            `Events cannot exceed ${MAX_WEBHOOK_EVENTS} entries (got ${events.length})`,
+          );
         }
         // A short secret is rejected by the server's registration floor; failing
         // here names the field instead of surfacing a raw 400 mid-activation.

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { stableStringify } from '../shared/jsonParam';
+import { normalizeWebhookEvents } from '../shared/webhookEvents';
 
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
@@ -13,14 +14,14 @@ import { stableStringify } from '../shared/jsonParam';
  */
 export function webhookConfigHash(config: {
   url: string;
-  events: string[];
+  events: unknown;
   secret: string;
   sessionId: string;
   filters?: unknown;
 }): string {
   const canonical = JSON.stringify({
     url: config.url,
-    events: [...config.events].sort(),
+    events: eventsFingerprint(config.events),
     secret: config.secret,
     sessionId: config.sessionId,
     // Normalised here rather than at the call sites, so checkExists and create
@@ -30,6 +31,14 @@ export function webhookConfigHash(config: {
     filters: filtersFingerprint(config.filters),
   });
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+function eventsFingerprint(events: unknown): unknown {
+  try {
+    return [...normalizeWebhookEvents(events)].sort();
+  } catch {
+    return stableStringify(events);
+  }
 }
 
 function filtersFingerprint(filters: unknown): string {

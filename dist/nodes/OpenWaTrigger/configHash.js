@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.webhookConfigHash = webhookConfigHash;
 const node_crypto_1 = require("node:crypto");
 const jsonParam_1 = require("../shared/jsonParam");
+const webhookEvents_1 = require("../shared/webhookEvents");
 /**
  * Stable fingerprint of the trigger configuration that the server-side webhook
  * registration depends on: the delivery URL n8n advertises, the subscribed
@@ -16,7 +17,7 @@ const jsonParam_1 = require("../shared/jsonParam");
 function webhookConfigHash(config) {
     const canonical = JSON.stringify({
         url: config.url,
-        events: [...config.events].sort(),
+        events: eventsFingerprint(config.events),
         secret: config.secret,
         sessionId: config.sessionId,
         // Normalised here rather than at the call sites, so checkExists and create
@@ -26,6 +27,14 @@ function webhookConfigHash(config) {
         filters: filtersFingerprint(config.filters),
     });
     return (0, node_crypto_1.createHash)('sha256').update(canonical).digest('hex');
+}
+function eventsFingerprint(events) {
+    try {
+        return [...(0, webhookEvents_1.normalizeWebhookEvents)(events)].sort();
+    }
+    catch {
+        return (0, jsonParam_1.stableStringify)(events);
+    }
 }
 function filtersFingerprint(filters) {
     if (filters === undefined || filters === null || filters === '') {

@@ -1,6 +1,6 @@
 {
-  "version": "0.29.0",
-  "commit": "af348ed3a451ce297d2eca8ed53dfe66cde49e52",
+  "version": "0.29.1",
+  "commit": "79d7f865e0518cb2d210deb28a84dcb0f4f39e66",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -74,6 +74,10 @@
       "method": "GET",
       "path": "sessions/:sessionId/messages/:chatId/:messageId/receipts",
       "chatScoped": "fenced"
+    },
+    "chatHistoryForwardedFields": {
+      "forwardingScore": "number",
+      "isForwarded": "boolean"
     },
     "maxSessionConfigBytes": 16384,
     "bulkMessages": {

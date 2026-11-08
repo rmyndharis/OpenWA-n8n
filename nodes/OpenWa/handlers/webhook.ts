@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
-import { WEBHOOK_EVENT_VALUES } from '../../shared/webhookEvents';
+import { MAX_WEBHOOK_EVENTS, normalizeWebhookEvents } from '../../shared/webhookEvents';
 import { webhookSecretProblem } from '../../shared/webhookSecret';
 import {
   asText,
@@ -12,9 +12,6 @@ import {
   toStringList,
 } from './params';
 import type { RequestSpec } from './types';
-
-/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
-const MAX_WEBHOOK_EVENTS = WEBHOOK_EVENT_VALUES.length + 1;
 
 /**
  * Parses a JSON object field (headers, filters) supplied as text or already as an
@@ -29,8 +26,8 @@ function parseJsonObject(node: INode, raw: unknown, label: string, itemIndex: nu
 }
 
 /** The events of a registration: the selection itself, or the text an expression built. */
-function readEvents(node: INode, raw: unknown, itemIndex: number): unknown[] {
-  const events = Array.isArray(raw) ? raw : raw ? toStringList(raw, 'Events') : [];
+function readEvents(node: INode, raw: unknown, itemIndex: number): string[] {
+  const events = normalizeWebhookEvents(raw);
   if (events.length > MAX_WEBHOOK_EVENTS) {
     throw new NodeOperationError(
       node,

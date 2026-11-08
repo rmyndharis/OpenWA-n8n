@@ -15,6 +15,7 @@
  * option at all.
  */
 import type { INodeProperties } from 'n8n-workflow';
+import { toStringList } from '../OpenWa/handlers/params';
 
 export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
   {
@@ -163,3 +164,11 @@ export const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'] = [
 export const WEBHOOK_EVENT_VALUES: string[] = WEBHOOK_EVENT_OPTIONS.map(
   (o) => (o as { value: string }).value,
 );
+
+/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
+export const MAX_WEBHOOK_EVENTS = WEBHOOK_EVENT_VALUES.length + 1;
+
+/** The events of a registration: the selection itself, or the text an expression built. */
+export function normalizeWebhookEvents(raw: unknown): string[] {
+  return raw ? toStringList(raw, 'Events') : [];
+}

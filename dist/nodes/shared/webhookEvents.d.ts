@@ -18,3 +18,7 @@ import type { INodeProperties } from 'n8n-workflow';
 export declare const WEBHOOK_EVENT_OPTIONS: INodeProperties['options'];
 /** The event values only, for tests and for configHash seed parity. */
 export declare const WEBHOOK_EVENT_VALUES: string[];
+/** Ceiling both webhook DTOs place on `events` (`@ArrayMaxSize(WEBHOOK_EVENTS.length + 1)`). */
+export declare const MAX_WEBHOOK_EVENTS: number;
+/** The events of a registration: the selection itself, or the text an expression built. */
+export declare function normalizeWebhookEvents(raw: unknown): string[];
