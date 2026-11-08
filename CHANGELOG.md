@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.6.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.5.0...v1.6.0) (2026-11-08)
+
+### Features
+
+* Verify the OpenWA 0.29.1 contract, including `isForwarded` and `forwardingScore` on `ChatHistoryMessageDto`, and document forwarded-message payload fields on Trigger deliveries and Message > Get History.
+
+### Bug Fixes
+
+* Normalize expression-supplied webhook event lists in OpenWA Trigger and `webhookConfigHash` the same way Webhook > Create and Update do, and enforce the 27-entry events ceiling on Trigger registration.
+
 ## [1.5.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.4.0...v1.5.0) (2026-11-06)
 
 ### Features
