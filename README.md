@@ -402,8 +402,8 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
 > - De-duplicate on `idempotencyKey`, not `deliveryId`. `idempotencyKey` identifies the *event* and is reused across both retries and crash replays; `deliveryId` identifies a single *attempt* and is re-minted on every replay, so keying on it misses exactly the duplicate you are trying to catch.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
-> - Forwarded messages carry `data.isForwarded: true` (omitted when not forwarded) and `data.forwardingScore` (when positive) on `message.received`, `message.sent`, and **Message > Get History** items (server **>= 0.29.1**; stripped on `revoked` placeholders and not stored in **Message > List** rows).
-> - `session.restriction` deliveries and **Session > Get Status** / **List All** items carry `restriction.kind` as `reachout_timelock`, `tos_block`, `proxy_block`, or `passkey_required` when WhatsApp asks for a passkey to finish a Baileys device link (server **>= 0.30.0**, cleared once the link reaches `ready`).
+> - Forwarded messages carry `data.isForwarded: true` (omitted when not forwarded) and `data.forwardingScore` (when positive) on `message.received` and `message.sent` deliveries, and `isForwarded` / `forwardingScore` on **Message > Get History** items (server **>= 0.29.1**; stripped on `revoked` placeholders and not stored in **Message > List** rows).
+> - `session.restriction` deliveries (`data.kind`) and **Session > Get Status** / **List All** items (`restriction.kind`) report `reachout_timelock`, `tos_block`, `proxy_block`, or `passkey_required` when WhatsApp asks for a passkey to finish a Baileys device link (server **>= 0.30.0**, cleared once the link reaches `ready`).
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
 #### ♻️ Duplicate deliveries
