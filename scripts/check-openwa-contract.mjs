@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.29.1.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.30.0.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
@@ -20,6 +20,7 @@ const paths = [
   'src/modules/session/dto/recognised-session-config.validator.ts',
   'src/modules/message/dto/bulk-message.dto.ts',
   'src/modules/message/dto/message-responses.dto.ts',
+  'src/modules/session/dto/session-response.dto.ts',
 ];
 
 function decorators(node) {
@@ -133,6 +134,47 @@ function optionalDtoTypes(source, name, selected) {
   );
 }
 
+function dtoEnumProperty(source, className, fieldName) {
+  const field = declaration(source, className)
+    .members.filter(ts.isPropertyDeclaration)
+    .find((m) => m.name.getText() === fieldName);
+  assert(field && field.exclamationToken, `Missing required field ${className}.${fieldName}`);
+  const apiProp = (ts.getDecorators(field) ?? [])
+    .map((d) => d.expression)
+    .find((d) => ts.isCallExpression(d) && d.expression.getText() === 'ApiProperty');
+  const enumProp =
+    apiProp &&
+    ts.isObjectLiteralExpression(apiProp.arguments[0]) &&
+    apiProp.arguments[0].properties.find(
+      (p) => ts.isPropertyAssignment(p) && p.name.getText() === 'enum',
+    );
+  assert(
+    enumProp && ts.isArrayLiteralExpression(enumProp.initializer),
+    `Missing ApiProperty enum on ${className}.${fieldName}`,
+  );
+  const apiEnum = enumProp.initializer.elements.map((el) => {
+    assert(ts.isStringLiteral(el), `Nonliteral enum value on ${className}.${fieldName}`);
+    return el.text;
+  });
+  assert(
+    field.type && ts.isUnionTypeNode(field.type),
+    `Missing union type on ${className}.${fieldName}`,
+  );
+  const unionValues = field.type.types.map((t) => {
+    assert(
+      ts.isLiteralTypeNode(t) && ts.isStringLiteral(t.literal),
+      `Nonliteral union member on ${className}.${fieldName}`,
+    );
+    return t.literal.text;
+  });
+  assert.deepEqual(
+    apiEnum,
+    unionValues,
+    `${className}.${fieldName} ApiProperty enum and union type differ`,
+  );
+  return apiEnum;
+}
+
 function route(source, className, methodName, parameterDecorator, dtoName) {
   const controller = declaration(source, className);
   const method = controller.members.find((m) => ts.isMethodDeclaration(m) && m.name.getText() === methodName);
@@ -188,6 +230,7 @@ try {
     sessionConfigValidator,
     bulkDto,
     messageResponsesDto,
+    sessionResponsesDto,
   ] = sources;
   const webhookEvents = stringArray(webhook, 'WEBHOOK_EVENTS').sort();
   const webhookEventValidators = ['IsArray', 'ArrayMinSize', 'ArrayMaxSize'];
@@ -217,6 +260,14 @@ try {
       return [name, validationArgument(initializer(sendDto, name))];
     }),
   );
+  const mediaConstants = {
+    MEDIA_FILENAME_MAX_LENGTH: validationArgument(
+      initializer(sendDto, 'MEDIA_FILENAME_MAX_LENGTH'),
+    ),
+    MEDIA_CAPTION_MAX_LENGTH: validationArgument(
+      initializer(sendDto, 'MEDIA_CAPTION_MAX_LENGTH'),
+    ),
+  };
   const preview = declaration(sendDto, 'SendTextMessageDto').members.find((m) => ts.isPropertyDeclaration(m) && m.name.getText() === 'customLinkPreview');
   assert(preview?.type?.getText() === 'CustomLinkPreviewDto', 'Missing custom link preview body');
   for (const name of ['IsOptional', 'IsObject', 'ValidateNested']) {
@@ -269,6 +320,15 @@ try {
     chatHistoryForwardedFields: optionalDtoTypes(messageResponsesDto, 'ChatHistoryMessageDto', [
       'isForwarded',
       'forwardingScore',
+    ]),
+    accountRestrictionKinds: dtoEnumProperty(
+      sessionResponsesDto,
+      'AccountRestrictionDto',
+      'kind',
+    ),
+    sendMediaFields: dtoFields(sendDto, 'SendMediaMessageDto', mediaConstants, [
+      'filename',
+      'caption',
     ]),
     maxSessionConfigBytes: validationArgument(
       initializer(sessionConfigValidator, 'MAX_SESSION_CONFIG_BYTES'),

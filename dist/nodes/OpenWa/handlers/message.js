@@ -381,6 +381,9 @@ async function buildMessageRequest(operation, itemIndex) {
             }
             filename = derived || 'document.pdf';
         }
+        else if ((0, params_1.textLength)(filename) > MAX_FILENAME_LENGTH) {
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Filename cannot exceed ${MAX_FILENAME_LENGTH} characters`, { itemIndex });
+        }
         body = { chatId, filename };
         const caption = readCaption(this, itemIndex);
         if (caption) {

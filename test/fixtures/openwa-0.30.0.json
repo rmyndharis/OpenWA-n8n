@@ -1,6 +1,6 @@
 {
-  "version": "0.29.1",
-  "commit": "79d7f865e0518cb2d210deb28a84dcb0f4f39e66",
+  "version": "0.30.0",
+  "commit": "f70899d5270ae0ab874a66084a0440881cdc636e",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -78,6 +78,24 @@
     "chatHistoryForwardedFields": {
       "forwardingScore": "number",
       "isForwarded": "boolean"
+    },
+    "accountRestrictionKinds": [
+      "reachout_timelock",
+      "tos_block",
+      "proxy_block",
+      "passkey_required"
+    ],
+    "sendMediaFields": {
+      "filename": {
+        "IsOptional": [],
+        "IsString": [],
+        "MaxLength": [255]
+      },
+      "caption": {
+        "IsOptional": [],
+        "IsString": [],
+        "MaxLength": [1024]
+      }
     },
     "maxSessionConfigBytes": 16384,
     "bulkMessages": {
