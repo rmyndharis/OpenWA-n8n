@@ -402,7 +402,8 @@ The Trigger has an optional **Webhook Secret**. When set, the secret is register
 > - Read the message identifier from `data.id` (incoming payloads use `id`, not `messageId`).
 > - De-duplicate on `idempotencyKey`, not `deliveryId`. `idempotencyKey` identifies the *event* and is reused across both retries and crash replays; `deliveryId` identifies a single *attempt* and is re-minted on every replay, so keying on it misses exactly the duplicate you are trying to catch.
 > - Message `type` is engine-neutral: voice notes are `voice`, shared contacts are `contact`, and plain chats are `text`.
-> - Forwarded messages carry `data.isForwarded: true` (omitted when not forwarded) and `data.forwardingScore` (when positive) on `message.received`, `message.sent`, and **Message > Get History** items (server **>= 0.29.1**; stripped on `revoked` placeholders and not stored in **Message > List** rows).
+> - Forwarded messages carry `data.isForwarded: true` (omitted when not forwarded) and `data.forwardingScore` (when positive) on `message.received` and `message.sent` deliveries, and `isForwarded` / `forwardingScore` on **Message > Get History** items (server **>= 0.29.1**; stripped on `revoked` placeholders and not stored in **Message > List** rows).
+> - `session.restriction` deliveries (`data.kind`) and **Session > Get Status** / **List All** items (`restriction.kind`) report `reachout_timelock`, `tos_block`, `proxy_block`, or `passkey_required` when WhatsApp asks for a passkey to finish a Baileys device link (server **>= 0.30.0**, cleared once the link reaches `ready`).
 > - **Check Exists** returns `whatsappId`, the engine-canonical chat id, which may differ from the number you sent (for example an `@lid` id).
 
 #### ♻️ Duplicate deliveries
@@ -427,11 +428,11 @@ It is best-effort: n8n saves the record of seen events once per delivery, so del
 
 ## 🔗 Compatibility
 
-The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.29.1**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `79d7f865e0518cb2d210deb28a84dcb0f4f39e66`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.30.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `f70899d5270ae0ab874a66084a0440881cdc636e`.
 
 The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, Webhook > Redrive Delivery Failures requires **v0.25.0**, Group > Set Member Label requires **v0.27.0**, Contact > Get LID requires **v0.27.1**, and Message > Get Receipts requires **v0.28.0**. These operations return `404` on servers predating their route.
 
-The **event catalog** includes all 26 events of v0.29.1. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
+The **event catalog** includes all 26 events of v0.30.0. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
 
 A few **optional fields** need a server newer than the badge. They are opt-in, so a workflow that leaves them alone runs against any server at or above the floor, but filling one in against an older server returns a `400`, because the server rejects a request body carrying a field it does not know.
 
@@ -479,7 +480,7 @@ npm test         # build + unit tests (route mapping, guards, trigger delivery, 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only
 ESLint config in the repository.
 
-The contract check downloads thirteen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.29.1. Unit tests use the checked-in fixture and run without an upstream checkout.
+The contract check downloads fourteen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.30.0. Unit tests use the checked-in fixture and run without an upstream checkout.
 
 CI also runs the n8n Creator Portal scanner (see
 `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.

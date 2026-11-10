@@ -490,6 +490,12 @@ export async function buildMessageRequest(
         derived = asFileName(this.helpers.assertBinaryData(itemIndex, property).fileName ?? '');
       }
       filename = derived || 'document.pdf';
+    } else if (textLength(filename) > MAX_FILENAME_LENGTH) {
+      throw new NodeOperationError(
+        this.getNode(),
+        `Filename cannot exceed ${MAX_FILENAME_LENGTH} characters`,
+        { itemIndex },
+      );
     }
     body = { chatId, filename };
     const caption = readCaption(this, itemIndex);

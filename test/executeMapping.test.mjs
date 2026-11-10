@@ -6566,3 +6566,48 @@ test('webhook/create and webhook/update enforce the 27-entry events ceiling', as
     /Events cannot exceed 27 entries \(got 28\)/,
   );
 });
+
+test('message/sendDocument enforces the 255-character filename ceiling before hitting the wire', async () => {
+  const atLimit = `${'a'.repeat(251)}.pdf`;
+  assert.equal([...atLimit].length, 255);
+  const ok = await run({
+    resource: 'message',
+    operation: 'sendDocument',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    documentSource: 'url',
+    documentUrl: 'https://example.com/report.pdf',
+    filename: atLimit,
+  });
+  assert.equal(singleCall(ok.ctx).options.body.filename, atLimit);
+
+  // Surrogate pairs count as 1 character in validator's isLength / textLength.
+  const emojiAtLimit = `📄${'a'.repeat(250)}.pdf`;
+  assert.equal(emojiAtLimit.length, 256);
+  const okEmoji = await run({
+    resource: 'message',
+    operation: 'sendDocument',
+    sessionId: 'abc-123',
+    chatId: '1@c.us',
+    documentSource: 'url',
+    documentUrl: 'https://example.com/report.pdf',
+    filename: emojiAtLimit,
+  });
+  assert.equal(singleCall(okEmoji.ctx).options.body.filename, emojiAtLimit);
+
+  const overLimit = `${'a'.repeat(252)}.pdf`;
+  assert.equal([...overLimit].length, 256);
+  await assert.rejects(
+    () =>
+      run({
+        resource: 'message',
+        operation: 'sendDocument',
+        sessionId: 'abc-123',
+        chatId: '1@c.us',
+        documentSource: 'url',
+        documentUrl: 'https://example.com/report.pdf',
+        filename: overLimit,
+      }),
+    /Filename cannot exceed 255 characters/,
+  );
+});

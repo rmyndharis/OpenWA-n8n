@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.29.1.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.30.0.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -151,6 +151,8 @@ function upstreamSources() {
       export const CUSTOM_PREVIEW_URL_MAX_LENGTH = 2048;
       export const CUSTOM_PREVIEW_TITLE_MAX_LENGTH = 256;
       export const CUSTOM_PREVIEW_DESCRIPTION_MAX_LENGTH = 1024;
+      export const MEDIA_FILENAME_MAX_LENGTH = 255;
+      export const MEDIA_CAPTION_MAX_LENGTH = 1024;
       export class CustomLinkPreviewDto {
         @ToStrictString() @IsString() @IsNotEmpty() @MaxLength(CUSTOM_PREVIEW_URL_MAX_LENGTH) url!: string;
         @ToStrictString() @IsString() @IsNotEmpty() @MaxLength(CUSTOM_PREVIEW_TITLE_MAX_LENGTH) title!: string;
@@ -161,6 +163,10 @@ function upstreamSources() {
       export class SendTextMessageDto {
         @IsOptional() @IsObject() @ValidateNested() @Type(() => CustomLinkPreviewDto)
         customLinkPreview?: CustomLinkPreviewDto;
+      }
+      export class SendMediaMessageDto {
+        @IsOptional() @ToStrictString() @IsString() @MaxLength(MEDIA_FILENAME_MAX_LENGTH) filename?: string;
+        @IsOptional() @ToStrictString() @IsString() @MaxLength(MEDIA_CAPTION_MAX_LENGTH) caption?: string;
       }`,
     'src/modules/search/search.controller.ts': `
       @Controller('search') export class SearchController {
@@ -195,6 +201,11 @@ function upstreamSources() {
         @ApiPropertyOptional() isForwarded?: boolean;
         @ApiPropertyOptional() forwardingScore?: number;
       }`,
+    'src/modules/session/dto/session-response.dto.ts': `
+      export class AccountRestrictionDto {
+        @ApiProperty({ enum: ['reachout_timelock', 'tos_block', 'proxy_block', 'passkey_required'] })
+        kind!: 'reachout_timelock' | 'tos_block' | 'proxy_block' | 'passkey_required';
+      }`,
   };
 }
 
@@ -216,10 +227,14 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.29\.1/);
+  assert.match(result.stdout, /0\.30\.0/);
 });
 
 for (const [label, file, before, after] of [
+  ['account restriction passkey_required enum', 'src/modules/session/dto/session-response.dto.ts', "'reachout_timelock', 'tos_block', 'proxy_block', 'passkey_required'", "'reachout_timelock', 'tos_block', 'proxy_block'"],
+  ['account restriction passkey_required union', 'src/modules/session/dto/session-response.dto.ts', "'reachout_timelock' | 'tos_block' | 'proxy_block' | 'passkey_required'", "'reachout_timelock' | 'tos_block' | 'proxy_block'"],
+  ['send media filename cap', 'src/modules/message/dto/send-message.dto.ts', 'MEDIA_FILENAME_MAX_LENGTH = 255', 'MEDIA_FILENAME_MAX_LENGTH = 200'],
+  ['send media caption cap', 'src/modules/message/dto/send-message.dto.ts', 'MEDIA_CAPTION_MAX_LENGTH = 1024', 'MEDIA_CAPTION_MAX_LENGTH = 512'],
   ['chat history isForwarded field', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', ''],
   ['chat history isForwarded optionality', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', 'isForwarded!: boolean;'],
   ['chat history isForwarded type', 'src/modules/message/dto/message-responses.dto.ts', 'isForwarded?: boolean;', 'isForwarded?: string;'],
