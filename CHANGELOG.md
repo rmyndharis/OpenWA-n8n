@@ -2,10 +2,13 @@
 
 ## [1.7.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.6.0...v1.7.0) (2026-11-10)
 
-
 ### Features
 
-* support OpenWA 0.30.0 ([216b9a8](https://github.com/rmyndharis/OpenWA-n8n/commit/216b9a89dd704a7936be5e31d8ced62aab4db63d))
+* Verify the OpenWA 0.30.0 contract, including `passkey_required` on `AccountRestrictionDto.kind` and the `SendMediaMessageDto` bounds, and document `passkey_required` on `session.restriction` deliveries and Session > Get Status / List All.
+
+### Bug Fixes
+
+* Enforce the 255-character ceiling on explicit filenames in Message > Send Document before sending requests.
 
 ## [1.6.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.5.0...v1.6.0) (2026-11-08)
 
