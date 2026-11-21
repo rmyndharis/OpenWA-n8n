@@ -2126,6 +2126,27 @@ mappingCases.push(
     { maxReconnectAttempts: null },
   ],
   [
+    'session/updateConfig reads Link Preview "yes" as true',
+    { resource: 'session', operation: 'updateConfig', ...S, sessionConfigFields: { linkPreview: 'yes' } },
+    'PATCH',
+    `${SESS}/config`,
+    { linkPreview: true },
+  ],
+  [
+    'session/updateConfig reads Link Preview "no" as false',
+    { resource: 'session', operation: 'updateConfig', ...S, sessionConfigFields: { linkPreview: 'no' } },
+    'PATCH',
+    `${SESS}/config`,
+    { linkPreview: false },
+  ],
+  [
+    'session/updateConfig reads Link Preview "default" as null, the engine default',
+    { resource: 'session', operation: 'updateConfig', ...S, sessionConfigFields: { linkPreview: 'default' } },
+    'PATCH',
+    `${SESS}/config`,
+    { linkPreview: null },
+  ],
+  [
     'session/updateConfig keeps a zero cap, which disables reconnection',
     {
       resource: 'session',
@@ -5946,7 +5967,7 @@ for (const typeVersion of [1, 2]) {
   });
 }
 
-for (const field of ['autoRejectCalls', 'maxReconnectAttempts', 'reconnectBaseDelay']) {
+for (const field of ['autoRejectCalls', 'linkPreview', 'maxReconnectAttempts', 'reconnectBaseDelay']) {
   for (const value of [undefined, null]) {
     test(`session/updateConfig refuses ${field} with no value (${value}) instead of dropping or resetting it`, async () => {
       const ctx = makeCtx({ params: { resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { autoRejectCalls: true, [field]: value } } });
@@ -5960,6 +5981,21 @@ for (const [cap, expected] of [[-1, null], [0, 0], [20, 20], ['5', 5]]) {
   test(`session/updateConfig reads a reconnect cap of ${JSON.stringify(cap)} as ${expected}`, async () => {
     const { ctx } = await run({ resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { maxReconnectAttempts: cap } });
     assert.deepEqual(singleCall(ctx).options.body, { maxReconnectAttempts: expected });
+  });
+}
+
+for (const choice of [true, false]) {
+  test(`session/updateConfig reads a Link Preview of ${choice} from an expression as ${choice}`, async () => {
+    const { ctx } = await run({ resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { linkPreview: choice } });
+    assert.deepEqual(singleCall(ctx).options.body, { linkPreview: choice });
+  });
+}
+
+for (const choice of ['maybe', '', 'true', 'toString', 1]) {
+  test(`session/updateConfig refuses a Link Preview of ${JSON.stringify(choice)} instead of clearing the setting`, async () => {
+    const ctx = makeCtx({ params: { resource: 'session', operation: 'updateConfig', sessionId: 'abc-123', sessionConfigFields: { linkPreview: choice } } });
+    await assert.rejects(() => new OpenWa().execute.call(ctx), /Link Preview must be Engine Default, Generate a Preview or No Preview/);
+    assert.equal(ctx.calls.length, 0);
   });
 }
 

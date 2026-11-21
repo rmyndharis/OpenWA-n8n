@@ -261,7 +261,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 > **Send Product** returns `{id, timestamp}` where every other send returns `{messageId, timestamp}`. The node passes the response through unchanged rather than normalising it, so the difference stays visible.
 
-> **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page: up to 1000 entries where the route pages (sessions, groups, chats, contacts), and whatever the route returns where it does not (templates, labels, webhooks, channels, API keys). On an account with more than that, set the field from an expression instead of picking from the list. The **Label Name or ID** dropdown is whatsapp-web.js only, because the label listing behind it answers `501` on Baileys.
+> **Dropdowns:** ID fields with a listing endpoint behind them offer a dropdown — in both nodes, including the Trigger's **Session Name or ID** — and fetch a single page: up to 1000 entries where the route pages (sessions, groups, chats, contacts), and whatever the route returns where it does not (templates, labels, webhooks, channels, API keys). On an account with more than that, set the field from an expression instead of picking from the list. The **Label Name or ID** dropdown is whatsapp-web.js only, because the label listing behind it answers `501` on Baileys. A Baileys chat held under a privacy ID that has no name is listed by its phone number when the server reports one (server **>= 0.31.0**), and by its ID otherwise.
 
 > **Status posts:** WhatsApp Status is never posted to a group, so **Recipients** takes `@c.us`/`@lid` JIDs (max 256). The Baileys engine *requires* an explicit recipient list and is the only engine that honors it. whatsapp-web.js ignores the list entirely and posts to every contact whether one is supplied or not, so do not rely on it to limit the audience there.
 
@@ -294,7 +294,7 @@ The credential is validated with an authenticated `GET /api/sessions` request, s
 
 **Webhook redrive (v0.25.0):** Redrive Delivery Failures requires ADMIN and server-side `WEBHOOK_FAILURE_PAYLOAD_RETENTION_HOURS > 0`. It replays one bounded batch of eligible terminal failures with retained payloads. Session ID, Webhook ID and Failure IDs narrow the selection. Limit accepts 1-500; omitting the option uses the server default of 100, while adding it starts at 50. An explicit empty ID list replays nothing. Each replay keeps the original event idempotency key, applies current subscription eligibility, and respects the calling key session restrictions. Read `delivered`, `failed`, `skipped` and `remaining` from the result; redrive uses direct attempts, so `enqueued` stays zero.
 
-**Session configuration (v0.25.0):** Creating a session with Proxy URL requires ADMIN. Without a proxy, OPERATOR is sufficient, subject to key restrictions. The recognized config keys are validated at creation (server **>= 0.24.0**, capped at 16384 bytes of JSON from **v0.27.1**): `autoRejectCalls` is boolean, `maxReconnectAttempts` is 0-20 or null for unlimited, and `reconnectBaseDelay` is 1000-300000 milliseconds. An invalid value is rejected with `400`. Reconnect changes take effect on the next Start; call rejection applies to the next incoming call.
+**Session configuration (v0.25.0):** Creating a session with Proxy URL requires ADMIN. Without a proxy, OPERATOR is sufficient, subject to key restrictions. The recognized config keys are validated at creation (server **>= 0.24.0**, capped at 16384 bytes of JSON from **v0.27.1**): `autoRejectCalls` is boolean, `maxReconnectAttempts` is 0-20 or null for unlimited, `reconnectBaseDelay` is 1000-300000 milliseconds, and `linkPreview` (server **>= 0.30.3**) is a boolean, or null for the engine default. An invalid value is rejected with `400`. Reconnect changes take effect on the next Start; call rejection applies to the next incoming call, and `linkPreview` to the next Send Text or Send Template that sets neither Link Preview nor a custom preview. Update Config offers it as Link Preview (Engine Default sends null, Generate a Preview sends true, No Preview sends false), and a server older than 0.30.3 refuses the field with `400`. In the Session Config JSON of Create, an older server stores the key and ignores it.
 
 > **Voice notes** (server **≥ 0.7.17**): Send Audio has a **Send as Voice Note** toggle. When on, the clip is delivered as a true WhatsApp voice note (the microphone bubble with a waveform) instead of a plain audio file. Voice notes require `audio/ogg; codecs=opus` audio for reliable playback. Leave the toggle off (plain audio file) on older servers.
 
@@ -352,7 +352,7 @@ Before changing the Server URL on credentials used by an active Trigger, deactiv
 | `group.join_request`    | Someone asked to join an administered group (server **≥ 0.15.0**) |
 | `event.response`        | RSVP to a WhatsApp event invitation (server **>= 0.25.0**, Baileys only) |
 | `message.receipt`       | One recipient received, read or played a group or Status message you sent (server **>= 0.26.0**, Baileys only; select it by name, `*` does not include it) |
-| `poll.vote`             | Someone voted on a poll or cleared their vote (server **>= 0.26.0**, whatsapp-web.js only) |
+| `poll.vote`             | Someone voted on a poll or cleared their vote (server **>= 0.26.0** on whatsapp-web.js, **>= 0.30.2** on Baileys) |
 
 #### 🎯 Server-side filters
 
@@ -428,16 +428,17 @@ It is best-effort: n8n saves the record of seen events once per delivery, so del
 
 ## 🔗 Compatibility
 
-The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.30.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `f70899d5270ae0ab874a66084a0440881cdc636e`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.31.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `79331672114b5c0bdeb41df220f2bca957ed946c`.
 
 The base **routes** require v0.16.0 for Call > Create Link. Most other operations arrived in v0.14.0, with membership requests, blocklist reads and session config in v0.15.0. Session > Get Proxy / Update Proxy require **v0.23.4**, Message > Click Button requires **v0.23.6**, Webhook > Redrive Delivery Failures requires **v0.25.0**, Group > Set Member Label requires **v0.27.0**, Contact > Get LID requires **v0.27.1**, and Message > Get Receipts requires **v0.28.0**. These operations return `404` on servers predating their route.
 
-The **event catalog** includes all 26 events of v0.30.0. `message.receipt` (Baileys) and `poll.vote` (whatsapp-web.js) require **v0.26.0**, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
+The **event catalog** includes all 26 events of v0.31.0. `message.receipt` (Baileys) and `poll.vote` require **v0.26.0**, `poll.vote` reaches Baileys from **v0.30.2** and only for a poll whose creation message is still in the session's message store, and a subscription to `*` does not include `message.receipt`. `event.response` requires **v0.25.0** and Baileys. `group.join_request` requires v0.15.0; `session.restriction`, `presence.update`, `call.accepted`, `call.rejected` and `call.missed` require v0.14.0. Subscribing to an event an older server does not recognize fails registration with `400`. The default subscription stays `message.received`.
 
 A few **optional fields** need a server newer than the badge. They are opt-in, so a workflow that leaves them alone runs against any server at or above the floor, but filling one in against an older server returns a `400`, because the server rejects a request body carrying a field it does not know.
 
 | Field | Where | Needs |
 | ----- | ----- | ----- |
+| **Link Preview (Config Fields)** | Session > Update Config | server **>= 0.30.3** |
 | **Thumbnail URL / Thumbnail Base64** | Message > Send Text (Custom Link Preview) | server **>= 0.27.0** |
 | **Match** | System > Search | server **>= 0.27.0** |
 | **Since / Until / Direction / Order By / Type / Message ID** | Message > List | server **>= 0.25.0** |
@@ -480,7 +481,7 @@ npm test         # build + unit tests (route mapping, guards, trigger delivery, 
 Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only
 ESLint config in the repository.
 
-The contract check downloads fourteen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.30.0. Unit tests use the checked-in fixture and run without an upstream checkout.
+The contract check downloads fifteen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.31.0. Unit tests use the checked-in fixture and run without an upstream checkout.
 
 CI also runs the n8n Creator Portal scanner (see
 `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.

@@ -122,7 +122,10 @@ async function getGroups() {
     return sessionScopedPaginated(this, '/groups', ['name']);
 }
 async function getChats() {
-    return sessionScopedPaginated(this, '/chats', ['name']);
+    // A Baileys chat held under a privacy id (@lid) with no name of its own lists name "" and, when
+    // the session can map the id, the phone to title it by (server 0.31.0). Before that the name
+    // was the id's own digits.
+    return sessionScopedPaginated(this, '/chats', ['name', 'phone']);
 }
 async function getContacts() {
     // pushName is the self-chosen WhatsApp display name, used when the contact is

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.30.0.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.31.0.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -97,6 +97,15 @@ test('OpenWA 0.29.0 contact LID lookup and message receipts are exposed', () => 
     (p) => p.name === 'messageId' && p.displayOptions?.show?.resource?.includes('message'),
   );
   assert(messageId.displayOptions.show.operation.includes('getReceipts'));
+});
+
+test('OpenWA 0.30.3 session link preview is a three-state Update Config field', () => {
+  const fields = properties.find((p) => p.name === 'sessionConfigFields');
+  assert.deepEqual(fields.options.map((o) => o.name).sort(), snapshot.contract.sessionConfigKeys);
+  const preview = fields.options.find((o) => o.name === 'linkPreview');
+  assert.equal(preview.type, 'options');
+  assert.deepEqual(preview.options.map((o) => o.value), ['default', 'yes', 'no']);
+  assert.equal(preview.default, 'default');
 });
 
 function upstreamSources() {
@@ -189,6 +198,7 @@ function upstreamSources() {
         getContactLid(@Param('sessionId') sessionId: string, @Param('number') number: string) {}
       }`,
     'src/modules/session/dto/recognised-session-config.validator.ts': `
+      const RECOGNISED_KEYS = ['autoRejectCalls', 'maxReconnectAttempts', 'reconnectBaseDelay', 'linkPreview'] as const;
       export const MAX_SESSION_CONFIG_BYTES = 16 * 1024;`,
     'src/modules/message/dto/bulk-message.dto.ts': `
       export const BULK_MESSAGES_MAX = 100;
@@ -200,6 +210,10 @@ function upstreamSources() {
       export class ChatHistoryMessageDto {
         @ApiPropertyOptional() isForwarded?: boolean;
         @ApiPropertyOptional() forwardingScore?: number;
+      }`,
+    'src/modules/session/dto/chat-summary.dto.ts': `
+      export class ChatSummaryDto {
+        @ApiPropertyOptional() phone?: string;
       }`,
     'src/modules/session/dto/session-response.dto.ts': `
       export class AccountRestrictionDto {
@@ -227,7 +241,7 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.30\.0/);
+  assert.match(result.stdout, /0\.31\.0/);
 });
 
 for (const [label, file, before, after] of [
@@ -251,6 +265,12 @@ for (const [label, file, before, after] of [
   ['message receipts path', 'src/modules/message/message.controller.ts', ':chatId/:messageId/receipts', ':chatId/:messageId/acks'],
   ['message receipts chat scope', 'src/modules/message/message.controller.ts', "@ChatScoped('fenced') @Get(':chatId/:messageId/receipts')", "@Get(':chatId/:messageId/receipts')"],
   ['message receipts params', 'src/modules/message/message.controller.ts', "@Param('messageId')", "@Param('id')"],
+  ['session config key list', 'src/modules/session/dto/recognised-session-config.validator.ts', "'reconnectBaseDelay', 'linkPreview'", "'reconnectBaseDelay'"],
+  ['session config extra key', 'src/modules/session/dto/recognised-session-config.validator.ts', "'linkPreview'", "'linkPreview', 'proxyUrl'"],
+  ['chat summary phone field', 'src/modules/session/dto/chat-summary.dto.ts', 'phone?: string;', ''],
+  ['chat summary phone optionality', 'src/modules/session/dto/chat-summary.dto.ts', 'phone?: string;', 'phone!: string;'],
+  ['chat summary phone type', 'src/modules/session/dto/chat-summary.dto.ts', 'phone?: string;', 'phone?: number;'],
+  ['chat summary phone decorator', 'src/modules/session/dto/chat-summary.dto.ts', '@ApiPropertyOptional() phone?: string;', 'phone?: string;'],
   ['session config byte limit', 'src/modules/session/dto/recognised-session-config.validator.ts', '16 * 1024', '32 * 1024'],
   ['bulk message item object validator', 'src/modules/message/dto/bulk-message.dto.ts', '@IsObject({ each: true })', ''],
   ['bulk message max size', 'src/modules/message/dto/bulk-message.dto.ts', 'BULK_MESSAGES_MAX = 100', 'BULK_MESSAGES_MAX = 50'],

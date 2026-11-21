@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.30.0.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.31.0.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
@@ -21,6 +21,7 @@ const paths = [
   'src/modules/message/dto/bulk-message.dto.ts',
   'src/modules/message/dto/message-responses.dto.ts',
   'src/modules/session/dto/session-response.dto.ts',
+  'src/modules/session/dto/chat-summary.dto.ts',
 ];
 
 function decorators(node) {
@@ -231,6 +232,7 @@ try {
     bulkDto,
     messageResponsesDto,
     sessionResponsesDto,
+    chatSummaryDto,
   ] = sources;
   const webhookEvents = stringArray(webhook, 'WEBHOOK_EVENTS').sort();
   const webhookEventValidators = ['IsArray', 'ArrayMinSize', 'ArrayMaxSize'];
@@ -333,6 +335,8 @@ try {
     maxSessionConfigBytes: validationArgument(
       initializer(sessionConfigValidator, 'MAX_SESSION_CONFIG_BYTES'),
     ),
+    sessionConfigKeys: stringArray(sessionConfigValidator, 'RECOGNISED_KEYS').sort(),
+    chatSummaryFields: optionalDtoTypes(chatSummaryDto, 'ChatSummaryDto', ['phone']),
     bulkMessages: dtoFields(
       bulkDto,
       'SendBulkMessageDto',

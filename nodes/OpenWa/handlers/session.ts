@@ -12,6 +12,16 @@ const MAX_PROXY_URL_LENGTH = 255;
 const MAX_SESSION_CONFIG_BYTES = 16 * 1024;
 
 /**
+ * The three states of the `linkPreview` session key as the Link Preview field spells them. The
+ * server reads `null` as "back to the engine default", which a boolean cannot express.
+ */
+const LINK_PREVIEW_STATES = new Map<string, boolean | null>([
+  ['yes', true],
+  ['no', false],
+  ['default', null],
+]);
+
+/**
  * Refuses a proxy URL the server's `@IsUrl` would reject, so a typo fails in the
  * editor rather than as a 504 half a minute into a Start that never produces a QR.
  * Deliberately looser than the server on the host itself: `require_tld: false` and
@@ -185,6 +195,7 @@ export async function buildSessionRequest(
     case 'updateConfig': {
       const fields = this.getNodeParameter('sessionConfigFields', itemIndex, {}) as {
         autoRejectCalls?: boolean;
+        linkPreview?: string | boolean;
         maxReconnectAttempts?: number;
         reconnectBaseDelay?: number;
       };
@@ -196,6 +207,7 @@ export async function buildSessionRequest(
         fields as IDataObject,
         {
           autoRejectCalls: 'Auto Reject Calls',
+          linkPreview: 'Link Preview',
           maxReconnectAttempts: 'Max Reconnect Attempts',
           reconnectBaseDelay: 'Reconnect Base Delay',
         },
@@ -206,6 +218,22 @@ export async function buildSessionRequest(
       // The unlimited case needs a sentinel because no in-range number expresses it.
       if (fields.autoRejectCalls !== undefined) {
         body.autoRejectCalls = fields.autoRejectCalls;
+      }
+      if (fields.linkPreview !== undefined) {
+        // An expression may hand over a real boolean. Any other value must be one of the three
+        // options, because reading an unknown one as Engine Default would clear the setting.
+        const state =
+          typeof fields.linkPreview === 'boolean'
+            ? fields.linkPreview
+            : LINK_PREVIEW_STATES.get(asText(fields.linkPreview, 'Link Preview'));
+        if (state === undefined) {
+          throw new NodeOperationError(
+            this.getNode(),
+            'Link Preview must be Engine Default, Generate a Preview or No Preview',
+            { itemIndex },
+          );
+        }
+        body.linkPreview = state;
       }
       if (fields.maxReconnectAttempts !== undefined) {
         // -1 is the node's "back to unlimited" sentinel; the server spells that null,

@@ -92,7 +92,7 @@ exports.WEBHOOK_EVENT_OPTIONS = [
     {
         name: 'Poll Vote',
         value: 'poll.vote',
-        description: 'Triggers when someone votes on a poll or clears their vote. whatsapp-web.js only; requires OpenWA 0.26.0 or later. Server-side filters do not apply to it.',
+        description: "Triggers when someone votes on a poll or clears their vote. Requires OpenWA 0.26.0 or later on whatsapp-web.js and 0.30.2 or later on Baileys, where a vote is read only while the poll's creation message is still in the session's message store. Server-side filters do not apply to it.",
     },
     {
         name: 'Presence Update',

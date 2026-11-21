@@ -147,7 +147,10 @@ export async function getGroups(this: ILoadOptionsFunctions): Promise<INodePrope
 }
 
 export async function getChats(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-  return sessionScopedPaginated(this, '/chats', ['name']);
+  // A Baileys chat held under a privacy id (@lid) with no name of its own lists name "" and, when
+  // the session can map the id, the phone to title it by (server 0.31.0). Before that the name
+  // was the id's own digits.
+  return sessionScopedPaginated(this, '/chats', ['name', 'phone']);
 }
 
 export async function getContacts(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {

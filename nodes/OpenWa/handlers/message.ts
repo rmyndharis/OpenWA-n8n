@@ -134,7 +134,7 @@ const STICKER_MEDIA: MediaParamNames = {
  * preview, or suppress one. The engines disagree about what "leave it" means, so the
  * distinction is real. On whatsapp-web.js a preview is built by default and only an
  * explicit false is forwarded; on Baileys previews are opt-in, and asking for one
- * costs a blocking fetch of every URL in the message before the send goes out.
+ * costs a blocking fetch of the first URL in the message before the send goes out.
  */
 function applyLinkPreview(
   this: IExecuteFunctions,
