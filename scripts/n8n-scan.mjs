@@ -14,15 +14,20 @@
 //
 // (--ignore-scripts skips a native module the scanner pulls in but never uses for linting.)
 //
+// Newer scanner releases (0.44.0 and 1.3.0 checked) keep the entry at dist/scanner.js and export
+// lintDirectory in place of analyzePackage. This script takes either, so only the path changes.
+//
 // The published scanner also lints the built tarball's *.js, but CI already
 // verifies dist/ matches source (git diff), so linting the source leg here is
 // sufficient.
 const scannerPath =
   process.env.N8N_SCANNER_PATH ?? '@n8n/scan-community-package/scanner/scanner.mjs';
-const { analyzePackage, SOURCE_FILE_PATTERNS } = await import(scannerPath);
+const scanner = await import(scannerPath);
+const { SOURCE_FILE_PATTERNS } = scanner;
+const analyze = scanner.analyzePackage ?? scanner.lintDirectory;
 
 const target = process.argv[2] ?? process.cwd();
-const result = await analyzePackage(target, SOURCE_FILE_PATTERNS);
+const result = await analyze(target, SOURCE_FILE_PATTERNS);
 
 if (!result.passed) {
   console.error('n8n community-node scan failed\n');
