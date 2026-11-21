@@ -15,6 +15,13 @@ on:
 
 jobs:
   build:
+    # 20 is the lowest Node the current n8n 1.x line accepts (20.19) and 24 is what n8n 2.36
+    # and later require, which is also what release.yml publishes from. Every gate runs on both
+    # ends of that range, and one version finishing when the other fails lets the two be compared.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 24]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -25,7 +32,7 @@ jobs:
           fetch-depth: 2
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
       - run: npm ci
       # release-please derives the version and the changelog from the commit
       # subjects on main, and a pull request lands there as one squash commit.
