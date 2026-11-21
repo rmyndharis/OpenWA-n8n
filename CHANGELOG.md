@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.8.0...v1.8.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* correct the n8n 2.x deduplication note ([12a8d8c](https://github.com/rmyndharis/OpenWA-n8n/commit/12a8d8cdc9085859d48c1db05a2b6b59b58b72a8))
+
 ## [1.8.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.7.0...v1.8.0) (2026-11-21)
 
 
