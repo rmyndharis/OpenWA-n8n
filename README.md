@@ -642,7 +642,7 @@ OpenWA guarantees at-least-once delivery: it retries a failed POST, and it repla
 
 It is best-effort: n8n saves the record of seen events once per delivery, so deliveries that overlap can each miss the other, and a replay of one of them can then still run. The same happens when the workflow writes its own static data and an earlier run finishes after a later delivery arrived. Enable it when downstream actions are not idempotent.
 
-> **n8n 2.x:** from n8n 2.19.2 onward (checked up to 2.45.3) the record of seen events is not saved, because n8n resets its change flag before it persists the Trigger's static data, so the option has no effect there. n8n 1.123.87 and 2.19.0 save it as described. Until n8n fixes this, de-duplicate downstream on `idempotencyKey`.
+> **n8n 2.19.2 to 2.45:** from n8n 2.19.2 (checked up to 2.45.3) the record of seen events is not saved, because n8n resets its change flag before it persists the Trigger's static data, so the option has no effect there. n8n 1.123.87 and 2.19.0 save it as described. n8n fixed this in 2.46 ([n8n-io/n8n#42081](https://github.com/n8n-io/n8n/pull/42081)); the fix is in the source of 2.46.4 and later. On the affected versions, de-duplicate downstream on `idempotencyKey`.
 
 ### Registration and server changes
 
