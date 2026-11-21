@@ -1,6 +1,6 @@
 {
-  "version": "0.30.0",
-  "commit": "f70899d5270ae0ab874a66084a0440881cdc636e",
+  "version": "0.31.0",
+  "commit": "79331672114b5c0bdeb41df220f2bca957ed946c",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -98,6 +98,10 @@
       }
     },
     "maxSessionConfigBytes": 16384,
+    "sessionConfigKeys": ["autoRejectCalls", "linkPreview", "maxReconnectAttempts", "reconnectBaseDelay"],
+    "chatSummaryFields": {
+      "phone": "string"
+    },
     "bulkMessages": {
       "IsArray": [],
       "ArrayMaxSize": [100],

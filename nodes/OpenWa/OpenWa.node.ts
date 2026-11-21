@@ -338,7 +338,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['session'], operation: ['create'] },
         },
         description:
-          'Optional session config as a JSON object (at most 16384 bytes when serialized as JSON). The server reads exactly three keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited) and reconnectBaseDelay (1000-300000 ms, default 5000). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.24.0 or later, invalid values for these three keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
+          'Optional session config as a JSON object (at most 16384 bytes when serialized as JSON). The server reads exactly four keys and silently ignores anything else: autoRejectCalls (boolean, default false, Baileys only), maxReconnectAttempts (0-20, default unlimited), reconnectBaseDelay (1000-300000 ms, default 5000) and linkPreview (boolean, default unset: the preview of a Send Text or Send Template that sets none; needs OpenWA 0.30.3 or later, and an older server stores it and ignores it). The two reconnect keys bound only the gateway\'s own reconnect: on Baileys the engine retries a transient drop itself, with its own backoff and no cap. On OpenWA 0.24.0 or later, invalid values for these keys are rejected at creation. Reconnect changes apply from the next Start; autoRejectCalls applies to the next incoming call and linkPreview to the next send. A proxy belongs in the Proxy URL field and requires ADMIN, not in config. Example: {"autoRejectCalls":true,"maxReconnectAttempts":5}',
       },
       {
         displayName: 'Proxy URL',
@@ -382,6 +382,19 @@ export class OpenWa implements INodeType {
             default: false,
             description:
               'Whether to decline every incoming call automatically. Re-read on each call, so it applies immediately. Baileys only: whatsapp-web.js cannot reject a call.',
+          },
+          {
+            displayName: 'Link Preview',
+            name: 'linkPreview',
+            type: 'options',
+            options: [
+              { name: 'Engine Default', value: 'default' },
+              { name: 'Generate a Preview', value: 'yes' },
+              { name: 'No Preview', value: 'no' },
+            ],
+            default: 'default',
+            description:
+              'The link preview of a Send Text or Send Template that sets neither Link Preview nor a custom preview. Engine Default clears the session setting, so whatsapp-web.js builds one and Baileys sends none. Generate a Preview on Baileys makes the server fetch the first URL in the message before every such send. Applies from the next send, with no restart. Requires OpenWA 0.30.3 or later: an older server refuses the field with 400.',
           },
           {
             displayName: 'Max Reconnect Attempts',
@@ -1182,7 +1195,7 @@ export class OpenWa implements INodeType {
           show: { resource: ['message'], operation: ['sendText', 'sendTemplate'] },
         },
         description:
-          'Whether a URL in the message renders a preview card. The engines differ on what the default means: whatsapp-web.js builds one unless told not to, while on Baileys previews are opt-in. Choosing Generate a Preview on Baileys makes the server fetch every URL in the message before sending, which stalls the send on a slow or dead link.',
+          "Whether a URL in the message renders a preview card. Engine Default sends nothing, so the session's Link Preview setting applies when it has one (OpenWA 0.30.3 or later), and otherwise the engine decides: whatsapp-web.js builds one unless told not to, while on Baileys previews are opt-in. Choosing Generate a Preview on Baileys makes the server fetch the first URL in the message before sending, which stalls the send on a slow or dead link.",
       },
       {
         displayName: 'Custom Link Preview',

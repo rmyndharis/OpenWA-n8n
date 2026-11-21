@@ -149,6 +149,22 @@ test('getContacts falls back to pushName, then number, when there is no name', a
   ]);
 });
 
+test('getChats titles an unnamed privacy-id chat by its phone, then by its id', async () => {
+  const ctx = makeCtx({
+    response: [
+      { id: '1@lid', name: '', phone: '5491154759191' },
+      { id: '2@lid', name: '' },
+      { id: '3@c.us', name: 'Alice', phone: '628123456789' },
+    ],
+  });
+  const options = await loadOptions.getChats.call(ctx);
+  assert.deepEqual(options, [
+    { name: '2@lid', value: '2@lid' },
+    { name: '5491154759191 (1@lid)', value: '1@lid' },
+    { name: 'Alice (3@c.us)', value: '3@c.us' },
+  ]);
+});
+
 test('a trailing slash on the server URL does not produce a double slash', async () => {
   const ctx = makeCtx();
   ctx.getCredentials = async () => ({ serverUrl: `${BASE}/` });
