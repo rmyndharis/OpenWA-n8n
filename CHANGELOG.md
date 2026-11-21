@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.7.0...v1.8.0) (2026-11-21)
+
+
+### Features
+
+* support OpenWA 0.31.0 ([0b9aab3](https://github.com/rmyndharis/OpenWA-n8n/commit/0b9aab32b30a73433cdce6802f657d1fd7b9f6c2))
+
 ## [1.7.0](https://github.com/rmyndharis/OpenWA-n8n/compare/v1.6.0...v1.7.0) (2026-11-10)
 
 ### Features
