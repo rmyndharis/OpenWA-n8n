@@ -1,5 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INode } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
+import { parseJsonParam } from '../../shared/jsonParam';
 import { sanitizePathParam } from '../../shared/sanitizePathParam';
 import { MAX_WEBHOOK_EVENTS, normalizeWebhookEvents } from '../../shared/webhookEvents';
 import { webhookSecretProblem } from '../../shared/webhookSecret';
@@ -15,11 +16,12 @@ import type { RequestSpec } from './types';
 
 /**
  * Parses a JSON object field (headers, filters) supplied as text or already as an
- * object, so Create and Update read them the same way.
+ * object, so Create and Update read them the same way. Returns undefined when
+ * nothing (or only whitespace) was supplied.
  */
 function parseJsonObject(node: INode, raw: unknown, label: string, itemIndex: number): unknown {
   try {
-    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parseJsonParam(raw);
   } catch {
     throw new NodeOperationError(node, `${label} must be valid JSON`, { itemIndex });
   }
@@ -169,11 +171,10 @@ export async function buildWebhookRequest(
       ['headers', 'Headers'],
       ['filters', 'Filters'],
     ] as const) {
-      const raw = createFields[key];
-      if (raw === undefined || raw === null || raw === '') {
-        continue;
+      const parsed = parseJsonObject(this.getNode(), createFields[key], label, itemIndex);
+      if (parsed !== undefined) {
+        body[key] = parsed;
       }
-      body[key] = parseJsonObject(this.getNode(), raw, label, itemIndex);
     }
     return { endpoint: `/api/sessions/${sessionId}/webhooks`, method: 'POST', body };
   }
@@ -284,13 +285,15 @@ export async function buildWebhookRequest(
         body.headers = {};
         continue;
       }
-      if (raw === '') continue; // blank value: nothing to send
-      body[key] = parseJsonObject(
+      const parsed = parseJsonObject(
         this.getNode(),
         raw,
         key === 'headers' ? 'Headers' : 'Filters',
         itemIndex,
       );
+      if (parsed !== undefined) {
+        body[key] = parsed;
+      }
     }
     // Every field on this route is optional server-side, so an empty body is a 200
     // that changed nothing. Refuse it here, the way every other update operation in

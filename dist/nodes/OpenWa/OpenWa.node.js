@@ -355,7 +355,7 @@ class OpenWa {
                     displayOptions: {
                         show: { resource: ['session'], operation: ['create', 'updateProxy'] },
                     },
-                    description: 'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or OpenWA ≥ 0.23.6 refuses it. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server ≥ 0.23.4). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. Setting a proxy at creation or through Update Proxy requires an ADMIN key; session-scoped keys cannot create sessions or update proxies. An unreachable proxy prevents the QR: whatsapp-web.js Start times out after about 30 seconds, while Baileys Start may succeed and keep retrying.',
+                    description: 'Egress proxy for this session, as a full URL with its scheme (http, https, socks4 or socks5), at most 255 characters. Credentials in the URL work on Baileys with http, https and socks5 (socks4 has no way to send a password); whatsapp-web.js cannot authenticate a SOCKS proxy. A password containing a bare % must be percent-encoded as %25, or OpenWA >= 0.23.6 refuses it. Read the stored value back with Get Proxy, which reports the scheme, host and whether credentials are embedded but never the credentials themselves (server >= 0.23.4; requires an unscoped ADMIN key on OpenWA 0.32.0 or later). Update Proxy writes it without restarting anything, so a change takes effect on the next Start. Setting a proxy at creation or through Update Proxy requires an unscoped ADMIN key; session-scoped keys cannot create sessions or update proxies. An unreachable proxy prevents the QR: whatsapp-web.js Start times out after about 30 seconds, while Baileys Start may succeed and keep retrying.',
                 },
                 {
                     displayName: 'Clear Proxy',
@@ -428,6 +428,20 @@ class OpenWa {
                     type: 'notice',
                     default: '',
                     displayOptions: { show: { resource: ['session'], operation: ['requestPairingCode'] } },
+                },
+                {
+                    displayName: 'On OpenWA 0.32.0 or later, Get Proxy requires an unscoped ADMIN API key (non-admin or session-scoped keys receive 403). Returns the masked scheme, host, port, and whether credentials are embedded, never the credentials themselves.',
+                    name: 'sessionGetProxyNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['session'], operation: ['getProxy'] } },
+                },
+                {
+                    displayName: 'On OpenWA 0.32.0 or later, memoryUsage is returned only for unscoped ADMIN API keys and is omitted for non-admin or session-scoped keys.',
+                    name: 'sessionStatsOverviewNotice',
+                    type: 'notice',
+                    default: '',
+                    displayOptions: { show: { resource: ['session'], operation: ['getStatsOverview'] } },
                 },
                 {
                     displayName: 'Phone Number',
@@ -724,11 +738,12 @@ class OpenWa {
                                 'sendContact',
                                 'sendPoll',
                                 'reply',
+                                'clickButton',
                                 'forward',
                             ],
                         },
                     },
-                    description: 'Optional key of 1-255 visible ASCII characters without spaces. On OpenWA 0.25.0 or later, retrying the same request with the same key within 24 hours returns the first result without sending again. Keys are unique per session: use an expression with a distinct key for each intended message, and reuse it only for retries of that message. A different body or route with the same key returns 422; an in-progress or uncertain send returns 409. Older servers ignore the header.',
+                    description: 'Optional key of 1-255 visible ASCII characters without spaces. On OpenWA 0.25.0 or later (0.32.0 or later for Click Button), retrying the same request with the same key within 24 hours returns the first result without sending again. Keys are unique per session: use an expression with a distinct key for each intended message, and reuse it only for retries of that message. A different body or route with the same key returns 422; an in-progress or uncertain send returns 409. Older servers ignore the header.',
                 },
                 {
                     displayName: 'Message',
@@ -3677,7 +3692,7 @@ class OpenWa {
                     type: 'json',
                     default: '',
                     displayOptions: { show: { resource: ['automationRule'], operation: ['create'] } },
-                    description: 'Which messages the rule answers, as JSON in the same shape as webhook filters: <code>{"conditions":[{"field":"isGroup","operator":"is","value":false}]}</code>. All conditions must match. Leave empty and the rule answers every inbound message.',
+                    description: 'Which messages the rule answers, as JSON in the same shape as webhook filters: <code>{"conditions":[{"field":"isGroup","operator":"is","value":false}]}</code>. All conditions must match. Leave empty and the rule answers regular individual and group messages (on OpenWA 0.32.0 or later, channel, broadcast, and status chats are skipped unless opted in explicitly with a positive <code>kind</code> <code>is</code> condition).',
                 },
                 {
                     displayName: 'Additional Fields',
@@ -3718,7 +3733,7 @@ class OpenWa {
                             name: 'conditions',
                             type: 'json',
                             default: '',
-                            description: 'Match conditions as JSON, in the same shape as webhook filters. Leaving this blank keeps the rule\'s stored conditions unchanged, because an update only sends the fields you fill in. To make the rule answer everything again, send {"conditions":[]}; an empty object on its own is refused.',
+                            description: 'Match conditions as JSON, in the same shape as webhook filters. Leaving this blank keeps the rule\'s stored conditions unchanged, because an update only sends the fields you fill in. To make the rule answer regular chats again, send {"conditions":[]}; an empty object on its own is refused. On OpenWA 0.32.0 or later, channel, broadcast, and status chats still require an explicit positive <code>kind</code> <code>is</code> condition.',
                         },
                         {
                             displayName: 'Cooldown (Seconds)',

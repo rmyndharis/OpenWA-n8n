@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 
 const snapshot = JSON.parse(
-  await readFile(new URL('../test/fixtures/openwa-0.31.0.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../test/fixtures/openwa-0.32.0.json', import.meta.url), 'utf8'),
 );
 const paths = [
   'src/modules/webhook/dto/webhook.dto.ts',
@@ -22,6 +22,8 @@ const paths = [
   'src/modules/message/dto/message-responses.dto.ts',
   'src/modules/session/dto/session-response.dto.ts',
   'src/modules/session/dto/chat-summary.dto.ts',
+  'src/modules/session/session.controller.ts',
+  'src/modules/session/dto/session-actions-response.dto.ts',
 ];
 
 function decorators(node) {
@@ -199,6 +201,7 @@ function route(source, className, methodName, parameterDecorator, dtoName) {
   if (role !== undefined || !Array.isArray(parameterDecorator)) result.role = role;
   const chatScoped = metadata.find((d) => d.name === 'ChatScoped')?.args[0];
   if (Array.isArray(parameterDecorator) && chatScoped !== undefined) result.chatScoped = chatScoped;
+  if (metadata.some((d) => d.name === 'RequireUnscopedKey')) result.unscoped = true;
   return result;
 }
 
@@ -233,6 +236,8 @@ try {
     messageResponsesDto,
     sessionResponsesDto,
     chatSummaryDto,
+    sessionController,
+    sessionActionsResponsesDto,
   ] = sources;
   const webhookEvents = stringArray(webhook, 'WEBHOOK_EVENTS').sort();
   const webhookEventValidators = ['IsArray', 'ArrayMinSize', 'ArrayMaxSize'];
@@ -336,6 +341,12 @@ try {
       initializer(sessionConfigValidator, 'MAX_SESSION_CONFIG_BYTES'),
     ),
     sessionConfigKeys: stringArray(sessionConfigValidator, 'RECOGNISED_KEYS').sort(),
+    sessionGetProxy: route(sessionController, 'SessionController', 'getProxy', ['sessionId']),
+    sessionsOverviewFields: optionalDtoTypes(
+      sessionActionsResponsesDto,
+      'SessionsOverviewResponseDto',
+      ['memoryUsage'],
+    ),
     chatSummaryFields: optionalDtoTypes(chatSummaryDto, 'ChatSummaryDto', ['phone']),
     bulkMessages: dtoFields(
       bulkDto,

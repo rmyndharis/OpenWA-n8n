@@ -69,7 +69,7 @@ The role of your API key decides what a workflow may do. The server enforces it,
 
 - **VIEWER:** most reads. A VIEWER key cannot send messages or manage webhooks.
 - **OPERATOR:** sends, webhook management and writes in general. These reads need OPERATOR as well and answer `403` to a VIEWER key: Session > Get QR, Contact > Check Exists and Get LID, Group > Get Invite Code, Template > Get and List, Automation Rule > Get and List, Webhook > Get, List and List All, and System > Search.
-- **ADMIN:** API key operations other than Validate, Webhook > Get Delivery Failures and Redrive Delivery Failures, proxy writes (Session > Update Proxy, and Session > Create when a Proxy URL is set), and the server-wide System reads Get Settings, Get Stats Overview, Get Message Stats and Get Audit Log.
+- **ADMIN:** API key operations other than Validate, Webhook > Get Delivery Failures and Redrive Delivery Failures, proxy operations (Session > Get Proxy on server ≥ 0.32.0, Session > Update Proxy, and Session > Create when a Proxy URL is set), and the server-wide System reads Get Settings, Get Stats Overview, Get Message Stats and Get Audit Log.
 
 A `403` can also mean an IP, session or chat restriction. **API Key > Validate** reports the credential's role and engine; it refuses keys restricted with `allowedChats`.
 
@@ -77,12 +77,12 @@ A `403` can also mean an IP, session or chat restriction. **API Key > Validate**
 
 - An IP-whitelisted key must allow the n8n host's IP.
 - A session-restricted key is refused with `403` for operations on sessions outside its allow-list (servers before 0.24.0 answered `401`).
-- Some surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session > Create**, **Session > Update Proxy**, the **System** reads **Get Settings**, **Get Stats Overview** and **Get Message Stats**, and every **API Key** operation except **Validate**.
+- Some surfaces are instance-level rather than per-session and refuse a session-scoped key with a `403` whatever its role: **Session > Create**, **Session > Get Proxy** (server ≥ 0.32.0), **Session > Update Proxy**, the **System** reads **Get Settings**, **Get Stats Overview** and **Get Message Stats**, and every **API Key** operation except **Validate**. **Session > Get Stats Overview** omits `memoryUsage` for non-admin and session-scoped keys (server ≥ 0.32.0).
 
 **Chat-restricted keys.** `allowedChats` (server ≥ 0.23.6) is default-deny on routes without chat scope.
 
 - On v0.25.0, Chat > List and Group > List return only allowed chats, and Message > List works when its Chat ID filter names an allowed chat.
-- Allowed group reads and settings are available, and built-in System > Search enforces the allowlist; plugin search is refused.
+- Allowed group reads and settings are available, and built-in System > Search enforces the allowlist (on server ≥ 0.32.0, `SEARCH_PROVIDER=auto` falls back to `builtin-fts` even when a search plugin is enabled; plugin-only search without built-in fallback is refused).
 - The credential test, the Session dropdown, the OpenWA Trigger and API Key > Validate still return `403`, so supply the session ID with an expression for these action workflows.
 - Other dropdowns depend on their route: chat and group pickers work, while routes without chat scope fail.
 - The optional Quoted Message ID on sends remains refused; Reply can quote a message within its allowed chat.
@@ -476,7 +476,7 @@ Media (`image`, `video`, `audio`, `document`) uses `url` or `base64` (add `mimet
 
 **Idempotent sends (v0.25.0).**
 
-- Idempotency Key is optional on Send Text, Image, Video, Audio, Document, Sticker, Location, Contact, Poll, Template, Reply and Forward.
+- Idempotency Key is optional on Send Text, Image, Video, Audio, Document, Sticker, Location, Contact, Poll, Template, Reply, Forward (server ≥ 0.25.0) and Click Button (server ≥ 0.32.0).
 - Supply 1-255 visible ASCII characters without spaces, with a distinct key per intended message and session.
 - Retrying the same route and body within 24 hours returns the first result without sending again. A changed request with the same key returns `422 IDEMPOTENCY_KEY_REUSED`; an in-progress or uncertain outcome returns `409`.
 - Keep the same key on a retry and inspect an uncertain outcome before deciding whether to send again. The node never generates a key. Trigger delivery deduplication is configured separately.
@@ -533,7 +533,7 @@ Several operations exist on one engine only. The node says so on the field or re
 
 The **System** resource reads settings, statistics and the audit log. Settings are environment-derived and the server publishes no write route for them, so the resource reads them only. **Search** needs a search provider configured server-side, otherwise it answers `501`, and it can answer `502` or `503` when a plugin provider misbehaves or does not respond.
 
-**Not offered.** The server's administration surface, which a workflow has no business driving, is deliberately left out: the infrastructure, plugin, ingress and integration controllers, plus `/api/metrics`, which authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here. **Send Catalog** is gone from the server entirely.
+**Not offered.** The server's administration surface, which a workflow has no business driving, is deliberately left out: the infrastructure, plugin, ingress and integration controllers, the browser-session cookie endpoints (`/api/auth/session`, added in v0.32.0 for the dashboard), plus `/api/metrics`, which authenticates with its own bearer token rather than the API key this credential carries, so it could only ever answer `401` or `404` from here. **Send Catalog** is gone from the server entirely.
 
 ### Using as an AI tool
 
@@ -656,7 +656,7 @@ The Trigger listens on a session-scoped webhook URL (`…/webhook/openwa-<sessio
 
 ### Requirements
 
-The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.31.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `79331672114b5c0bdeb41df220f2bca957ed946c`.
+The nodes need an `n8n-workflow` that exports `NodeConnectionTypes` (1.83.0 or later, which ships with n8n 1.85.0 or later); with an older copy they fail to load. Requires an OpenWA server **≥ 0.16.0** for the base operations. The current contract target is **OpenWA v0.32.0**; newer operations, fields and events have their own floors below. CI verifies the contract fixture against source pinned to release commit `0be1e960d52741befca89cc6b985f6a634c38553`.
 
 ### Operation floors
 
@@ -676,7 +676,7 @@ These operations return `404` on servers predating their route.
 
 ### Event floors
 
-The event catalog includes all 26 events of v0.31.0, and the Availability column of the [events table](#events) lists the server floor of each.
+The event catalog includes all 26 events of v0.32.0, and the Availability column of the [events table](#events) lists the server floor of each.
 
 - Subscribing to an event an older server does not recognize fails registration with `400`.
 - The default subscription stays `message.received`, and a subscription to `*` does not include `message.receipt`.
@@ -688,6 +688,7 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 
 | Field | Where | Needs |
 | ----- | ----- | ----- |
+| **Idempotency Key** | Message > Click Button | server ≥ 0.32.0 |
 | **Link Preview (Config Fields)** | Session > Update Config | server ≥ 0.30.3 |
 | **Thumbnail URL / Thumbnail Base64** | Message > Send Text (Custom Link Preview) | server ≥ 0.27.0 |
 | **Match** | System > Search | server ≥ 0.27.0 |
@@ -704,7 +705,7 @@ A few **optional fields** need a server newer than the badge. They are opt-in, s
 | **Allowed Chats** | API Key > Create / Update | server ≥ 0.23.6 |
 | **`chatId` filter field** | Trigger Filters, Webhook > Create / Update, Automation Rule conditions | server ≥ 0.23.6 |
 
-- Query parameters behave differently on older servers: After Row ID, Inline Media, Name, Match and the six v0.25.0 Message List filters can be ignored, so a request may read a broader selection or use older pagination. Idempotency Key is an HTTP header older servers ignore, so retry protection requires v0.25.0. The `kind` and `chatId` filter fields are validated when the webhook or rule is saved and are refused if unsupported.
+- Query parameters behave differently on older servers: After Row ID, Inline Media, Name, Match and the six v0.25.0 Message List filters can be ignored, so a request may read a broader selection or use older pagination. Idempotency Key is an HTTP header older servers ignore, so retry protection requires v0.25.0 (v0.32.0 for Click Button). The `kind` and `chatId` filter fields are validated when the webhook or rule is saved and are refused if unsupported.
 - Existing operations keep their earlier server floors when the newer optional fields are left unset. Engine-specific limitations are described on the relevant operation.
 
 ## Development
@@ -720,7 +721,7 @@ npm test             # build, then run the unit tests (route mapping, guards, tr
 ```
 
 - Linting uses the legacy `.eslintrc.js`, which extends `eslint:recommended`. It is the only ESLint config in the repository.
-- The contract check downloads fifteen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.31.0. Unit tests use the checked-in fixture and run without an upstream checkout.
+- The contract check downloads seventeen source files from the pinned release commit. For offline verification, run `npm run check:openwa -- /path/to/OpenWA` against a checkout of v0.32.0. Unit tests use the checked-in fixture and run without an upstream checkout.
 - CI also runs the n8n Creator Portal scanner (see `scripts/n8n-scan.mjs`), which pins the portal's own, newer rule versions.
 
 ## Contributing

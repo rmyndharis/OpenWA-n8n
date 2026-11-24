@@ -2,17 +2,19 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildWebhookRequest = buildWebhookRequest;
 const n8n_workflow_1 = require("n8n-workflow");
+const jsonParam_1 = require("../../shared/jsonParam");
 const sanitizePathParam_1 = require("../../shared/sanitizePathParam");
 const webhookEvents_1 = require("../../shared/webhookEvents");
 const webhookSecret_1 = require("../../shared/webhookSecret");
 const params_1 = require("./params");
 /**
  * Parses a JSON object field (headers, filters) supplied as text or already as an
- * object, so Create and Update read them the same way.
+ * object, so Create and Update read them the same way. Returns undefined when
+ * nothing (or only whitespace) was supplied.
  */
 function parseJsonObject(node, raw, label, itemIndex) {
     try {
-        return typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return (0, jsonParam_1.parseJsonParam)(raw);
     }
     catch {
         throw new n8n_workflow_1.NodeOperationError(node, `${label} must be valid JSON`, { itemIndex });
@@ -122,11 +124,10 @@ async function buildWebhookRequest(operation, itemIndex) {
             ['headers', 'Headers'],
             ['filters', 'Filters'],
         ]) {
-            const raw = createFields[key];
-            if (raw === undefined || raw === null || raw === '') {
-                continue;
+            const parsed = parseJsonObject(this.getNode(), createFields[key], label, itemIndex);
+            if (parsed !== undefined) {
+                body[key] = parsed;
             }
-            body[key] = parseJsonObject(this.getNode(), raw, label, itemIndex);
         }
         return { endpoint: `/api/sessions/${sessionId}/webhooks`, method: 'POST', body };
     }
@@ -214,9 +215,10 @@ async function buildWebhookRequest(operation, itemIndex) {
                 body.headers = {};
                 continue;
             }
-            if (raw === '')
-                continue; // blank value: nothing to send
-            body[key] = parseJsonObject(this.getNode(), raw, key === 'headers' ? 'Headers' : 'Filters', itemIndex);
+            const parsed = parseJsonObject(this.getNode(), raw, key === 'headers' ? 'Headers' : 'Filters', itemIndex);
+            if (parsed !== undefined) {
+                body[key] = parsed;
+            }
         }
         // Every field on this route is optional server-side, so an empty body is a 200
         // that changed nothing. Refuse it here, the way every other update operation in

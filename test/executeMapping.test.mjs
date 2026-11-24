@@ -107,6 +107,7 @@ const IDEMPOTENT_SEND_CASES = [
   ['sendContact', { contactName: 'Ada', contactNumber: '628123456789' }],
   ['sendPoll', { pollName: 'Lunch?', pollOptions: ['A', 'B'] }],
   ['reply', { message: 'hello', quotedMessageId: 'wa-ref-1' }],
+  ['clickButton', { messageId: 'wa-ref-1', buttonId: 'btn-1' }],
   ['forward', { fromChatId: '628123456789@c.us', toChatId: '628999999999@c.us', messageId: 'wa-ref-1' }],
 ];
 
@@ -1018,6 +1019,20 @@ mappingCases.push(
     { url: 'https://n8n.example/hook', events: ['message.received'], secret: 'sixteen-char-secret' },
   ],
   [
+    'webhook/create ignores whitespace-only headers and filters',
+    {
+      resource: 'webhook',
+      operation: 'create',
+      sessionId: 'abc-123',
+      webhookUrl: 'https://n8n.example/hook',
+      events: ['message.received'],
+      webhookCreateFields: { headers: '   ', filters: ' \n\t ' },
+    },
+    'POST',
+    `${BASE}/api/sessions/abc-123/webhooks`,
+    { url: 'https://n8n.example/hook', events: ['message.received'] },
+  ],
+  [
     'webhook/update forwards only the fields that were set (url only)',
     {
       resource: 'webhook',
@@ -1137,6 +1152,19 @@ mappingCases.push(
     'PUT',
     `${BASE}/api/sessions/abc-123/webhooks/w1`,
     { filters: null },
+  ],
+  [
+    'webhook/update ignores whitespace-only headers and filters while updating another field',
+    {
+      resource: 'webhook',
+      operation: 'update',
+      sessionId: 'abc-123',
+      webhookId: 'w1',
+      updateFields: { active: true, headers: '   ', filters: ' \n ' },
+    },
+    'PUT',
+    `${BASE}/api/sessions/abc-123/webhooks/w1`,
+    { active: true },
   ],
   [
     'webhook/delete',
@@ -4719,6 +4747,17 @@ const guardCases = [
   [
     'webhook/update refuses a body that would change nothing',
     { resource: 'webhook', operation: 'update', sessionId: 'abc-123', webhookId: 'w1' },
+    /At least one field must be provided to update/,
+  ],
+  [
+    'webhook/update refuses a body holding only whitespace-only headers and filters',
+    {
+      resource: 'webhook',
+      operation: 'update',
+      sessionId: 'abc-123',
+      webhookId: 'w1',
+      updateFields: { headers: '   ', filters: ' \n ' },
+    },
     /At least one field must be provided to update/,
   ],
   [

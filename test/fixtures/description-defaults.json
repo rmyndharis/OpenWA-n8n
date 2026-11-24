@@ -128,6 +128,7 @@
   "openWa:groupRequestParticipants@group/approveMembershipRequests": {"default":""},
   "openWa:groupRequestParticipants@group/rejectMembershipRequests": {"default":""},
   "openWa:groupSubject@group/updateSubject": {"default":""},
+  "openWa:idempotencyKey@message/clickButton": {"default":""},
   "openWa:idempotencyKey@message/forward": {"default":""},
   "openWa:idempotencyKey@message/reply": {"default":""},
   "openWa:idempotencyKey@message/sendAudio": {"default":""},
