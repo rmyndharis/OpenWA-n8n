@@ -1,6 +1,6 @@
 {
-  "version": "0.31.0",
-  "commit": "79331672114b5c0bdeb41df220f2bca957ed946c",
+  "version": "0.32.0",
+  "commit": "0be1e960d52741befca89cc6b985f6a634c38553",
   "repository": "rmyndharis/OpenWA",
   "contract": {
     "webhookEvents": [
@@ -52,6 +52,7 @@
       "until"
     ],
     "idempotentSendPaths": [
+      "click-button",
       "forward",
       "reply",
       "send-audio",
@@ -99,6 +100,15 @@
     },
     "maxSessionConfigBytes": 16384,
     "sessionConfigKeys": ["autoRejectCalls", "linkPreview", "maxReconnectAttempts", "reconnectBaseDelay"],
+    "sessionGetProxy": {
+      "method": "GET",
+      "path": "sessions/:sessionId/proxy",
+      "role": "ApiKeyRole.ADMIN",
+      "unscoped": true
+    },
+    "sessionsOverviewFields": {
+      "memoryUsage": "SessionMemoryUsageDto"
+    },
     "chatSummaryFields": {
       "phone": "string"
     },

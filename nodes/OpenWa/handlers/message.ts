@@ -85,6 +85,7 @@ const IDEMPOTENT_SENDS = new Set([
   'sendContact',
   'sendPoll',
   'reply',
+  'clickButton',
   'forward',
 ]);
 

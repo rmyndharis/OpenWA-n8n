@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { OpenWa } from '../dist/nodes/OpenWa/OpenWa.node.js';
 
 const snapshot = JSON.parse(
-  readFileSync(new URL('./fixtures/openwa-0.31.0.json', import.meta.url)),
+  readFileSync(new URL('./fixtures/openwa-0.32.0.json', import.meta.url)),
 );
 const { properties } = new OpenWa().description;
 
@@ -16,9 +16,10 @@ test('Message List exposes the complete pinned server query contract', () => {
   assert.deepEqual(options.map((p) => p.name).sort(), snapshot.contract.messageListQueries);
 });
 
-test('only the twelve idempotent sends offer an Idempotency Key', () => {
+test('only the thirteen idempotent sends offer an Idempotency Key', () => {
   const field = properties.find((p) => p.name === 'idempotencyKey');
   assert.deepEqual([...field.displayOptions.show.operation].sort(), [
+    'clickButton',
     'forward',
     'reply',
     'sendAudio',
@@ -215,6 +216,17 @@ function upstreamSources() {
       export class ChatSummaryDto {
         @ApiPropertyOptional() phone?: string;
       }`,
+    'src/modules/session/session.controller.ts': `
+      @Controller('sessions')
+      export class SessionController {
+        @Get(':sessionId/proxy') @RequireRole(ApiKeyRole.ADMIN) @RequireUnscopedKey()
+        getProxy(@Param('sessionId', SessionIdPipe) id: string) {}
+      }`,
+    'src/modules/session/dto/session-actions-response.dto.ts': `
+      export class SessionsOverviewResponseDto {
+        @ApiPropertyOptional({ type: () => SessionMemoryUsageDto })
+        memoryUsage?: SessionMemoryUsageDto;
+      }`,
     'src/modules/session/dto/session-response.dto.ts': `
       export class AccountRestrictionDto {
         @ApiProperty({ enum: ['reachout_timelock', 'tos_block', 'proxy_block', 'passkey_required'] })
@@ -241,10 +253,18 @@ function checkContract(t, change) {
 test('the contract checker accepts a complete source contract', (t) => {
   const result = checkContract(t);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /0\.31\.0/);
+  assert.match(result.stdout, /0\.32\.0/);
 });
 
 for (const [label, file, before, after] of [
+  ['session getProxy method', 'src/modules/session/session.controller.ts', "@Get(':sessionId/proxy')", "@Post(':sessionId/proxy')"],
+  ['session getProxy path', 'src/modules/session/session.controller.ts', ':sessionId/proxy', ':sessionId/egress'],
+  ['session getProxy role', 'src/modules/session/session.controller.ts', '@RequireRole(ApiKeyRole.ADMIN)', '@RequireRole(ApiKeyRole.OPERATOR)'],
+  ['session getProxy unscoped requirement', 'src/modules/session/session.controller.ts', '@RequireUnscopedKey()', ''],
+  ['sessions overview memoryUsage field', 'src/modules/session/dto/session-actions-response.dto.ts', 'memoryUsage?: SessionMemoryUsageDto;', ''],
+  ['sessions overview memoryUsage optionality', 'src/modules/session/dto/session-actions-response.dto.ts', 'memoryUsage?: SessionMemoryUsageDto;', 'memoryUsage!: SessionMemoryUsageDto;'],
+  ['sessions overview memoryUsage type', 'src/modules/session/dto/session-actions-response.dto.ts', 'memoryUsage?: SessionMemoryUsageDto;', 'memoryUsage?: string;'],
+  ['sessions overview memoryUsage decorator', 'src/modules/session/dto/session-actions-response.dto.ts', '@ApiPropertyOptional({ type: () => SessionMemoryUsageDto })', ''],
   ['account restriction passkey_required enum', 'src/modules/session/dto/session-response.dto.ts', "'reachout_timelock', 'tos_block', 'proxy_block', 'passkey_required'", "'reachout_timelock', 'tos_block', 'proxy_block'"],
   ['account restriction passkey_required union', 'src/modules/session/dto/session-response.dto.ts', "'reachout_timelock' | 'tos_block' | 'proxy_block' | 'passkey_required'", "'reachout_timelock' | 'tos_block' | 'proxy_block'"],
   ['send media filename cap', 'src/modules/message/dto/send-message.dto.ts', 'MEDIA_FILENAME_MAX_LENGTH = 255', 'MEDIA_FILENAME_MAX_LENGTH = 200'],
